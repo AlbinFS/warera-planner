@@ -17,7 +17,7 @@
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
   import { route, navigate } from './lib/route.svelte.js';
-  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple } from '@mdi/js';
+  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout } from '@mdi/js';
   import { saved } from './lib/saved.svelte.js';
   import { restoreLastPlayer } from './lib/planner.svelte.js';
 
@@ -67,6 +67,7 @@
   <button class="key" class:on={hasKey} onclick={() => (keyOpen = true)} title="Optional: your WarEra API key for extra data">
     <Icon path={mdiKeyVariant} size={18} /> {hasKey ? 'API key on' : 'Add API key'}
   </button>
+  <a class="key signout" href="/auth/logout" title="Sign out on this device (frees one of your code's device slots)" aria-label="Sign out"><Icon path={mdiLogout} size={18} /></a>
 </header>
 <ApiKeyDialog bind:open={keyOpen} onchange={() => (hasKey = !!getApiKey())} />
 <SettingsBar />
@@ -125,6 +126,7 @@
     margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-sm);
     background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer; font-size: 13px;
   }
+  .signout { text-decoration: none; margin-left: 0; }
   .key.on { color: var(--good); border-color: var(--good); }
   nav a:hover { color: var(--text); background: var(--surface-2); }
   nav a[aria-current='page'] { color: var(--text); background: var(--surface-2); box-shadow: inset 0 -2px var(--accent); }

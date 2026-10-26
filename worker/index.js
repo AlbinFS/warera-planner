@@ -6,6 +6,7 @@
  * is down the job keeps the last good copy, and `stale` tells the site so.
  */
 import { runJob, ensureSchema, readDataset } from './job.js';
+import { handleAuthRoute, currentSession, signInRequired } from './auth.js';
 
 // How old data may get before it is flagged stale (the job refreshes far more often).
 const STALE_AFTER_MS = { 'game-config': 3 * 60 * 60 * 1000, 'item-prices': 30 * 60 * 1000, equipment: 60 * 60 * 1000 };
@@ -102,6 +103,15 @@ const routes = {
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
+    // Invite only: sign-in and admin routes, then nothing without a session.
+    try {
+      const auth = await handleAuthRoute(env, request);
+      if (auth) return auth;
+      if (!await currentSession(env, request)) return signInRequired(request);
+    } catch (err) {
+      console.error('auth', err);
+      return json({ error: 'Server error' }, 500);
+    }
     if (pathname.startsWith('/api/')) {
       const route = routes[pathname];
       if (!route) return json({ error: 'Not found' }, 404);
@@ -113,7 +123,11 @@ export default {
         return json({ error: 'Server error' }, 500);
       }
     }
-    return env.ASSETS.fetch(request);
+    // Signed-in pages and files must not be cached where someone else could get them.
+    const res = await env.ASSETS.fetch(request);
+    const out = new Response(res.body, res);
+    out.headers.set('Cache-Control', (res.headers.get('Cache-Control') ?? '').includes('immutable') ? 'private, max-age=31536000, immutable' : 'private, no-cache');
+    return out;
   },
 
   async scheduled(event, env, ctx) {

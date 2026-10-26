@@ -10,8 +10,8 @@
     "binding": "ASSETS",
     // Unknown paths get index.html, so client-side routes work on reload.
     "not_found_handling": "single-page-application",
-    // /api is always handled by the Worker, never by a static file.
-    "run_worker_first": ["/api/*"]
+    // Every request goes through the Worker first: the site is invite only (worker/auth.js).
+    "run_worker_first": true
   },
   // Game config, item prices and the equipment trade history (tables are created by the job).
   "d1_databases": [
@@ -19,6 +19,6 @@
   ],
   // Every minute; each run refreshes a small slice (see worker/job.js).
   "triggers": { "crons": ["* * * * *"] },
-  // The API key is a secret (WARERA_API_KEY), set in the dashboard, never in this file.
+  // Secrets are set in the dashboard, never in this file: WARERA_API_KEY and ADMIN_PASSWORD.
   "observability": { "enabled": true }
 }
