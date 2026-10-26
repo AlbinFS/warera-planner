@@ -31,3 +31,25 @@ The leak check also reads an optional private term list from outside the reposit
 ```bash
 node tools/check-leaks.mjs --all
 ```
+
+## Develop
+
+```bash
+npm install
+```
+
+```bash
+npm run dev
+```
+
+`npm run dev` serves the front end only. To run the Worker and the built site together, as Cloudflare does:
+
+```bash
+npm run preview
+```
+
+## Layout
+
+- `src/`: the site (Svelte). `src/lib/warera.js` calls the official API from the browser; `src/lib/settings.svelte.js` holds the fight settings shared by every page.
+- `worker/index.js`: the Cloudflare Worker. It serves `dist/` and answers `/api/*`.
+- `wrangler.jsonc`: Worker config. `public/_headers`: cache and security headers.

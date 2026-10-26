@@ -1,0 +1,17 @@
+// One Cloudflare Worker serves the site (static files from dist/), the /api
+// routes and, later, the scheduled price job.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "warera-planner",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // Unknown paths get index.html, so client-side routes work on reload.
+    "not_found_handling": "single-page-application",
+    // /api is always handled by the Worker, never by a static file.
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": { "enabled": true }
+}
