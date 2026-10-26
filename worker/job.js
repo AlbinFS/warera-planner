@@ -26,7 +26,20 @@ const CONTRACT_PAGE = 50;
 const CONTRACT_BACKFILL_PAGES = 10;
 const CONTRACT_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
 
+// Raw-material trades, totalled per day, for the value of 1 production point
+// (the game averages raw-material trades over the last 7 days).
+const RAW_EVERY_MS = 5 * 60 * 1000;
+const RAW_KEEP_DAYS = 8;
+
 const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS raw_days (
+     code TEXT NOT NULL,
+     day TEXT NOT NULL,
+     money REAL NOT NULL,
+     quantity REAL NOT NULL,
+     trades INTEGER NOT NULL,
+     PRIMARY KEY (code, day)
+   )`,
   `CREATE TABLE IF NOT EXISTS contracts (
      id TEXT PRIMARY KEY,
      winner TEXT,
@@ -173,6 +186,12 @@ export async function runJob(env, now = Date.now()) {
   });
 
   try {
+    await refreshRawTrades(db, api, now);
+  } catch (err) {
+    console.warn(`raw trades: ${err.message}`);
+  }
+
+  try {
     await refreshContracts(db, api, now);
   } catch (err) {
     console.warn(`contracts: ${err.message}`);
@@ -256,4 +275,45 @@ async function refreshContracts(db, api, now) {
     }
   }
   await db.prepare('DELETE FROM contracts WHERE created_at < ?').bind(now - CONTRACT_KEEP_MS).run();
+}
+
+/**
+ * Adds raw-material trades since the last run to per-day totals. One batched
+ * request for the newest page of every raw material, every 5 minutes; the
+ * newest trade id per material is kept so nothing is counted twice.
+ */
+async function refreshRawTrades(db, api, now) {
+  if (!api.key) return; // trade history needs the API key
+  const last = await db.prepare(`SELECT body, fetched_at FROM datasets WHERE name = 'raw-trades-seen'`).first();
+  if (last && now - last.fetched_at < RAW_EVERY_MS) return;
+  const config = await readDataset(db, 'game-config');
+  if (!config) return;
+  const raws = Object.entries(JSON.parse(config.body).items ?? {}).filter(([, it]) => it.type === 'raw').map(([code]) => code);
+  const seen = last ? JSON.parse(last.body) : {};
+  const pages = await api.batch('transaction.getPaginatedTransactions', raws.map((itemCode) => ({ itemCode, transactionType: 'trading', limit: 100 })));
+  const totals = new Map();
+  raws.forEach((code, i) => {
+    const items = pages[i]?.items ?? [];
+    for (const t of items) {
+      if (t._id === seen[code]) break;
+      // First run: only start counting from now (no old page is guessed into a day).
+      if (!seen[code]) break;
+      const day = t.createdAt.slice(0, 10);
+      const key = `${code}|${day}`;
+      const sum = totals.get(key) ?? { code, day, money: 0, quantity: 0, trades: 0 };
+      sum.money += t.money ?? 0;
+      sum.quantity += t.quantity ?? 0;
+      sum.trades += 1;
+      totals.set(key, sum);
+    }
+    if (items[0]) seen[code] = items[0]._id;
+  });
+  const writes = [...totals.values()].map((t) => db.prepare(
+    `INSERT INTO raw_days (code, day, money, quantity, trades) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (code, day) DO UPDATE SET money = money + excluded.money, quantity = quantity + excluded.quantity, trades = trades + excluded.trades`,
+  ).bind(t.code, t.day, t.money, t.quantity, t.trades));
+  writes.push(db.prepare(`INSERT OR REPLACE INTO datasets (name, body, fetched_at) VALUES ('raw-trades-seen', ?, ?)`).bind(JSON.stringify(seen), now));
+  const oldest = new Date(now - RAW_KEEP_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  writes.push(db.prepare('DELETE FROM raw_days WHERE day < ?').bind(oldest));
+  await db.batch(writes);
 }

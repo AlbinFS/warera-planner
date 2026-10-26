@@ -12,6 +12,7 @@
   import { flagImage } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
   import GearStrip from './GearStrip.svelte';
+  import SearchBox from './SearchBox.svelte';
   import Icon from './Icon.svelte';
   import { mdiPill, mdiHeart, mdiSilverwareForkKnife, mdiFileDocumentOutline, mdiAccountGroup } from '@mdi/js';
 
@@ -51,6 +52,39 @@
   }
 
   let seq = 0;
+
+  // Auto-refresh: members' bars change every hour, pills and contracts any time.
+  const REFRESH_MS = 3 * 60 * 1000;
+  let autoRefresh = $state(true);
+  let updatedAt = $state(0);
+  let now = $state(Date.now());
+  $effect(() => {
+    const tick = setInterval(() => (now = Date.now()), 30 * 1000);
+    return () => clearInterval(tick);
+  });
+  $effect(() => {
+    if (!autoRefresh || !unit) return;
+    const timer = setInterval(() => refresh(), REFRESH_MS);
+    return () => clearInterval(timer);
+  });
+  async function refresh() {
+    if (!unit || status) return;
+    const id = ++seq;
+    const [members, unitContracts] = await Promise.all([loadMembers(unit), loadContracts(unit._id).catch(() => contracts)]);
+    if (id !== seq) return;
+    contracts = unitContracts;
+    await compute(members, id);
+  }
+  const ago = $derived(updatedAt ? Math.max(0, Math.round((now - updatedAt) / 60000)) : null);
+
+  /** Full bars: regen is being wasted. Ready to pill: full and neither on the pill nor in its debuff. */
+  function readiness(user, pill) {
+    const h = user.skills?.health;
+    const f = user.skills?.hunger;
+    const full = h && f && h.currentBarValue >= (h.total ?? h.value) - 0.5 && f.currentBarValue >= (f.total ?? f.value) - 0.5;
+    if (!full) return null;
+    return pill?.kind === 'none' ? 'ready to pill' : 'full bars';
+  }
   async function open(muId) {
     const id = ++seq;
     error = '';
@@ -90,6 +124,7 @@
     if (id !== seq) return;
     rows = results;
     status = '';
+    updatedAt = Date.now();
   }
 
   // Recompute when the fight settings change (bonus, food).
@@ -147,7 +182,7 @@
     <h2><Icon path={mdiAccountGroup} size={18} /> Military unit</h2>
     <p class="muted">How much damage your unit can put into a battle <strong>right now</strong>: every member's current health and hunger, the gear they wear and their pill. The cautious figure is what they reach <strong>95% of the time</strong>, given their luck on misses, crits and dodges. Battle bonus and food come from the settings bar.</p>
     <form class="find" onsubmit={find}>
-      <input bind:value={search} placeholder={unit ? unit.name : 'Unit name'} aria-label="Unit name" />
+      <SearchBox kinds={['units']} placeholder={unit ? unit.name : 'Unit name'} bind:value={search} onpick={(r) => open(r.id)} />
       <button>Find unit</button>
     </form>
     {#if found.length}
@@ -163,6 +198,11 @@
       <div class="head">
         <h2 id="totals-title">{unit.name}</h2>
         <span class="muted">{fighting} of {rows.length || unit.members?.length} members can fight now</span>
+        <span class="refresh">
+          <label class="check"><input type="checkbox" bind:checked={autoRefresh} /> Refresh every 3 min</label>
+          {#if ago != null}<span class="muted">updated {ago === 0 ? 'just now' : `${ago} min ago`}</span>{/if}
+          <button class="link" onclick={refresh}>Refresh now</button>
+        </span>
       </div>
       {#if status}
         <p class="muted">{status}</p>
@@ -225,6 +265,7 @@
                       <strong>{r.user.username}</strong>
                       <small class="muted">Level {r.user.leveling?.level}{#if countries[r.user.country]?.code} · <img class="flag" src={flagImage(countries[r.user.country].code)} alt={countries[r.user.country].name} width="16" height="11" />{/if}</small>
                       {#if r.d.pill?.kind !== 'none'}<span class="pill {r.d.pill.kind}"><Icon path={mdiPill} size={12} /> {r.d.pill.label}</span>{/if}
+                      {#if readiness(r.user, r.d.pill)}{@const ready = readiness(r.user, r.d.pill)}<span class="pill ready" title={ready === 'ready to pill' ? 'Full bars and not on the pill or in its debuff' : 'Bars are full: waiting wastes regen'}>{ready}</span>{/if}
                     </span>
                   </td>
                   <td class="bars">
@@ -290,6 +331,10 @@
   .pill { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; width: fit-content; padding: 0 6px; border-radius: 999px; }
   .pill.buff { color: var(--good); border: 1px solid var(--good); }
   .pill.debuff { color: var(--bad); border: 1px solid var(--bad); }
+  .pill.ready { color: var(--accent); border: 1px solid var(--accent); }
+  .refresh { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+  .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .check input { accent-color: var(--accent); }
   .bars { display: grid; gap: 2px; font-size: 13px; white-space: nowrap; }
   .gear :global(.strip) { flex-wrap: nowrap; }
   .small { font-size: 12px; margin: 10px 0 0; }

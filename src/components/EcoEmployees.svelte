@@ -11,7 +11,7 @@
   import Icon from './Icon.svelte';
   import { mdiPlus, mdiDelete, mdiPickaxe } from '@mdi/js';
 
-  let { companies, perPoint, pointValue, items } = $props();
+  let { companies, perPoint, pointValue, items, estimateNote = "from today's prices" } = $props();
 
   // The card's bonus already includes Management, so nothing is swapped here.
   const day = (e, c) => employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 });
@@ -24,6 +24,24 @@
   function remove(c, i) {
     ecoEmployees[c.id] = (ecoEmployees[c.id] ?? []).filter((_, j) => j !== i);
   }
+
+  // Workforce overview: every entered employee, sortable.
+  const all = $derived(companies.filter((c) => !c.disabled).flatMap((c) => (ecoEmployees[c.id] ?? []).map((e) => {
+    const d = day(e, c);
+    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, points: d.points, payroll: d.wage, profit: gameEstimate(d), breakEven: d.points * pointValue };
+  })));
+  const COLS = { company: 'Company', name: 'Name', production: 'Production', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit (game)' };
+  let sortKey = $state('profit');
+  let sortDesc = $state(true);
+  function sortBy(k) {
+    if (sortKey === k) sortDesc = !sortDesc;
+    else { sortKey = k; sortDesc = k !== 'company' && k !== 'name'; }
+  }
+  const sortedAll = $derived([...all].sort((a, b) => {
+    const [x, y] = [a[sortKey], b[sortKey]];
+    const o = typeof x === 'string' ? x.localeCompare(y) : x - y;
+    return sortDesc ? -o : o;
+  }));
 
   const totals = $derived(companies.reduce((acc, c) => {
     for (const e of ecoEmployees[c.id] ?? []) {
@@ -44,7 +62,7 @@
   <label class="pv">
     <span>Value of 1 production point: copy it from any employee's "Estimated profit" tooltip (the number after ×, e.g. 0.1012)</span>
     <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={pointValue.toFixed(4)} />
-    {#if !(ecoSettings.pointValue > 0)}<small class="muted">Using an estimate from today's prices ({fmt(pointValue, 4)}); the game's own profit numbers match once you type in its value.</small>{/if}
+    {#if !(ecoSettings.pointValue > 0)}<small class="muted">Using an estimate {estimateNote} ({fmt(pointValue, 4)}); the game's own profit numbers match once you type in its value.</small>{/if}
   </label>
   <p class="muted small">Saved in this browser. "Profit (game)" is the game's own estimate. The column next to it values the output at what the company's good actually sells for per point: what you really earn when you sell it.</p>
   <dl class="big">
@@ -54,6 +72,37 @@
     <div><dt>Profit per day</dt><dd class="num" class:good={totals.profit >= 0} class:bad={totals.profit < 0}>{fmt(totals.profit, 2)} G</dd></div>
   </dl>
 </section>
+
+{#if all.length > 1}
+  <section class="card" aria-labelledby="workforce-title">
+    <h2 id="workforce-title">Workforce</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          {#each Object.entries(COLS) as [k, label] (k)}
+            <th class:num={!['company', 'name'].includes(k)} aria-sort={sortKey === k ? (sortDesc ? 'descending' : 'ascending') : 'none'}>
+              <button class="sort" class:active={sortKey === k} onclick={() => sortBy(k)}>{label} <span aria-hidden="true">{sortKey === k ? (sortDesc ? '▼' : '▲') : '↕'}</span></button>
+            </th>
+          {/each}
+        </tr></thead>
+        <tbody>
+          {#each sortedAll as r, i (i)}
+            <tr>
+              <td><img src={itemImage(r.good, items)} alt="" width="18" height="18" class="mini" /> {r.company}</td>
+              <td>{r.name}</td>
+              <td class="num">{r.production}</td>
+              <td class="num">{fmt(r.points, 1)}</td>
+              <td class="num">{fmt(r.payroll, 2)}</td>
+              <td class="num" title="Payroll at which this employee would make exactly nothing">{fmt(r.breakEven, 2)}</td>
+              <td class="num"><strong class:good={r.profit >= 0} class:bad={r.profit < 0}>{r.profit >= 0 ? '+' : ''}{fmt(r.profit, 2)}</strong></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted small">Break-even payroll: the most an employee could be paid per day before they cost more than they make (at the game's point value). Far below it is a keeper; above it, train their wage down or replace them.</p>
+  </section>
+{/if}
 
 {#each companies.filter((c) => !c.disabled) as c (c.id)}
   {@const list = ecoEmployees[c.id] ?? []}
@@ -112,6 +161,9 @@
   .num { text-align: right; white-space: nowrap; }
   input { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 7px; color: var(--text); font-size: 14px; width: 80px; }
   input.name { width: 150px; }
+  .sort { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+  .sort.active { color: var(--text); }
+  .mini { vertical-align: middle; border-radius: 4px; }
   .icon { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px; }
   .add { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); color: var(--text); border: 1px dashed var(--line); border-radius: var(--radius-sm); padding: 7px 12px; cursor: pointer; }
 </style>

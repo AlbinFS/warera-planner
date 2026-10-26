@@ -8,9 +8,38 @@
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import { itemLabel } from '../lib/market.js';
   import PlayerCard from './PlayerCard.svelte';
+  import { cached } from '../lib/warera.js';
+  import { loadContracts } from '../lib/unit.js';
   import GearStrip from './GearStrip.svelte';
 
   let { data } = $props();
+
+  // Real contracts to fill the terms from: the player's unit's, then open auctions.
+  let realContracts = $state.raw([]);
+  let countryNames = $state.raw({});
+  let pickedContract = $state('');
+  $effect(() => {
+    const id = planner.player?.id;
+    if (!id) return;
+    (async () => {
+      const user = await cached('user.getUserById', { userId: id }, 60 * 1000).catch(() => null);
+      const [mine, open, countries] = await Promise.all([
+        user?.mu ? loadContracts(user.mu).catch(() => []) : [],
+        cached('mercenaryContractAuction.getPaginatedAuctions', { status: 'active', limit: 50 }, 60 * 1000).then((r) => r.items ?? []).catch(() => []),
+        cached('country.getAllCountries', {}, 60 * 60 * 1000).catch(() => []),
+      ]);
+      countryNames = Object.fromEntries((countries ?? []).map((c) => [c._id, c.name]));
+      const seen = new Set(mine.map((c) => c._id));
+      realContracts = [...mine.map((c) => ({ ...c, mine: true })), ...open.filter((c) => !seen.has(c._id)).sort((a, b) => b.currentPerK - a.currentPerK)];
+    })();
+  });
+  const chosen = $derived(realContracts.find((c) => c._id === pickedContract) ?? null);
+  function useContract(id) {
+    pickedContract = id;
+    const c = realContracts.find((x) => x._id === id);
+    if (c) terms.bounty = Math.round(c.currentPerK * 1000) / 1000;
+  }
+  const contractText = (c) => `${c.mine ? 'Your unit: ' : 'Open auction: '}${fmt(c.currentPerK, 3)} G per 1k · min ${fmtDamage(c.minimumDamage)} · ${fmt(c.currentPayout, 0)} G · for ${countryNames[c.forCountry] ?? 'a country'}${c.battleActive === false ? ' · battle over' : ''}`;
 
   const NAMES = {
     attack: 'Attack', precision: 'Precision', criticalChance: 'Crit chance', criticalDamages: 'Crit damage', armor: 'Armor',
@@ -131,6 +160,16 @@
 
   <section class="card" aria-labelledby="terms-title">
     <h2 id="terms-title">Contract</h2>
+    {#if realContracts.length}
+      <label class="real">
+        <span>Fill from a real contract</span>
+        <select value={pickedContract} onchange={(e) => useContract(e.currentTarget.value)}>
+          <option value="">Pick a contract (optional)</option>
+          {#each realContracts as c (c._id)}<option value={c._id}>{contractText(c)}</option>{/each}
+        </select>
+        {#if chosen}<small class="muted">Bounty set to {fmt(chosen.currentPerK, 3)} G per 1k. The contract pays out up to {fmt(chosen.currentPayout, 0)} G when the unit reaches {fmtDamage(chosen.minimumDamage)} damage; see the Unit page for whether your unit can.</small>{/if}
+      </label>
+    {/if}
     <form class="terms" onsubmit={(e) => { e.preventDefault(); run(); }}>
       <label class="wide">
         <span>Optimize</span>
@@ -251,6 +290,7 @@
   .guide h2 { text-transform: none; letter-spacing: 0; font-size: 16px; color: var(--text); margin-bottom: 8px; }
   .guide ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); }
   .guide strong { color: var(--text); font-weight: 600; }
+  .real { display: grid; gap: 4px; font-size: 12px; color: var(--muted); margin-bottom: 12px; max-width: 760px; }
   .terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: end; }
   .terms .wide { grid-column: span 2; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }

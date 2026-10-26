@@ -35,10 +35,15 @@ export const playerStatus = $state({ loading: false, error: '' });
 /** Finds a player by name and loads them, remembering them for the next visit. */
 export async function loadByName(name) {
   if (!name?.trim()) return;
+  await loadUser(() => findPlayer(name.trim()));
+}
+
+/** Loads a player from a profile (or a function that finds one), remembering them for the next visit. */
+export async function loadUser(userOrFinder) {
   playerStatus.loading = true;
   playerStatus.error = '';
   try {
-    await loadPlayer(await findPlayer(name.trim()));
+    await loadPlayer(typeof userOrFinder === 'function' ? await userOrFinder() : userOrFinder);
     try { localStorage.setItem(LAST_PLAYER, planner.player.username); } catch {}
   } catch (err) {
     playerStatus.error = err.message;

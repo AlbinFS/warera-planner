@@ -30,7 +30,13 @@
     loadCompanies(id).then((c) => { companies = c; error = ''; }).catch((err) => (error = err.message)).finally(() => (loading = false));
   });
 
-  const estimate = $derived(estimatePointValue(items, data.market.itemPrices));
+  // The point value: from collected raw-material trades once there are a few
+  // days of them (the game averages 7 days), else from today's prices.
+  let fromTrades = $state.raw(null);
+  fetch('/api/point-value').then((r) => (r.ok ? r.json() : null)).then((v) => (fromTrades = v)).catch(() => {});
+  const useTrades = $derived(fromTrades?.days >= 3);
+  const estimate = $derived(useTrades ? fromTrades.value : estimatePointValue(items, data.market.itemPrices));
+  const estimateNote = $derived(useTrades ? `from ${fromTrades.days} days of raw-material trades` : "from today's raw-material prices");
   const pointValue = $derived(ecoSettings.pointValue > 0 ? ecoSettings.pointValue : estimate);
   const goods = $derived(goodsProfit(items, data.market.itemPrices));
   const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0));
@@ -63,7 +69,7 @@
 <div class="page">
   <section class="card intro">
     <h2>Eco mode</h2>
-    <p class="muted">For players who earn from their companies instead of fighting. Built for the v0.27 update (employees). Prices are today's market; the value of 1 production point is estimated from raw materials at <strong>{pointValue.toFixed(4)} G</strong>{ecoSettings.pointValue > 0 ? ' (your number)' : ''}.</p>
+    <p class="muted">For players who earn from their companies instead of fighting. Built for the v0.27 update (employees). Prices are today's market; the value of 1 production point is <strong>{pointValue.toFixed(4)} G</strong> ({ecoSettings.pointValue > 0 ? 'your number' : estimateNote}).</p>
     {#if !planner.player}<p class="warn">Load your player on the planner first: the eco tools use your level, skills and companies.</p>{/if}
     {#if error}<p class="error">{error}</p>{/if}
   </section>
@@ -80,13 +86,13 @@
     {#if loading && !companies.length}
       <p class="muted">Loading your companies…</p>
     {:else if tab === 'skills'}
-      <EcoSkills {plan} {config} {fightPoints} estimate={estimate} />
+      <EcoSkills {plan} {config} {fightPoints} {estimate} {estimateNote} />
     {:else if tab === 'playground'}
       <EcoPlayground {plan} {config} market={data.market} />
     {:else if tab === 'production'}
       <EcoProduction {companies} {goods} {perPoint} {config} prices={data.market.itemPrices} />
     {:else}
-      <EcoEmployees {companies} {perPoint} {pointValue} {items} />
+      <EcoEmployees {companies} {perPoint} {pointValue} {items} {estimateNote} />
     {/if}
   {/if}
 </div>

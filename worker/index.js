@@ -68,12 +68,35 @@ async function unitContracts(env, request) {
   return json(`{"items":[${results.map((r) => r.body).join(',')}]}`, 200, 60);
 }
 
+/**
+ * Value of 1 production point from the last 7 days of raw-material trades:
+ * each raw material's average traded price per production point, averaged.
+ * `days` says how much history is behind it (it fills up over a week).
+ */
+async function pointValue(env) {
+  await ensureSchema(env.DB);
+  const config = await readDataset(env.DB, 'game-config');
+  if (!config) return json({ error: 'No game config yet.' }, 503);
+  const items = JSON.parse(config.body).items ?? {};
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { results } = await env.DB.prepare(
+    'SELECT code, SUM(money) AS money, SUM(quantity) AS quantity, SUM(trades) AS trades, COUNT(DISTINCT day) AS days FROM raw_days WHERE day >= ? GROUP BY code',
+  ).bind(since).all();
+  const perPoint = results.filter((r) => r.quantity > 0 && items[r.code]?.productionPoints)
+    .map((r) => ({ code: r.code, perPoint: r.money / r.quantity / items[r.code].productionPoints, trades: r.trades, days: r.days }));
+  if (!perPoint.length) return json({ error: 'Raw-material trades are still being collected.' }, 503);
+  const value = perPoint.reduce((s, r) => s + r.perPoint, 0) / perPoint.length;
+  const days = Math.max(...perPoint.map((r) => r.days));
+  return json({ value, days, trades: perPoint.reduce((s, r) => s + r.trades, 0), materials: perPoint }, 200, 300);
+}
+
 const routes = {
   '/api/health': () => json({ ok: true, time: new Date().toISOString() }),
   '/api/game-config': (env) => dataset(env, 'game-config'),
   '/api/item-prices': (env) => dataset(env, 'item-prices'),
   '/api/equipment-prices': (env) => equipmentPrices(env),
   '/api/contracts': (env, request) => unitContracts(env, request),
+  '/api/point-value': (env) => pointValue(env),
 };
 
 export default {

@@ -7,7 +7,7 @@
   import Icon from './Icon.svelte';
   import { mdiFactory, mdiLightningBolt, mdiAccountGroup, mdiCrown, mdiAccountStar } from '@mdi/js';
 
-  let { plan, config, fightPoints, estimate } = $props();
+  let { plan, config, fightPoints, estimate, estimateNote = "from today's prices" } = $props();
 
   const META = {
     companies: { label: 'Companies', icon: mdiAccountGroup, what: 'How many companies run at once (engines and employees only work in running companies).' },
@@ -61,7 +61,7 @@
     <label>
       <span>Value of 1 production point (G)</span>
       <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={estimate.toFixed(4)} />
-      <small class="help">In the game, hover any employee's profit (e.g. +2.13): it shows "points × <strong>0.1012</strong>". Copy that number. Empty: estimated from today's prices ({estimate.toFixed(4)}).</small>
+      <small class="help">In the game, hover any employee's profit (e.g. +2.13): it shows "points × <strong>0.1012</strong>". Copy that number. Empty: {estimate.toFixed(4)}, {estimateNote}.</small>
     </label>
     <label>
       <span>Trainings per day</span>

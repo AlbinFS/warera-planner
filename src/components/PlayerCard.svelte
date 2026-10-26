@@ -1,9 +1,8 @@
 <script>
   import { cached } from '../lib/warera.js';
-  import { planner, loadByName, playerStatus, lastPlayerName } from '../lib/planner.svelte.js';
+  import { planner, loadByName, loadUser, playerStatus, lastPlayerName } from '../lib/planner.svelte.js';
+  import SearchBox from './SearchBox.svelte';
   import { flagImage } from '../lib/visual.js';
-  import Icon from './Icon.svelte';
-  import { mdiAccountSearch } from '@mdi/js';
 
   let name = $state(planner.player?.username ?? lastPlayerName());
   let country = $state(null);
@@ -47,8 +46,8 @@
     <p class="intro"><strong>Start with your WarEra username.</strong> Your skills and the gear you wear are loaded, then you can change anything and see the damage and cost update.</p>
   {/if}
   <form onsubmit={(e) => { e.preventDefault(); load(name); }}>
-    <label class="visually-hidden" for="player-name">Username</label>
-    <span class="search"><Icon path={mdiAccountSearch} size={18} /><input id="player-name" bind:value={name} placeholder="WarEra username" autocomplete="off" spellcheck="false" /></span>
+    <SearchBox kinds={['players']} placeholder="WarEra username" bind:value={name} busy={playerStatus.loading}
+      onpick={(r) => loadUser(r.user).then(() => (name = planner.player?.username ?? name))} />
     <button disabled={playerStatus.loading}>{playerStatus.loading ? 'Loading…' : planner.player ? 'Load' : 'Load my build'}</button>
   </form>
   {#if playerStatus.error}<p class="error" role="alert">{playerStatus.error}</p>{/if}
@@ -64,12 +63,6 @@
   .intro { margin: 0 0 12px; }
   .player.empty { border-color: var(--accent); }
   form { display: flex; gap: 8px; }
-  .search {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 10px;
-    background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted);
-  }
-  .search input { flex: 1; min-width: 0; background: none; border: 0; padding: 9px 0; color: var(--text); outline: none; }
-  .search:focus-within { outline: 2px solid var(--accent); }
   button {
     background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm);
     padding: 8px 16px; font-weight: 600; cursor: pointer; white-space: nowrap;
