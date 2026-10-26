@@ -50,7 +50,7 @@
   {#if planner.player?.shared}
     <div class="who">
       <div>
-        <div class="name"><strong>Shared build</strong></div>
+        <div class="name"><strong>{planner.player.label ?? 'Shared build'}</strong></div>
         <div class="muted small">Level {planner.player.level} · military rank +{planner.player.militaryRankPercent}% · load your own player below to compare</div>
       </div>
       <div class="level num" title="Level">{planner.player.level}</div>

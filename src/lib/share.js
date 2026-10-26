@@ -1,9 +1,9 @@
 /**
- * Share links: the whole build (skills, gear, food, fight settings, level
- * and military rank) packed into the link, so no server stores anything.
- * No player name or ID goes into the link.
+ * One compact format for a build (skills, prestige, gear, food, fight
+ * settings, level and military rank), used by share links and saved builds.
+ * No player name or ID is part of it.
  *
- * Format: ?b=<base64url of a compact JSON array>, version first.
+ * Share links: ?b=<base64url of the packed JSON array>, version first.
  */
 import { ALL_SKILLS, SLOTS } from '../engine/inputs.js';
 
@@ -12,15 +12,15 @@ const VERSION = 1;
 const toBase64Url = (text) => btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fromBase64Url = (code) => new TextDecoder().decode(Uint8Array.from(atob(code.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
 
-/** A link to this page that opens the planned build. */
-export function shareLink(planner, settings) {
+/** The planned build as a compact array. */
+export function pack(planner, settings) {
   const p = planner.player;
   const gear = SLOTS.map((slot) => {
     const g = planner.gear[slot];
     if (!g) return 0;
     return typeof g === 'string' ? g : [g.code, ...Object.entries(g.skills).sort(([a], [b]) => a.localeCompare(b)).flat()];
   });
-  const packed = [
+  return [
     VERSION,
     p?.level ?? 1,
     p?.militaryRankPercent ?? 0,
@@ -30,13 +30,12 @@ export function shareLink(planner, settings) {
     planner.food,
     [settings.pill ? 1 : 0, Number(settings.battleBonus) || 0, settings.windowHours],
   ];
-  return `${location.origin}/?b=${toBase64Url(JSON.stringify(packed))}`;
 }
 
-/** The build in a share code, or null if it can't be read. */
-export function readShared(code) {
+/** A packed build back as { player, skills, gear, food, settings }, or null if it can't be read. */
+export function unpack(packed) {
   try {
-    const [version, level, rank, skills, prestige, gear, food, [pill, bonus, windowHours]] = JSON.parse(fromBase64Url(code));
+    const [version, level, rank, skills, prestige, gear, food, [pill, bonus, windowHours]] = packed;
     if (version !== VERSION) return null;
     return {
       player: {
@@ -57,6 +56,20 @@ export function readShared(code) {
       food,
       settings: { pill: !!pill, battleBonus: bonus, windowHours },
     };
+  } catch {
+    return null;
+  }
+}
+
+/** A link to this site that opens the planned build. */
+export function shareLink(planner, settings) {
+  return `${location.origin}/?b=${toBase64Url(JSON.stringify(pack(planner, settings)))}`;
+}
+
+/** The build in a share code, or null if it can't be read. */
+export function readShared(code) {
+  try {
+    return unpack(JSON.parse(fromBase64Url(code)));
   } catch {
     return null;
   }

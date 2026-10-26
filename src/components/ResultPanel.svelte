@@ -10,8 +10,12 @@
   import { evaluateBuild, findHints } from '../lib/compute.js';
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import Icon from './Icon.svelte';
-  import { mdiArrowUpBold, mdiArrowDownBold, mdiTshirtCrew, mdiSchool, mdiCheckCircle, mdiLinkVariant } from '@mdi/js';
+  import { mdiArrowUpBold, mdiArrowDownBold, mdiTshirtCrew, mdiSchool, mdiCheckCircle, mdiLinkVariant, mdiContentSave } from '@mdi/js';
   import { shareLink } from '../lib/share.js';
+  import { saveBuild } from '../lib/saved.svelte.js';
+  import { itemLabel } from '../lib/market.js';
+  import { navigate } from '../lib/route.svelte.js';
+  import Dialog from './Dialog.svelte';
 
   let { data, onresult, onoptimize } = $props();
 
@@ -47,6 +51,21 @@
       busy = false;
       hints = { cheaper: null, stronger: null, loading: false };
     }
+  }
+
+  // Saving: a name suggested from the weapon, damage and cost.
+  let saving = $state(false);
+  let saveName = $state('');
+  let justSaved = $state(null);
+  function startSave() {
+    const weapon = planner.gear.weapon?.code;
+    saveName = [weapon ? itemLabel(weapon) : null, result && !result.error ? `${fmtDamage(result.damage)} · ${fmt(result.cost, 0)} G` : null].filter(Boolean).join(' · ');
+    justSaved = null;
+    saving = true;
+  }
+  function confirmSave(event) {
+    event.preventDefault();
+    justSaved = saveBuild(saveName, planner, settings, result && !result.error ? result : null);
   }
 
   let copied = $state(false);
@@ -104,11 +123,31 @@
   <div class="actions">
     <button class="action" onclick={() => onoptimize?.('gear')}><Icon path={mdiTshirtCrew} size={18} /> Optimize gear</button>
     <button class="action" onclick={() => onoptimize?.('skills')}><Icon path={mdiSchool} size={18} /> Optimize skills</button>
+    <button class="action ghost" onclick={startSave} title="Keep this build in this browser to load or compare later">
+      <Icon path={mdiContentSave} size={18} /> Save
+    </button>
     <button class="action ghost" onclick={copyLink} title="A link that opens exactly this build (no player name in it)">
       <Icon path={mdiLinkVariant} size={18} /> {copied ? 'Link copied' : 'Copy link'}
     </button>
   </div>
 </section>
+
+<Dialog bind:open={saving} title="Save this build">
+  {#if justSaved}
+    <p>Saved as <strong>{justSaved.name}</strong>. Saved builds stay in this browser.</p>
+    <div class="row">
+      <button class="action" onclick={() => { saving = false; navigate('/builds'); }}>See saved builds</button>
+      <button class="action ghost" onclick={() => (saving = false)}>Keep planning</button>
+    </div>
+  {:else}
+    <form class="row" onsubmit={confirmSave}>
+      <label class="visually-hidden" for="save-name">Name</label>
+      <input id="save-name" bind:value={saveName} placeholder="Name" maxlength="60" />
+      <button class="action">Save</button>
+    </form>
+    <p class="muted small">Skills, gear, food and fight settings are saved, in this browser only.</p>
+  {/if}
+</Dialog>
 
 <style>
   .summary {
@@ -141,6 +180,9 @@
     background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm);
     padding: 9px 14px; font-weight: 600; cursor: pointer;
   }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row input { flex: 1; min-width: 200px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; color: var(--text); }
+  .small { font-size: 13px; }
   .action.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
   .error { color: var(--bad); margin: 0; }
   @media (max-width: 700px) {

@@ -7,11 +7,13 @@
   import OptimizePanel from './components/OptimizePanel.svelte';
   import DataStatus from './components/DataStatus.svelte';
   import ContractPage from './components/ContractPage.svelte';
+  import BuildsPage from './components/BuildsPage.svelte';
   import Dialog from './components/Dialog.svelte';
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
   import { route, navigate } from './lib/route.svelte.js';
-  import { mdiShieldSword, mdiFileDocumentOutline } from '@mdi/js';
+  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple } from '@mdi/js';
+  import { saved } from './lib/saved.svelte.js';
 
   // Raw: market data never changes after loading, and the workers need plain objects.
   let data = $state.raw(null);
@@ -25,8 +27,9 @@
   const PAGES = [
     { path: '/', label: 'Planner', icon: mdiShieldSword, hint: 'Your build: damage, cost, and how to improve it' },
     { path: '/contract', label: 'Contract', icon: mdiFileDocumentOutline, hint: 'The best build for a bounty contract' },
+    { path: '/builds', label: 'Saved builds', icon: mdiBookmarkMultiple, hint: 'Your saved builds, and side-by-side comparison' },
   ];
-  const page = $derived(route.path === '/contract' ? '/contract' : '/');
+  const page = $derived(PAGES.some((p) => p.path === route.path) ? route.path : '/');
 
   function go(event, path) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
@@ -46,6 +49,7 @@
     {#each PAGES as p (p.path)}
       <a href={p.path} title={p.hint} aria-current={page === p.path ? 'page' : undefined} onclick={(e) => go(e, p.path)}>
         <Icon path={p.icon} size={18} /> {p.label}
+        {#if p.path === '/builds' && saved.builds.length}<span class="count">{saved.builds.length}</span>{/if}
       </a>
     {/each}
   </nav>
@@ -61,6 +65,9 @@
   </main>
 {:else if page === '/contract'}
   <ContractPage {data} />
+  <footer><DataStatus /></footer>
+{:else if page === '/builds'}
+  <BuildsPage {data} />
   <footer><DataStatus /></footer>
 {:else}
   <ResultPanel {data} onresult={(r) => (current = r)} onoptimize={openOptimizer} />
@@ -90,6 +97,8 @@
     display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none;
     padding: 6px 12px; border-radius: var(--radius-sm);
   }
+  .count { font-size: 11px; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 6px; font-weight: 700; }
+  nav { flex-wrap: wrap; }
   nav a:hover { color: var(--text); background: var(--surface-2); }
   nav a[aria-current='page'] { color: var(--text); background: var(--surface-2); box-shadow: inset 0 -2px var(--accent); }
   main {

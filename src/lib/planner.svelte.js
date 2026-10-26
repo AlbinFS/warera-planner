@@ -52,13 +52,20 @@ export function applyBuild(equipment, foodCode) {
   if (foodCode) planner.food = foodCode;
 }
 
-// A share link (?b=…) opens that build, with its fight settings.
+/**
+ * Puts a stored build (share link or saved build) into the planner, with its
+ * fight settings. A loaded player stays loaded and only takes the build's
+ * skills, gear and food; otherwise the build's own level and rank are used.
+ */
+export function applyState(state, label = 'Shared build') {
+  if (!planner.player || planner.player.shared) planner.player = { ...state.player, label };
+  planner.skills = state.skills;
+  planner.gear = state.gear;
+  planner.food = state.food;
+  Object.assign(settings, state.settings);
+}
+
+// A share link (?b=…) opens that build.
 const sharedCode = new URLSearchParams(location.search).get('b');
 const shared = sharedCode ? readShared(sharedCode) : null;
-if (shared) {
-  planner.player = shared.player;
-  planner.skills = shared.skills;
-  planner.gear = shared.gear;
-  planner.food = shared.food;
-  Object.assign(settings, shared.settings);
-}
+if (shared) applyState(shared);
