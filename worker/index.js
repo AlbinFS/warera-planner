@@ -54,7 +54,9 @@ async function equipmentPrices(env) {
     return `{"fetchedAt":"${iso(oldest)}","stale":${Date.now() - oldest > STALE_AFTER_MS.equipment},"ready":${ready},`
       + `"source":"official trade history","averageWindowMinutes":10080,"minimumTransactionCount":5,"items":[${items}]}`;
   });
-  return body ? json(body, 200, 60) : json({ error: 'Equipment prices are still being collected.' }, 503);
+  return body
+    ? json(body, 200, 60)
+    : json({ error: 'No equipment prices yet. They are built from the official trade history, which is collected while the official API is up (about an hour for a full set).' }, 503);
 }
 
 const routes = {

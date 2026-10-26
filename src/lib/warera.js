@@ -7,12 +7,22 @@ const API = 'https://api2.warera.io/trpc/';
 
 const cache = new Map();
 
+const API_DOWN = "Can't reach the official WarEra API right now. It may be down; try again in a few minutes.";
+
 async function call(procedure, input = {}) {
-  const res = await fetch(API + procedure, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
+  let res;
+  try {
+    res = await fetch(API + procedure, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    // The browser only says "Failed to fetch": the API is unreachable, or down
+    // and answering without CORS headers.
+    throw new Error(API_DOWN);
+  }
+  if (res.status >= 500) throw new Error(API_DOWN);
   const body = await res.json().catch(() => null);
   if (!res.ok || body?.result?.data === undefined) {
     throw new Error(body?.error?.message ?? `${procedure} failed (${res.status})`);
@@ -44,8 +54,12 @@ async function siteData(path, procedure) {
       return { data: body.data, fetchedAt: new Date(body.fetchedAt), stale: body.stale, source: 'site' };
     }
   } catch {}
-  const data = await cached(procedure);
-  return { data, fetchedAt: new Date(), stale: false, source: 'official API' };
+  try {
+    const data = await cached(procedure);
+    return { data, fetchedAt: new Date(), stale: false, source: 'official API' };
+  } catch {
+    throw new Error('The official WarEra API is down and no copy is saved yet. The site saves one as soon as the API answers again.');
+  }
 }
 
 const once = (load) => {
