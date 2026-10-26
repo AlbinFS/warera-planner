@@ -26,9 +26,20 @@
     : Math.max(0, level * 4 - fightPoints));
 
   const now = $derived(dailyIncome(current, plan, config));
-  const best = $derived(optimizeEcoSkills(plan, config, {
-    budget, playerLevel: level, minimum: { leadership: Math.min(Number(ecoSettings.minLeadership) || 0, ecoMaxLevel(skills, 'leadership', level)) },
-  }));
+
+  // Runs when the button is pressed; changing a setting afterwards marks the result as out of date.
+  let best = $state.raw(null);
+  let ran = $state(false);
+  let ranWith = $state('');
+  const inputsKey = $derived(JSON.stringify([budget, ecoSettings.minLeadership, plan]));
+  function optimize() {
+    best = optimizeEcoSkills(plan, config, {
+      budget, playerLevel: level, minimum: { leadership: Math.min(Number(ecoSettings.minLeadership) || 0, ecoMaxLevel(skills, 'leadership', level)) },
+    });
+    ran = true;
+    ranWith = inputsKey;
+  }
+  const outdated = $derived(ran && ranWith !== inputsKey);
   const employeeCount = $derived(plan.companies.reduce((s, c) => s + (c.employees?.length ?? 0), 0));
   const delta = (s) => (best ? best.levels[s] - (current[s] ?? 0) : 0);
 </script>
@@ -49,25 +60,31 @@
     {/if}
     <label>
       <span>Value of 1 production point (G)</span>
-      <input type="number" step="0.001" min="0" bind:value={ecoSettings.pointValue} placeholder={estimate.toFixed(4)} />
+      <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={estimate.toFixed(4)} />
+      <small class="help">In the game, hover any employee's profit (e.g. +2.13): it shows "points × <strong>0.1012</strong>". Copy that number. Empty: estimated from today's prices ({estimate.toFixed(4)}).</small>
     </label>
     <label>
-      <span>Trainings per day (10 energy each)</span>
+      <span>Trainings per day</span>
       <input type="number" min="0" max="60" bind:value={ecoSettings.trainingsPerDay} />
+      <small class="help">How many employee trainings you do each day (each costs 10 energy). Count your employees who still have training left. Not training: 0.</small>
     </label>
     <label>
       <span>Keep Leadership at least</span>
       <input type="number" min="0" max="10" bind:value={ecoSettings.minLeadership} />
+      <small class="help">Leadership gives better training cards but no money directly, so the optimizer drops it unless you set a minimum. Training employees now: guides suggest high (e.g. 5–10). Done training: 0.</small>
     </label>
-    <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy</label>
+    <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy <small class="help">(off until confirmed how many points one self-work gives)</small></label>
   </div>
-  <p class="muted small">
-    The game shows the value of 1 production point; type it in to replace the estimate.
-    {#if !employeeCount}<strong>No employees entered yet:</strong> Management only pays off with employees, so add yours in the Employees tab for a real answer.{/if}
-  </p>
+  <div class="go">
+    <button class="primary" onclick={optimize}>Find best eco skills</button>
+    {#if outdated}<span class="warn">Settings changed: press again to update.</span>{/if}
+    {#if !employeeCount}<span class="muted small"><strong>No employees entered yet:</strong> Management only pays off with employees, so add yours in the Employees tab first.</span>{/if}
+  </div>
 </section>
 
-{#if best}
+{#if !ran}
+  <section class="card"><p class="muted">Set the options above and press <strong>Find best eco skills</strong>. You earn about <strong>{fmt(now.total, 1)} G a day</strong> from your companies now.</p></section>
+{:else if best}
   <section class="card" aria-labelledby="eco-out-title">
     <h2 id="eco-out-title">Best eco skills</h2>
     <dl class="big">
@@ -102,7 +119,10 @@
 {/if}
 
 <style>
-  .inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: end; }
+  .inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; align-items: start; }
+  .help { font-size: 11px; color: var(--muted); line-height: 1.35; }
+  .go { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); padding: 9px 16px; font-weight: 600; cursor: pointer; }
   label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
   label.check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
   input:not([type='checkbox']), select { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 10px; color: var(--text); font-size: 14px; }

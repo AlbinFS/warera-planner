@@ -10,8 +10,9 @@
   import EcoSkills from './EcoSkills.svelte';
   import EcoProduction from './EcoProduction.svelte';
   import EcoEmployees from './EcoEmployees.svelte';
+  import EcoPlayground from './EcoPlayground.svelte';
   import Icon from './Icon.svelte';
-  import { mdiSchool, mdiFactory, mdiAccountHardHat } from '@mdi/js';
+  import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant } from '@mdi/js';
 
   let { data } = $props();
   const items = $derived(data.market.gameConfigItems);
@@ -53,6 +54,7 @@
 
   const TABS = [
     { id: 'skills', label: 'Eco skills', icon: mdiSchool },
+    { id: 'playground', label: 'Skill playground', icon: mdiTuneVariant },
     { id: 'production', label: 'Production & upgrades', icon: mdiFactory },
     { id: 'employees', label: 'Employees', icon: mdiAccountHardHat, wip: true },
   ];
@@ -79,6 +81,8 @@
       <p class="muted">Loading your companies…</p>
     {:else if tab === 'skills'}
       <EcoSkills {plan} {config} {fightPoints} estimate={estimate} />
+    {:else if tab === 'playground'}
+      <EcoPlayground {plan} {config} market={data.market} />
     {:else if tab === 'production'}
       <EcoProduction {companies} {goods} {perPoint} {config} prices={data.market.itemPrices} />
     {:else}
