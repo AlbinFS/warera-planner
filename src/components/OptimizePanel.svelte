@@ -140,9 +140,22 @@
     };
   }
 
-  function applySkills() {
+  /**
+   * New skills change what the gear is worth, so by default the gear is
+   * re-picked too: the cheapest gear that keeps the current damage.
+   */
+  let applying = $state(false);
+  async function applySkills(withGear = true) {
+    const keepDamage = current && !current.error ? current.damage : null;
     for (const s of ALL_SKILLS) planner.skills[s] = found.skills[s];
-    if (found.budgetBuild) applyBuild(found.budgetBuild.equipment, found.budgetBuild.food);
+    if (found.budgetBuild) {
+      applyBuild(found.budgetBuild.equipment, found.budgetBuild.food);
+    } else if (withGear && keepDamage) {
+      applying = true;
+      const g = await optimizeEquipment(data.market, planner, settings, keepDamage).catch(() => null);
+      applying = false;
+      if (g && !g.error) applyBuild(g.equipment, g.food);
+    }
     found = null;
   }
 
@@ -291,7 +304,15 @@
         {#if found.elapsedMs >= 44000}The search hit its 45-second limit; running it again may find a slightly better layout.{/if}
       </p>
       {#if changed.length || found.budgetBuild}
-        <button class="primary" onclick={applySkills}>Apply {found.budgetBuild ? 'skills and gear' : 'these skills'}</button>
+        {#if found.budgetBuild}
+          <button class="primary" onclick={() => applySkills()}>Apply skills and gear</button>
+        {:else}
+          <div class="apply">
+            <button class="primary" onclick={() => applySkills(true)} disabled={applying}>{applying ? 'Picking gear…' : 'Apply skills + matching gear'}</button>
+            <button class="secondary" onclick={() => applySkills(false)} disabled={applying}>Skills only</button>
+          </div>
+          <p class="muted small">"Matching gear" re-picks the cheapest gear that keeps your current damage with the new skills. These skills are best on average across the damage range for a full day; for a contract, the Contract page's skills fit better.</p>
+        {/if}
       {/if}
     </div>
   {/if}
@@ -322,6 +343,7 @@
   .found { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
   .found p { margin: 0 0 8px; }
   .nearby { margin-top: 14px; }
+  .apply { display: flex; gap: 8px; flex-wrap: wrap; }
   .strip { margin: 4px 0 10px; }
   .nearby h3 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .05em; }
   tr.target td { background: color-mix(in srgb, var(--accent) 8%, transparent); }

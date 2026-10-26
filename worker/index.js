@@ -59,11 +59,21 @@ async function equipmentPrices(env) {
     : json({ error: 'No equipment prices yet. They are built from the official trade history, which is collected while the official API is up (about an hour for a full set).' }, 503);
 }
 
+/** A unit's recent contracts (won or currently led), newest first. */
+async function unitContracts(env, request) {
+  const mu = new URL(request.url).searchParams.get('mu');
+  if (!mu || !/^[a-f0-9]{24}$/.test(mu)) return json({ error: 'Give ?mu=<unit id>.' }, 400);
+  await ensureSchema(env.DB);
+  const { results } = await env.DB.prepare('SELECT body FROM contracts WHERE winner = ? ORDER BY created_at DESC LIMIT 50').bind(mu).all();
+  return json(`{"items":[${results.map((r) => r.body).join(',')}]}`, 200, 60);
+}
+
 const routes = {
   '/api/health': () => json({ ok: true, time: new Date().toISOString() }),
   '/api/game-config': (env) => dataset(env, 'game-config'),
   '/api/item-prices': (env) => dataset(env, 'item-prices'),
   '/api/equipment-prices': (env) => equipmentPrices(env),
+  '/api/contracts': (env, request) => unitContracts(env, request),
 };
 
 export default {
@@ -74,7 +84,7 @@ export default {
       if (!route) return json({ error: 'Not found' }, 404);
       if (request.method !== 'GET' && request.method !== 'HEAD') return json({ error: 'Method not allowed' }, 405);
       try {
-        return await route(env);
+        return await route(env, request);
       } catch (err) {
         console.error(pathname, err);
         return json({ error: 'Server error' }, 500);

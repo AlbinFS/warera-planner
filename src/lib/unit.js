@@ -30,13 +30,19 @@ export async function loadMembers(unit) {
   return ids.map((_, i) => ({ user: results[i], equipment: results[ids.length + i] })).filter((m) => m.user);
 }
 
-/** The unit's mercenary contracts: ones it holds (won) or is leading (active). */
+/**
+ * The unit's mercenary contracts (won, or currently led in the auction), from
+ * this site's contract index, each marked with whether its battle still runs.
+ */
 export async function loadContracts(unitId) {
-  const pages = await Promise.all(['active', 'won'].map((status) =>
-    cached('mercenaryContractAuction.getPaginatedAuctions', { status, limit: 100 }, 60 * 1000).catch(() => ({ items: [] }))));
-  return pages.flatMap((p) => p.items ?? [])
-    .filter((c) => c.currentWinner === unitId)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const res = await fetch(`/api/contracts?mu=${encodeURIComponent(unitId)}`);
+  if (!res.ok) throw new Error('Contracts are unavailable right now.');
+  const { items } = await res.json();
+  const battleIds = [...new Set(items.map((c) => c.battle).filter(Boolean))];
+  const battles = await cachedBatch(battleIds.map((battleId) => ['battle.getById', { battleId }]), 5 * 60 * 1000).catch(() => []);
+  const running = new Map(battleIds.map((id, i) => [id, battles[i]?.isActive ?? null]));
+  return items.map((c) => ({ ...c, battleActive: running.get(c.battle) ?? null }))
+    .sort((a, b) => (b.battleActive === true) - (a.battleActive === true) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 /** Pill state from the attack skill: +60% while on the pill, a debuff after. */

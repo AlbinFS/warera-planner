@@ -20,7 +20,23 @@ const PAGE_SIZE = 100;
 const BACKFILL_PAGES = 6;
 const GAME_CONFIG_KEYS = ['items', 'skills', 'battle', 'region', 'upgradesConfig'];
 
+// Mercenary contracts: the API can't filter by unit and pages are at most 50,
+// so the job keeps an index of recent contracts by their leading/winning unit.
+const CONTRACT_PAGE = 50;
+const CONTRACT_BACKFILL_PAGES = 10;
+const CONTRACT_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
+
 const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS contracts (
+     id TEXT PRIMARY KEY,
+     winner TEXT,
+     status TEXT NOT NULL,
+     battle TEXT,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL,
+     body TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS contracts_winner ON contracts (winner, created_at)`,
   `CREATE TABLE IF NOT EXISTS datasets (name TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS equipment (
      code TEXT PRIMARY KEY,
@@ -156,6 +172,12 @@ export async function runJob(env, now = Date.now()) {
     return JSON.stringify(prices);
   });
 
+  try {
+    await refreshContracts(db, api, now);
+  } catch (err) {
+    console.warn(`contracts: ${err.message}`);
+  }
+
   if (!env.WARERA_API_KEY && !env.WARERA_API_BASE) {
     console.warn('No WARERA_API_KEY secret: equipment prices are not collected.');
     return;
@@ -192,4 +214,46 @@ export async function runJob(env, now = Date.now()) {
       console.warn(`${item.code}: ${err.message}`);
     }
   }
+}
+
+/**
+ * The newest active and won contracts, upserted by id (a contract changes
+ * as bids come in and when it is won). The first run backfills a few pages.
+ */
+async function refreshContracts(db, api, now) {
+  const { n } = await db.prepare('SELECT count(*) AS n FROM contracts').first();
+  // Only new or changed contracts are written (D1's free plan allows 100k row writes a day).
+  const save = async (items) => {
+    if (!items.length) return;
+    const stored = new Map();
+    // D1 allows at most 100 bound values per query.
+    for (let i = 0; i < items.length; i += 50) {
+      const ids = items.slice(i, i + 50).map((c) => c._id);
+      const { results } = await db.prepare(`SELECT id, updated_at FROM contracts WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+      for (const r of results) stored.set(r.id, r.updated_at);
+    }
+    const changed = items.filter((c) => stored.get(c._id) !== Date.parse(c.updatedAt ?? c.createdAt));
+    if (!changed.length) return;
+    await db.batch(changed.map((c) => db.prepare(
+      'INSERT OR REPLACE INTO contracts (id, winner, status, battle, created_at, updated_at, body) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).bind(c._id, c.currentWinner ?? null, c.status, c.battle ?? null, Date.parse(c.createdAt), Date.parse(c.updatedAt ?? c.createdAt), JSON.stringify(c))));
+  };
+
+  const [active, won] = await api.batch('mercenaryContractAuction.getPaginatedAuctions', [
+    { status: 'active', limit: CONTRACT_PAGE },
+    { status: 'won', limit: CONTRACT_PAGE },
+  ]);
+  // A contract can be in both lists for a moment, as it is won; keep one.
+  const items = [...new Map([...(active?.items ?? []), ...(won?.items ?? [])].map((c) => [c._id, c])).values()];
+  await save(items);
+
+  if (n === 0 && won?.nextCursor) {
+    let cursor = won.nextCursor;
+    for (let page = 1; page < CONTRACT_BACKFILL_PAGES && cursor; page++) {
+      const more = await api.call('mercenaryContractAuction.getPaginatedAuctions', { status: 'won', limit: CONTRACT_PAGE, cursor });
+      await save(more.items ?? []);
+      cursor = more.nextCursor;
+    }
+  }
+  await db.prepare('DELETE FROM contracts WHERE created_at < ?').bind(now - CONTRACT_KEEP_MS).run();
 }

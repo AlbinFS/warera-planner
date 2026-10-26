@@ -70,7 +70,7 @@
       countries = Object.fromEntries((countryList ?? []).map((c) => [c._id, c]));
       regions = regionMap ?? {};
       contracts = unitContracts;
-      picked = unitContracts[0]?._id ?? null;
+      picked = unitContracts.find((c) => c.battleActive !== false)?._id ?? null;
       await compute(members, id);
     } catch (err) {
       if (id === seq) { error = err.message; status = ''; unit = null; retryId = muId; }
@@ -88,7 +88,7 @@
       return { user: m.user, d, sims, safe: quantile(sims) };
     }));
     if (id !== seq) return;
-    rows = results.sort((a, b) => b.d.damage - a.d.damage);
+    rows = results;
     status = '';
   }
 
@@ -109,8 +109,37 @@
 
   const regionName = (id) => regions?.[id]?.name ?? 'a region';
   const countryName = (id) => countries[id]?.name ?? 'a country';
-  const contractLabel = (c) => `For ${countryName(c.forCountry)} (${c.forCountrySide}) · min ${fmtDamage(c.minimumDamage)} · ${fmt(c.currentPerK, 3)} G per 1k · ${fmt(c.currentPayout, 0)} G${c.roundNumber ? ` · round ${c.roundNumber}` : ''} · ${c.status === 'won' ? 'won' : 'leading'}`;
+  const contractLabel = (c) => [
+    `For ${countryName(c.forCountry)} (${c.forCountrySide})`,
+    `min ${fmtDamage(c.minimumDamage)}`,
+    `${fmt(c.currentPerK, 3)} G per 1k`,
+    `${fmt(c.currentPayout, 0)} G`,
+    c.roundNumber ? `round ${c.roundNumber}` : null,
+    c.status === 'won' ? 'won' : c.status === 'active' ? 'auction: leading' : c.status,
+    c.battleActive === false ? 'battle over' : null,
+  ].filter(Boolean).join(' · ');
   const pct = (a, b) => (b > 0 ? Math.min(100, (a / b) * 100) : 0);
+
+  // Sorting the members table: click a column to sort, again to reverse.
+  const gearValue = (gear) => Object.values(gear ?? {}).reduce((sum, g) => sum + (g && typeof g === 'object' ? data.priceOf(g.code, g.skills) || 0 : 0), 0);
+  const SORTS = {
+    name: { label: 'Member', value: (r) => r.user.username.toLowerCase(), text: true },
+    health: { label: 'Bars now', value: (r) => r.user.skills?.health?.currentBarValue ?? 0, title: 'Sorted by health now' },
+    gear: { label: 'Gear', value: (r) => gearValue(r.d.gear), title: 'Sorted by the gear’s market value' },
+    damage: { label: 'Damage now', value: (r) => r.d.damage ?? 0 },
+    safe: { label: '95% of the time', value: (r) => r.safe ?? 0, title: 'Reached 95% of the time' },
+  };
+  let sortKey = $state('damage');
+  let sortDesc = $state(true);
+  function sortBy(key) {
+    if (sortKey === key) sortDesc = !sortDesc;
+    else { sortKey = key; sortDesc = !SORTS[key].text; }
+  }
+  const sorted = $derived([...rows].sort((a, b) => {
+    const [x, y] = [SORTS[sortKey].value(a), SORTS[sortKey].value(b)];
+    const order = SORTS[sortKey].text ? String(x).localeCompare(String(y)) : x - y;
+    return sortDesc ? -order : order;
+  }));
 </script>
 
 <div class="page">
@@ -177,9 +206,18 @@
         <h2 id="members-title">Members</h2>
         <div class="scroll">
           <table>
-            <thead><tr><th>Member</th><th>Bars now</th><th>Gear</th><th>Damage now</th><th title="Reached 95% of the time">95% of the time</th></tr></thead>
+            <thead><tr>
+              {#each Object.entries(SORTS) as [key, col] (key)}
+                <th class:num={!col.text && key !== 'health' && key !== 'gear'} aria-sort={sortKey === key ? (sortDesc ? 'descending' : 'ascending') : 'none'}>
+                  <button class="sort" class:active={sortKey === key} onclick={() => sortBy(key)} title={col.title ?? `Sort by ${col.label.toLowerCase()}`}>
+                    {col.label}
+                    <span class="arrow" aria-hidden="true">{sortKey === key ? (sortDesc ? '▼' : '▲') : '↕'}</span>
+                  </button>
+                </th>
+              {/each}
+            </tr></thead>
             <tbody>
-              {#each rows as r (r.user._id)}
+              {#each sorted as r (r.user._id)}
                 <tr class:idle={!r.d.damage}>
                   <td class="who">
                     {#if r.user.avatarUrl}<img src={r.user.avatarUrl} alt="" width="30" height="30" />{/if}
@@ -238,7 +276,11 @@
   table { border-collapse: collapse; width: 100%; }
   th, td { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
   th { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
-  td.num, th:nth-child(4), th:nth-child(5) { text-align: right; white-space: nowrap; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .sort { background: none; border: 0; padding: 2px 0; color: inherit; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .sort:hover, .sort.active { color: var(--text); }
+  .arrow { font-size: 10px; opacity: .6; }
+  .sort.active .arrow { opacity: 1; color: var(--accent); }
   .dmg { font-weight: 600; }
   tr.idle td { color: var(--muted); }
   .who { display: flex; align-items: center; gap: 8px; min-width: 170px; }
