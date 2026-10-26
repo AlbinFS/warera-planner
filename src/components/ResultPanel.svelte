@@ -10,7 +10,8 @@
   import { evaluateBuild, findHints } from '../lib/compute.js';
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import Icon from './Icon.svelte';
-  import { mdiArrowUpBold, mdiArrowDownBold, mdiTshirtCrew, mdiSchool, mdiCheckCircle } from '@mdi/js';
+  import { mdiArrowUpBold, mdiArrowDownBold, mdiTshirtCrew, mdiSchool, mdiCheckCircle, mdiLinkVariant } from '@mdi/js';
+  import { shareLink } from '../lib/share.js';
 
   let { data, onresult, onoptimize } = $props();
 
@@ -46,6 +47,18 @@
       busy = false;
       hints = { cheaper: null, stronger: null, loading: false };
     }
+  }
+
+  let copied = $state(false);
+  async function copyLink() {
+    const link = shareLink(planner, settings);
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      window.prompt('Copy this link:', link);
+    }
+    copied = true;
+    setTimeout(() => (copied = false), 2000);
   }
 
   const per1k = $derived(result && !result.error && result.damage > 0 ? (result.cost / result.damage) * 1000 : NaN);
@@ -91,6 +104,9 @@
   <div class="actions">
     <button class="action" onclick={() => onoptimize?.('gear')}><Icon path={mdiTshirtCrew} size={18} /> Optimize gear</button>
     <button class="action" onclick={() => onoptimize?.('skills')}><Icon path={mdiSchool} size={18} /> Optimize skills</button>
+    <button class="action ghost" onclick={copyLink} title="A link that opens exactly this build (no player name in it)">
+      <Icon path={mdiLinkVariant} size={18} /> {copied ? 'Link copied' : 'Copy link'}
+    </button>
   </div>
 </section>
 
@@ -125,6 +141,7 @@
     background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm);
     padding: 9px 14px; font-weight: 600; cursor: pointer;
   }
+  .action.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
   .error { color: var(--bad); margin: 0; }
   @media (max-width: 700px) {
     .summary { grid-template-columns: 1fr; position: static; }

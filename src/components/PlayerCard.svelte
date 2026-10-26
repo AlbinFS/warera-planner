@@ -36,7 +36,7 @@
 
   // Load the last player on return visits (not when switching pages: that would undo edits).
   if (planner.player) {
-    name = planner.player.username;
+    name = planner.player.username ?? '';
   } else {
     try {
       const last = localStorage.getItem(LAST);
@@ -47,7 +47,15 @@
 
 <section class="card player" class:empty={!planner.player} aria-labelledby="player-title">
   <h2 id="player-title" class="visually-hidden">Player</h2>
-  {#if planner.player}
+  {#if planner.player?.shared}
+    <div class="who">
+      <div>
+        <div class="name"><strong>Shared build</strong></div>
+        <div class="muted small">Level {planner.player.level} · military rank +{planner.player.militaryRankPercent}% · load your own player below to compare</div>
+      </div>
+      <div class="level num" title="Level">{planner.player.level}</div>
+    </div>
+  {:else if planner.player}
     <div class="who">
       {#if planner.player.avatarUrl}<img class="avatar" src={planner.player.avatarUrl} alt="" width="52" height="52" />{/if}
       <div>

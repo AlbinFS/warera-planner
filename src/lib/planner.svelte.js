@@ -4,6 +4,8 @@
  */
 import { cached } from './warera.js';
 import { ALL_SKILLS, SLOTS } from '../engine/inputs.js';
+import { readShared } from './share.js';
+import { settings } from './settings.svelte.js';
 
 const emptyGear = () => Object.fromEntries(SLOTS.map((s) => [s, null]));
 
@@ -40,10 +42,23 @@ export async function loadPlayer(user) {
   };
   planner.skills = Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.level ?? 0]));
   planner.gear = gearFrom(equipment);
+  // A loaded player replaces a shared build; drop it from the address so a refresh keeps this player.
+  if (location.search.includes('b=')) history.replaceState(null, '', location.pathname);
 }
 
 /** Puts an optimizer build (equipment + food) into the planner. */
 export function applyBuild(equipment, foodCode) {
   planner.gear = gearFrom(equipment);
   if (foodCode) planner.food = foodCode;
+}
+
+// A share link (?b=…) opens that build, with its fight settings.
+const sharedCode = new URLSearchParams(location.search).get('b');
+const shared = sharedCode ? readShared(sharedCode) : null;
+if (shared) {
+  planner.player = shared.player;
+  planner.skills = shared.skills;
+  planner.gear = shared.gear;
+  planner.food = shared.food;
+  Object.assign(settings, shared.settings);
 }
