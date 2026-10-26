@@ -6,8 +6,10 @@
   import { ALL_SKILLS } from '../engine/inputs.js';
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import { itemLabel, SLOT_NAMES } from '../lib/market.js';
+  import GearStrip from './GearStrip.svelte';
 
-  let { data, current } = $props();
+  // show: 'gear' or 'skills' (each opens in its own dialog), or both.
+  let { data, current, show = 'both' } = $props();
 
   const NAMES = {
     attack: 'Attack', precision: 'Precision', criticalChance: 'Crit chance', criticalDamages: 'Crit damage', armor: 'Armor',
@@ -147,6 +149,7 @@
   const changed = $derived(found?.skills ? ALL_SKILLS.filter((s) => found.skills[s] !== planner.skills[s]) : []);
 </script>
 
+{#if show !== 'skills'}
 <section class="card" aria-labelledby="opt-gear-title">
   <div class="head">
     <h2 id="opt-gear-title">Optimize equipment</h2>
@@ -187,7 +190,7 @@
         <span class="muted">({vsNow(gear.cost)})</span>
         {#if !gear.reachedTarget}<span class="error"> · the target is out of reach; this is the strongest build</span>{/if}
       </p>
-      <p class="muted small">{gearText(gear.equipment)} · {itemLabel(gear.food ?? 'none')}</p>
+      <div class="strip"><GearStrip equipment={gear.equipment} food={gear.food} items={data.market.gameConfigItems} /></div>
       <button class="primary" onclick={() => apply(gear)}>Apply this gear</button>
     </div>
     {#if nearby.length > 1}
@@ -213,6 +216,9 @@
   {/if}
 </section>
 
+{/if}
+
+{#if show !== 'gear'}
 <section class="card" aria-labelledby="opt-skills-title">
   <div class="head">
     <h2 id="opt-skills-title">Optimize skills</h2>
@@ -290,6 +296,7 @@
     </div>
   {/if}
 </section>
+{/if}
 
 <style>
   .head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
@@ -315,6 +322,7 @@
   .found { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
   .found p { margin: 0 0 8px; }
   .nearby { margin-top: 14px; }
+  .strip { margin: 4px 0 10px; }
   .nearby h3 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .05em; }
   tr.target td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .nearby { max-height: 420px; overflow: auto; }

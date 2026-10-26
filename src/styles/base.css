@@ -12,6 +12,21 @@
   --bad: #e0605a;
   --info: #5aa2e0;
 
+  /* Stat categories, as in the game: offense, crits, defense, life, economy. */
+  --c-attack: #e8894a;
+  --c-crit: #e2605a;
+  --c-defense: #9fb4c8;
+  --c-life: #5cc98f;
+  --c-economy: #e1c06d;
+
+  /* Item rarities. */
+  --r-common: #8a949e;
+  --r-uncommon: #5cbf6a;
+  --r-rare: #4f9be0;
+  --r-epic: #a66ae8;
+  --r-legendary: #e8a33d;
+  --r-mythic: #e5534b;
+
   --radius: 8px;
   --radius-sm: 6px;
   --gap: 16px;

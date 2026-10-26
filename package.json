@@ -11,6 +11,7 @@
     "test": "node --test \"test/**/*.test.mjs\""
   },
   "devDependencies": {
+    "@mdi/js": "7.4.47",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "svelte": "5.57.2",
     "vite": "8.3.5",

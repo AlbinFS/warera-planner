@@ -1,60 +1,57 @@
 <script>
+  /** The fight settings every page uses, in one visible bar. */
   import { settings, FOODS } from '../lib/settings.svelte.js';
+  import Icon from './Icon.svelte';
+  import { mdiPill, mdiFire, mdiClockOutline, mdiFoodDrumstick } from '@mdi/js';
 </script>
 
 <section class="bar" aria-label="Fight settings">
-  <label>
-    <span>Battle bonus</span>
-    <span class="field">
-      <input type="number" min="0" max="500" step="5" bind:value={settings.battleBonus} />
-      <span class="unit">%</span>
-    </span>
-  </label>
-  <label>
+  <label class="toggle" title="On pill: +60% damage for 8 hours, then a debuff. The pill's price counts in the cost.">
+    <Icon path={mdiPill} size={18} color="var(--c-crit)" />
     <span>Pill</span>
-    <select bind:value={settings.pill}>
-      <option value={true}>On pill</option>
-      <option value={false}>No pill</option>
-    </select>
+    <input type="checkbox" role="switch" bind:checked={settings.pill} />
+    <span class="state">{settings.pill ? 'On' : 'Off'}</span>
   </label>
-  <label>
-    <span>Food</span>
+
+  <label class="field" title="The battle's damage bonus (country, unit and battle bonuses together).">
+    <Icon path={mdiFire} size={18} color="var(--c-attack)" />
+    <span>Bonus</span>
+    <input type="number" min="0" max="500" step="5" bind:value={settings.battleBonus} />
+    <span class="unit">%</span>
+  </label>
+
+  <div class="field" role="group" aria-label="Fight window" title="8 h: you start with full health and hunger and fight for 8 hours (one pill). Full day: the whole day, including the pill's debuff.">
+    <Icon path={mdiClockOutline} size={18} color="var(--c-defense)" />
+    <span>Fight for</span>
+    <span class="seg">
+      <button type="button" aria-pressed={settings.windowHours === 8} onclick={() => (settings.windowHours = 8)}>8 hours</button>
+      <button type="button" aria-pressed={settings.windowHours === 24} onclick={() => (settings.windowHours = 24)}>A full day</button>
+    </span>
+  </div>
+
+  <label class="field" title="Which food the optimizers may use. Your planned food is set in the gear section.">
+    <Icon path={mdiFoodDrumstick} size={18} color="var(--c-life)" />
+    <span>Optimize with</span>
     <select bind:value={settings.food}>
       {#each FOODS as food (food.value)}<option value={food.value}>{food.label}</option>{/each}
-    </select>
-  </label>
-  <label>
-    <span>Fight window</span>
-    <select bind:value={settings.windowHours}>
-      <option value={8}>8 h (full bars + 8 h regen)</option>
-      <option value={24}>Full day</option>
     </select>
   </label>
 </section>
 
 <style>
   .bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px 20px;
-    padding: 12px var(--gap);
-    background: var(--surface);
-    border-bottom: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px;
+    padding: 8px var(--gap); background: var(--surface-2); border-bottom: 1px solid var(--line); font-size: 14px;
   }
-  label { display: flex; flex-direction: column; gap: 4px; min-width: 130px; }
-  label > span:first-child { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-  input, select {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-sm);
-    padding: 6px 8px;
-    min-height: 36px;
+  .field, .toggle { display: inline-flex; align-items: center; gap: 8px; }
+  input[type='number'], select {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px 8px; min-height: 30px; color: var(--text);
   }
-  .field { display: flex; align-items: center; gap: 6px; }
-  .field input { width: 80px; }
-  .unit { color: var(--muted); }
-  @media (max-width: 520px) {
-    label { flex: 1 1 calc(50% - 20px); min-width: 0; }
-    .field input { width: 100%; }
-  }
+  input[type='number'] { width: 64px; }
+  .unit, .state { color: var(--muted); }
+  .toggle { cursor: pointer; }
+  .toggle input { accent-color: var(--accent); width: 18px; height: 18px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+  .seg button { background: var(--surface); border: 0; padding: 5px 10px; cursor: pointer; color: var(--muted); font-size: 13px; }
+  .seg button[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 </style>

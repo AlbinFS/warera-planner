@@ -31,6 +31,8 @@ export async function loadPlayer(user) {
   planner.player = {
     id: user._id,
     username: user.username,
+    avatarUrl: user.avatarUrl ?? null,
+    countryId: user.country ?? null,
     level: user.leveling?.level ?? 1,
     militaryRankPercent: user.skills?.attack?.militaryRankPercent ?? 0,
     prestige: Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.prestige ?? 0])),

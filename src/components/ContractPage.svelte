@@ -8,6 +8,7 @@
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import { itemLabel } from '../lib/market.js';
   import PlayerCard from './PlayerCard.svelte';
+  import GearStrip from './GearStrip.svelte';
 
   let { data } = $props();
 
@@ -112,15 +113,20 @@
     navigate('/');
   }
 
-  const gearText = (equipment) => Object.values(equipment ?? {})
-    .filter(Boolean)
-    .map((it) => (typeof it === 'string' ? itemLabel(it) : `${itemLabel(it.code)} ${Object.values(it.skills ?? {}).join('/')}`))
-    .join(' · ');
   const signed = (n) => `${n >= 0 ? '+' : ''}${fmt(n, 1)}`;
   const skillRows = $derived(search && start ? [...FIGHT_SKILLS, ...(terms.mode === 'economy' ? ECONOMY_SKILLS : [])] : []);
 </script>
 
 <div class="contract">
+  <section class="card guide" aria-label="How it works">
+    <h2>Find the best build for a contract</h2>
+    <ol>
+      <li><strong>Load your player</strong> below, so the search starts from your skills.</li>
+      <li><strong>Enter the contract:</strong> what it pays per 1k damage, the pool loot you expect, and how much you're willing to lose.</li>
+      <li><strong>Press Optimize.</strong> You get the skills and gear with the most damage that stays within your loss.</li>
+      <li><strong>Pick a build</strong> from the list and press "Use in planner" to fine-tune it.</li>
+    </ol>
+  </section>
   <PlayerCard />
 
   <section class="card" aria-labelledby="terms-title">
@@ -227,7 +233,7 @@
                 <td class="num">{fmt(b.income, 1)}</td>
                 <td class="num" class:pos={b.net >= 0} class:neg={b.net < 0}>{signed(b.net)}</td>
                 <td class="num">{fmt(b.breakEven, 3)}</td>
-                <td class="gear">{gearText(b.equipment)} · {itemLabel(b.food ?? 'none')}</td>
+                <td class="gear"><GearStrip equipment={b.equipment} food={b.food} items={data.market.gameConfigItems} /></td>
                 <td><button class="secondary small" onclick={() => useInPlanner(b)}>Use in planner</button></td>
               </tr>
             {:else}
@@ -242,6 +248,9 @@
 
 <style>
   .contract { display: grid; gap: var(--gap); max-width: 1280px; margin: 0 auto; padding: var(--gap); }
+  .guide h2 { text-transform: none; letter-spacing: 0; font-size: 16px; color: var(--text); margin-bottom: 8px; }
+  .guide ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); }
+  .guide strong { color: var(--text); font-weight: 600; }
   .terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: end; }
   .terms .wide { grid-column: span 2; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
@@ -273,7 +282,8 @@
   th:first-child, td:first-child { text-align: left; }
   .skills { max-width: 420px; }
   .skills tr:not(.changed) td { color: var(--muted); }
-  td.gear { text-align: left; white-space: normal; color: var(--muted); font-size: 12px; min-width: 240px; }
+  td.gear { text-align: left; }
+  td.gear :global(.strip) { flex-wrap: nowrap; }
   tr.best td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .tag { display: inline-block; margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--accent); color: var(--accent); }
   .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 12px; }

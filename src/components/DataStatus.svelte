@@ -1,14 +1,14 @@
 <script>
+  /** Where the data comes from and how fresh it is: one line, details on click. */
   import { getGameConfig, getItemPrices, getEquipmentPrices } from '../lib/warera.js';
 
-  // Each data source with when it was fetched, so differences between tools can be traced.
   const SOURCES = [
     { name: 'Game config', load: getGameConfig, describe: (d) => `${Object.keys(d.items ?? {}).length} items` },
     { name: 'Item prices', load: getItemPrices, describe: (d) => `${Object.keys(d).length} prices` },
     {
       name: 'Equipment prices',
       load: getEquipmentPrices,
-      describe: (d, r) => `${d.items.length} rolls${r.ready ? '' : ', history still being collected'}`,
+      describe: (d, r) => `${d.items.length} rolls from market trades${r.ready ? '' : ', still collecting'}`,
     },
   ];
 
@@ -21,6 +21,8 @@
   });
 
   const anyStale = $derived(rows.some((r) => r.stale));
+  const anyError = $derived(rows.some((r) => r.status === 'error'));
+  const prices = $derived(rows[1].fetchedAt && rows[2].fetchedAt ? new Date(Math.min(rows[1].fetchedAt, rows[2].fetchedAt)) : null);
 
   function when(date) {
     if (!date) return '';
@@ -31,40 +33,34 @@
   }
 </script>
 
-<section class="card" aria-label="Data sources">
-  <h2>Data</h2>
-  {#if anyStale}
-    <p class="notice" role="status">The official WarEra API isn't answering right now. Showing the last data we have; check the times below.</p>
-  {/if}
+{#if anyStale}
+  <p class="notice" role="status">The official WarEra API isn't answering right now. Showing the last prices we have, from {when(prices)}.</p>
+{/if}
+<details class="footer">
+  <summary>
+    <span class="dot" class:ok={!anyError && !anyStale} class:stale={anyStale} class:error={anyError} aria-hidden="true"></span>
+    {#if anyError}Some data couldn't load{:else if prices}Market prices updated {when(prices)}{:else}Loading market prices…{/if}
+  </summary>
   <ul>
     {#each rows as r (r.name)}
       <li>
-        <span class="dot {r.status}" aria-hidden="true"></span>
-        <span class="name">{r.name}</span>
-        <span class="detail muted">
-          {#if r.status === 'loading'}Loading…{:else if r.status === 'error'}{r.detail}{:else}{r.detail} · fetched {when(r.fetchedAt)}{/if}
-        </span>
+        <strong>{r.name}</strong>
+        <span class="muted">{#if r.status === 'loading'}Loading…{:else if r.status === 'error'}{r.detail}{:else}{r.detail} · fetched {when(r.fetchedAt)}{/if}</span>
       </li>
     {/each}
   </ul>
-</section>
+  <p class="muted">Gear prices are the median of each roll's recent market trades, refreshed every few minutes.</p>
+</details>
 
 <style>
-  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  li { display: grid; grid-template-columns: 12px 140px 1fr; align-items: center; gap: 10px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .footer { font-size: 13px; color: var(--muted); padding: 4px 2px; }
+  summary { cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .dot.ok { background: var(--good); }
   .dot.stale { background: var(--accent); }
   .dot.error { background: var(--bad); }
-  .notice {
-    margin: 0 0 12px;
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--accent);
-    color: var(--text);
-  }
-  @media (max-width: 520px) {
-    li { grid-template-columns: 12px 1fr; }
-    .detail { grid-column: 2; }
-  }
+  ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
+  li { display: flex; gap: 10px; flex-wrap: wrap; }
+  li strong { color: var(--text); font-weight: 500; min-width: 130px; }
+  .notice { margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--accent); }
 </style>

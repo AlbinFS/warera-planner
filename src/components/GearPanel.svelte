@@ -1,12 +1,35 @@
 <script>
+  /**
+   * Gear as picture tiles. Click a tile to change the item (tiers shown as
+   * pictures) and its stat rolls (slider within the tier's range).
+   */
   import { planner } from '../lib/planner.svelte.js';
-  import { GEAR_SLOTS, SLOT_NAMES, STAT_NAMES, itemLabel } from '../lib/market.js';
+  import { GEAR_SLOTS, SLOT_NAMES, itemLabel } from '../lib/market.js';
+  import { STATS, RARITY_COLORS, statText, itemImage, rarityOf } from '../lib/visual.js';
+  import { mdiClose } from '@mdi/js';
+  import ItemTile from './ItemTile.svelte';
+  import Icon from './Icon.svelte';
 
   let { data } = $props();
   const { catalog, priceOf, itemPrice } = $derived(data);
+  const items = $derived(data.market.gameConfigItems);
+
+  let open = $state(null); // slot being edited
+
+  const ALL = [...GEAR_SLOTS.slice(0, 1), 'ammo', ...GEAR_SLOTS.slice(1), 'food'];
+  const LABELS = { ...SLOT_NAMES, food: 'Food' };
+
+  function tileFor(slot) {
+    if (slot === 'food') return { code: planner.food === 'none' ? null : planner.food, stats: {}, price: planner.food !== 'none' ? itemPrice(planner.food) : null };
+    if (slot === 'ammo') return { code: planner.gear.ammo, stats: {}, price: planner.gear.ammo ? itemPrice(planner.gear.ammo) : null };
+    const g = planner.gear[slot];
+    return { code: g?.code ?? null, stats: g?.skills ?? {}, price: g ? priceOf(g.code, g.skills) : null };
+  }
 
   /** Choosing another item keeps each stat where it can, clamped to the new item's range. */
-  function setItem(slot, code) {
+  function choose(slot, code) {
+    if (slot === 'food') { planner.food = code ?? 'none'; return; }
+    if (slot === 'ammo') { planner.gear.ammo = code; return; }
     if (!code) { planner.gear[slot] = null; return; }
     const item = catalog.bySlot[slot].find((i) => i.code === code);
     const old = planner.gear[slot]?.skills ?? {};
@@ -18,85 +41,90 @@
 
   function setStat(slot, stat, raw, [lo, hi]) {
     const v = Math.round(Number(raw));
-    if (!Number.isFinite(v)) return;
-    planner.gear[slot].skills[stat] = Math.min(hi, Math.max(lo, v));
+    if (Number.isFinite(v)) planner.gear[slot].skills[stat] = Math.min(hi, Math.max(lo, v));
   }
 
-  const statsOf = (slot) => catalog.bySlot[slot].find((i) => i.code === planner.gear[slot]?.code)?.stats ?? {};
-  const fmtPrice = (p) => (Number.isFinite(p) ? p.toFixed(2) : '–');
+  const choices = (slot) => (slot === 'food' ? catalog.foods : slot === 'ammo' ? catalog.ammo : catalog.bySlot[slot]);
+  const rangeOf = (slot) => catalog.bySlot[slot]?.find((i) => i.code === planner.gear[slot]?.code)?.stats ?? {};
+  const isChosen = (slot, code) => (slot === 'food' ? planner.food === code : slot === 'ammo' ? planner.gear.ammo === code : planner.gear[slot]?.code === code);
+  const choicePrice = (slot, c) => (slot === 'food' || slot === 'ammo' ? itemPrice(c.code) : null);
+  const extra = (slot, c) => (slot === 'ammo' ? `+${c.percent}% attack` : slot === 'food' ? `+${c.percent}% health` : Object.entries(c.stats).map(([s, [lo, hi]]) => `${STATS[s]?.label ?? s} ${lo}–${hi}`).join(', '));
 </script>
 
 <section class="card" aria-labelledby="gear-title">
   <h2 id="gear-title">Gear</h2>
-  <div class="rows">
-    {#each GEAR_SLOTS as slot (slot)}
-      <div class="row">
-        <label class="slot" for="gear-{slot}">{SLOT_NAMES[slot]}</label>
-        <select id="gear-{slot}" value={planner.gear[slot]?.code ?? ''} onchange={(e) => setItem(slot, e.currentTarget.value)}>
-          <option value="">None</option>
-          {#each catalog.bySlot[slot] as item (item.code)}<option value={item.code}>{itemLabel(item.code)}</option>{/each}
-        </select>
-        <span class="stats">
-          {#each Object.entries(statsOf(slot)) as [stat, range] (stat)}
-            <label class="stat">
-              <span class="visually-hidden">{SLOT_NAMES[slot]} {STAT_NAMES[stat] ?? stat}</span>
-              <input type="number" min={range[0]} max={range[1]} value={planner.gear[slot].skills[stat]}
-                onchange={(e) => setStat(slot, stat, e.currentTarget.value, range)} />
-              <span class="muted">{STAT_NAMES[stat] ?? stat}</span>
+  <div class="tiles">
+    {#each ALL as slot (slot)}
+      {@const t = tileFor(slot)}
+      <ItemTile code={t.code} stats={t.stats} price={t.price} label={LABELS[slot]} {items} selected={open === slot}
+        onclick={() => (open = open === slot ? null : slot)} />
+    {/each}
+  </div>
+  <p class="hint muted">Click a piece to change it. Prices are what each roll sells for on the market.</p>
+
+  {#if open}
+    <div class="editor" role="group" aria-label="Change {LABELS[open]}">
+      <div class="editor-head">
+        <strong>{LABELS[open]}</strong>
+        <button class="close" onclick={() => (open = null)} aria-label="Close"><Icon path={mdiClose} /></button>
+      </div>
+      <div class="choices">
+        <button class="choice" class:on={!tileFor(open).code} onclick={() => choose(open, null)}>
+          <span class="none">–</span><span>None</span>
+        </button>
+        {#each choices(open) as c (c.code)}
+          <button class="choice" class:on={isChosen(open, c.code)} onclick={() => choose(open, c.code)} title={extra(open, c)}>
+            <img src={itemImage(c.code, items)} alt="" width="36" height="36" loading="lazy"
+              style:background="color-mix(in srgb, {RARITY_COLORS[rarityOf(c.code, items)]} 22%, transparent)" />
+            <span>{itemLabel(c.code)}</span>
+            <small class="muted">{choicePrice(open, c) != null ? choicePrice(open, c).toFixed(2) : extra(open, c)}</small>
+          </button>
+        {/each}
+      </div>
+      {#if GEAR_SLOTS.includes(open) && planner.gear[open]}
+        <div class="sliders">
+          {#each Object.entries(rangeOf(open)) as [stat, range] (stat)}
+            <label class="slider">
+              <span class="name" style:color={STATS[stat]?.color}><Icon path={STATS[stat]?.icon} size={16} /> {STATS[stat]?.label ?? stat}</span>
+              <input type="range" min={range[0]} max={range[1]} value={planner.gear[open].skills[stat]}
+                oninput={(e) => setStat(open, stat, e.currentTarget.value, range)} />
+              <input class="num-in" type="number" min={range[0]} max={range[1]} value={planner.gear[open].skills[stat]}
+                onchange={(e) => setStat(open, stat, e.currentTarget.value, range)} aria-label="{STATS[stat]?.label} value" />
+              <span class="muted small">{statText(stat, range[0])}–{statText(stat, range[1])}</span>
             </label>
           {/each}
-        </span>
-        <span class="price num muted" title="Market price of this roll">
-          {planner.gear[slot] ? fmtPrice(priceOf(planner.gear[slot].code, planner.gear[slot].skills)) : ''}
-        </span>
-      </div>
-    {/each}
-    <div class="row">
-      <label class="slot" for="gear-ammo">Ammo</label>
-      <select id="gear-ammo" value={planner.gear.ammo ?? ''} onchange={(e) => (planner.gear.ammo = e.currentTarget.value || null)}>
-        <option value="">None</option>
-        {#each catalog.ammo as a (a.code)}<option value={a.code}>{itemLabel(a.code)} (+{a.percent}%)</option>{/each}
-      </select>
-      <span class="stats"></span>
-      <span class="price num muted">{planner.gear.ammo ? fmtPrice(itemPrice(planner.gear.ammo)) : ''}</span>
+          <p class="muted small">This roll sells for about <strong>{Number.isFinite(priceOf(planner.gear[open].code, planner.gear[open].skills)) ? priceOf(planner.gear[open].code, planner.gear[open].skills).toFixed(2) : 'an unknown price'}</strong> on the market.</p>
+        </div>
+      {/if}
     </div>
-    <div class="row">
-      <label class="slot" for="gear-food">Food</label>
-      <select id="gear-food" bind:value={planner.food}>
-        <option value="none">None</option>
-        {#each catalog.foods as f (f.code)}<option value={f.code}>{itemLabel(f.code)} (+{f.percent}% health)</option>{/each}
-      </select>
-      <span class="stats"></span>
-      <span class="price num muted">{planner.food !== 'none' ? fmtPrice(itemPrice(planner.food)) : ''}</span>
-    </div>
-  </div>
+  {/if}
 </section>
 
 <style>
-  .rows { display: grid; gap: 6px; }
-  .row {
-    display: grid;
-    grid-template-columns: 70px minmax(110px, 140px) 1fr 64px;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 0;
-    border-bottom: 1px solid var(--line);
+  .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+  .hint { font-size: 12px; margin: 10px 0 0; }
+  .editor { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+  .editor-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .close { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .choice {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; color: var(--text);
   }
-  .slot { color: var(--muted); font-size: 13px; }
-  select, input {
-    background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
-    padding: 5px 8px; min-height: 32px;
-  }
-  select { min-width: 0; width: 100%; }
-  .stats { display: flex; gap: 12px; flex-wrap: wrap; }
-  .stat { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
-  .stat input { width: 64px; }
-  .price { text-align: right; font-size: 13px; }
+  .choice img { border-radius: 6px; }
+  .choice small { font-size: 10px; text-align: center; }
+  .choice.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .choice .none { width: 36px; height: 36px; display: grid; place-items: center; font-size: 20px; color: var(--muted); }
+  .sliders { margin-top: 12px; display: grid; gap: 10px; }
+  .slider { display: grid; grid-template-columns: 130px 1fr 64px auto; align-items: center; gap: 10px; }
+  .slider .name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+  .slider input[type='range'] { accent-color: var(--accent); width: 100%; }
+  .num-in { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px 6px; width: 64px; color: var(--text); }
+  .small { font-size: 12px; }
   @media (max-width: 520px) {
-    /* Phone: slot, item and price on one line, the stats below. */
-    .row { grid-template-columns: 60px 1fr 56px; }
-    .price { order: 3; }
-    .stats { order: 4; grid-column: 1 / -1; }
-    .stats:empty { display: none; }
+    .tiles { gap: 6px; }
+    .slider { grid-template-columns: 1fr 64px; }
+    .slider input[type='range'] { grid-column: 1 / -1; grid-row: 2; }
+    .slider .muted { display: none; }
   }
 </style>
