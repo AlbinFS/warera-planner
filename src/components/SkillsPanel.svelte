@@ -50,7 +50,7 @@
   </button>
   {#if showEconomy}
     <ul class="skills">
-      {#each ECONOMY_SKILLS as s (s)}
+      {#each ECONOMY_SKILLS.filter((s) => config[s]?.levels?.['1']) as s (s)}
         {@render row(s)}
       {/each}
     </ul>

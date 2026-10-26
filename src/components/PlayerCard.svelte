@@ -23,11 +23,15 @@
     }
   }
 
-  // Load the last player on return visits.
-  try {
-    const last = localStorage.getItem(LAST);
-    if (last) { name = last; load(last); }
-  } catch {}
+  // Load the last player on return visits (not when switching pages: that would undo edits).
+  if (planner.player) {
+    name = planner.player.username;
+  } else {
+    try {
+      const last = localStorage.getItem(LAST);
+      if (last) { name = last; load(last); }
+    } catch {}
+  }
 </script>
 
 <section class="card" aria-labelledby="player-title">

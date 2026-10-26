@@ -12,13 +12,16 @@ const DEFAULT_JOB_SALARY = 0.123;
 /** A plain copy: the planner's reactive state can't be posted to a worker as it is. */
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-/** The engine setup for a planned build. `windowHours` 24 means the full-day model. */
-export function setupFor(planner, settings, { locked = true, windowHours = settings.windowHours } = {}) {
+/**
+ * The engine setup for a planned build. `windowHours` 24 means the full-day
+ * model; `skills` replaces the planned skill levels (the contract search tries many).
+ */
+export function setupFor(planner, settings, { locked = true, windowHours = settings.windowHours, skills = planner.skills } = {}) {
   const p = planner.player;
   return plain({
     level: p?.level ?? 1,
     militaryRankPercent: p?.militaryRankPercent ?? 0,
-    skills: planner.skills,
+    skills,
     prestige: p?.prestige ?? {},
     pill: settings.pill,
     battleBonusPercent: Number(settings.battleBonus) || 0,
@@ -114,6 +117,57 @@ async function windowHints(market, settings, input, evaluated) {
   return { cheaper, stronger };
 }
 
+/**
+ * The most damage whose cheapest build costs no more than `budget` (per
+ * window or per day, as the settings say): bisection on the damage target.
+ */
+export async function strongestWithin(market, planner, settings, budget) {
+  const input = buildInput(market, setupFor(planner, settings, { locked: false }));
+  const engine = getEngine();
+  const at = async (target) => {
+    const r = await engine.cheapestBuild(input, Math.round(target));
+    if (!r) return null;
+    return { damage: r.selectedDamageCostPoint.damagePerDay, cost: costOf(r.selectedDamageCostPoint, market, settings), equipment: r.build.equipment, food: r.build.foodCode, reachedTarget: true };
+  };
+  const [cheapest, top] = await Promise.all([at(0), at(1e12)]);
+  if (!cheapest || !top) return { error: 'No build can fight with these settings.' };
+  if (cheapest.cost > budget) return { error: `Even the cheapest build costs ${cheapest.cost.toFixed(1)} G.` };
+  if (top.cost <= budget) return top;
+  let best = cheapest;
+  let lo = Math.max(1, cheapest.damage);
+  let hi = top.damage;
+  while (hi / lo > BISECT_PRECISION) {
+    const mid = Math.sqrt(lo * hi);
+    const o = await at(mid);
+    if (o && o.cost <= budget) { if (o.damage > best.damage) best = o; lo = Math.max(mid, o.damage); } else hi = mid;
+  }
+  return best;
+}
+
+/**
+ * Builds around a damage target (85–115%), cheapest per damage, so a slightly
+ * lower or higher target with much better value is easy to spot.
+ */
+export async function buildsNear(market, planner, settings, target) {
+  const input = buildInput(market, setupFor(planner, settings, { locked: false }));
+  const engine = getEngine();
+  // A damage run with the curve on returns the frontier from its target upward.
+  const [low, high] = await Promise.all([engine.damageCurve(input, Math.round(target * 0.85)), engine.damageCurve(input, Math.round(target))]);
+  const points = [];
+  for (const r of [low, high]) {
+    for (const f of r?.foodDamageCostResults ?? []) {
+      points.push({ damage: f.damagePerDay, cost: costOf(f, market, settings), equipment: f.equipment, food: f.foodCode });
+    }
+  }
+  const inRange = points.filter((p) => Number.isFinite(p.cost) && p.damage >= target * 0.85 && p.damage <= target * 1.15);
+  // Keep builds no other beats on both damage and cost, one per damage level.
+  const sorted = inRange.sort((a, b) => b.damage - a.damage || a.cost - b.cost);
+  const kept = [];
+  let cheapest = Infinity;
+  for (const p of sorted) if (p.cost < cheapest - 0.05) { kept.push(p); cheapest = p.cost; }
+  return kept.reverse().map((p) => ({ ...p, per1k: (p.cost / p.damage) * 1000 }));
+}
+
 /** Cheapest gear (and food, unless fixed in settings) reaching a damage target. */
 export async function optimizeEquipment(market, planner, settings, target) {
   const input = buildInput(market, setupFor(planner, settings, { locked: false }));
@@ -142,7 +196,8 @@ export async function loadEconomy(playerId, itemPrices) {
       company: {
         _id: company._id,
         itemCode: company.itemCode,
-        disabled: company.disabled === true,
+        // The official API marks a switched-off company with disabledAt; the worker reads `disabled`.
+        disabled: company.disabled === true || company.disabledAt != null,
         activeUpgradeLevels: { automatedEngine: company.activeUpgradeLevels?.automatedEngine ?? 0 },
       },
       productionBonus: bonus ? { total: bonus.total ?? 0 } : null,
