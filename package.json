@@ -7,7 +7,8 @@
     "build": "vite build",
     "preview": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
-    "check-leaks": "node tools/check-leaks.mjs --all"
+    "check-leaks": "node tools/check-leaks.mjs --all",
+    "test": "node --test \"test/**/*.test.mjs\""
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",

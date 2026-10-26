@@ -11,4 +11,8 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  server: {
+    // In development, /api goes to the local Worker (`npx wrangler dev`).
+    proxy: { '/api': 'http://127.0.0.1:8787' },
+  },
 });

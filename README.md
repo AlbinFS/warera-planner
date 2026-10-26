@@ -48,8 +48,19 @@ npm run dev
 npm run preview
 ```
 
+For `/api` data during `npm run dev`, also run the Worker locally (`npx wrangler dev`); Vite forwards `/api` to it.
+
+## Tests
+
+```bash
+npm test
+```
+
+The engine tests replay a private reference suite (answers recorded from the original optimizer, with real player data, so it is kept outside this repository). Set `REFERENCE_DIR` to its folder; without it the tests are skipped. `FULL=1` also runs every skill-optimizer case, which takes about 15 minutes.
+
 ## Layout
 
+- `src/engine/`: the optimizer engine. `engine.js` is the one interface to the four worker scripts in `src/engine/vendor/` (equipment optimizer, improvement hints, skill search and its scorers); `browser.js` runs them as Web Workers, each downloaded on first use; `inputs.js` builds their inputs. The vendor scripts are used as they are and never edited.
 - `src/`: the site (Svelte). `src/lib/warera.js` calls the official API from the browser; `src/lib/settings.svelte.js` holds the fight settings shared by every page.
 - `worker/index.js`: the Cloudflare Worker. It serves `dist/` and answers `/api/*` from D1.
 - `worker/job.js`: the scheduled job (every minute). It stores game config (hourly) and item prices (every 5 minutes), and keeps the equipment trade history and per-roll prices, a few items per run.
