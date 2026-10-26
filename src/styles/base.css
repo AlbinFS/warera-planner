@@ -1,5 +1,6 @@
-/* Design tokens: every color, size and radius the UI uses. Dark by default, light follows the system. */
+/* Design tokens: every color, size and radius the UI uses. Dark by default; light is opt-in. */
 :root {
+  color-scheme: dark;
   --bg: #0d0f12;
   --surface: #15181d;
   --surface-2: #1b1f26;
@@ -34,20 +35,20 @@
   --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f5f6f8;
-    --surface: #ffffff;
-    --surface-2: #eef0f3;
-    --line: #d9dde3;
-    --text: #15181d;
-    --muted: #5d6573;
-    --accent: #a77d17;
-    --accent-ink: #ffffff;
-    --good: #1f8a5a;
-    --bad: #c23a33;
-    --info: #2a6fb0;
-  }
+/* Light, when picked with the theme button (data-theme on <html>). */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --line: #d9dde3;
+  --text: #15181d;
+  --muted: #5d6573;
+  --accent: #a77d17;
+  --accent-ink: #ffffff;
+  --good: #1f8a5a;
+  --bad: #c23a33;
+  --info: #2a6fb0;
 }
 
 * { box-sizing: border-box; }

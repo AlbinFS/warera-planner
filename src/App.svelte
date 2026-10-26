@@ -17,7 +17,7 @@
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
   import { route, navigate } from './lib/route.svelte.js';
-  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout } from '@mdi/js';
+  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout, mdiWeatherNight, mdiWeatherSunny } from '@mdi/js';
   import { saved } from './lib/saved.svelte.js';
   import { restoreLastPlayer } from './lib/planner.svelte.js';
 
@@ -29,6 +29,14 @@
   let dialogOpen = $state(false);
   let keyOpen = $state(false);
   let hasKey = $state(!!getApiKey());
+
+  // Dark unless light was picked with the button (remembered in this browser).
+  let dark = $state(document.documentElement.dataset.theme !== 'light');
+  function toggleTheme() {
+    dark = !dark;
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    try { localStorage.setItem('warera.theme', dark ? 'dark' : 'light'); } catch {}
+  }
 
   loadMarket().then((d) => (data = d)).catch((err) => (loadError = err.message));
   restoreLastPlayer();
@@ -66,6 +74,9 @@
   </nav>
   <button class="key" class:on={hasKey} onclick={() => (keyOpen = true)} title="Optional: your WarEra API key for extra data">
     <Icon path={mdiKeyVariant} size={18} /> {hasKey ? 'API key on' : 'Add API key'}
+  </button>
+  <button class="key theme" onclick={toggleTheme} title={dark ? 'Switch to light mode' : 'Switch to dark mode'} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+    <Icon path={dark ? mdiWeatherSunny : mdiWeatherNight} size={18} />
   </button>
   <a class="key signout" href="/auth/logout" title="Sign out on this device (frees one of your code's device slots)" aria-label="Sign out"><Icon path={mdiLogout} size={18} /></a>
 </header>
@@ -126,7 +137,8 @@
     margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-sm);
     background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer; font-size: 13px;
   }
-  .signout { text-decoration: none; margin-left: 0; }
+  .signout, .theme { margin-left: 0; }
+  .signout { text-decoration: none; }
   .key.on { color: var(--good); border-color: var(--good); }
   nav a:hover { color: var(--text); background: var(--surface-2); }
   nav a[aria-current='page'] { color: var(--text); background: var(--surface-2); box-shadow: inset 0 -2px var(--accent); }

@@ -1,7 +1,8 @@
 /** The sign-in and admin pages: plain HTML, served by the Worker before the site loads. */
 
 const STYLE = `
-  :root { color-scheme: dark; --bg: #0f1216; --surface: #171b21; --surface-2: #1f252d; --line: #2c333d; --text: #e7ebf0; --muted: #8b95a3; --accent: #e0a43a; --good: #4cc38a; --bad: #ef6b6b; }
+  :root { color-scheme: dark; --bg: #0d0f12; --surface: #15181d; --surface-2: #1b1f26; --line: #2a2f38; --text: #e7e9ee; --muted: #8b93a1; --accent: #e1c06d; --accent-ink: #1a1406; --good: #4cc38a; --bad: #e0605a; }
+  :root[data-theme='light'] { color-scheme: light; --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f3; --line: #d9dde3; --text: #15181d; --muted: #5d6573; --accent: #a77d17; --accent-ink: #ffffff; --good: #1f8a5a; --bad: #c23a33; }
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; display: grid; place-items: start center; padding: 48px 16px; }
   main { width: 100%; max-width: 460px; }
@@ -10,7 +11,7 @@ const STYLE = `
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-top: 16px; }
   label { display: grid; gap: 4px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
   input { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 15px; width: 100%; }
-  button { background: var(--accent); color: #1a1205; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 600; font-size: 15px; cursor: pointer; }
+  button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 600; font-size: 15px; cursor: pointer; }
   button.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); font-weight: 500; padding: 5px 10px; font-size: 13px; }
   button:disabled { opacity: .5; cursor: default; }
   .muted { color: var(--muted); }
@@ -29,7 +30,8 @@ const STYLE = `
 
 const page = (title, body, script) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>${title}</title><style>${STYLE}</style></head>
+<meta name="robots" content="noindex"><title>${title}</title><style>${STYLE}</style>
+<script>try { const t = localStorage.getItem('warera.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script></head>
 <body>${body}<script>${script}</script></body></html>`;
 
 export const LOGIN_PAGE = page('Sign in', `

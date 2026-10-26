@@ -4,9 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WarEra build planner: gear, skills, food and costs, with armor and dodge breakpoints." />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="color-scheme" content="dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>WarEra Build Planner</title>
+    <script>
+      // The theme picked with the header button, applied before the page draws.
+      try { const t = localStorage.getItem('warera.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+    </script>
   </head>
   <body>
     <div id="app"></div>
