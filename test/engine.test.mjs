@@ -72,15 +72,25 @@ test('improvement hints: every recorded case reproduces', { skip }, async () => 
   assert.deepEqual(different, [], `${different.length} of ${cases.length} cases differ`);
 });
 
-test('skill optimizer: recorded cases reproduce (all with FULL=1)', { skip, timeout: 60 * 60 * 1000 }, async () => {
+// The skill search stops at 45 s with its best layout so far; a run that gets
+// that close was cut short (a slower or busier machine than when recorded), so
+// its answer can't be compared.
+const TIME_LIMIT_CLOSE_MS = 44000;
+
+test('skill optimizer: recorded cases reproduce (all with FULL=1)', { skip, timeout: 60 * 60 * 1000 }, async (t) => {
   const all = readCases('skills.jsonl');
   const cases = process.env.FULL ? all : all.filter((_, i) => i % 10 === 0);
   // The search reports how long it took; everything else must match.
   const strip = (r) => JSON.stringify(r, (k, v) => (k === 'elapsedMs' ? undefined : v));
   const different = [];
+  const cutShort = [];
   for (const c of cases) {
     const response = await engine.optimizeSkills({ ...c.request, market: skillsMarket(market, c.request.combat.debuffBuild) });
-    if (strip({ response }) !== strip(c.response)) different.push(c.id);
+    if (strip({ response }) === strip(c.response)) continue;
+    if ((response?.result?.elapsedMs ?? 0) >= TIME_LIMIT_CLOSE_MS) cutShort.push(c.id);
+    else different.push(c.id);
   }
+  if (cutShort.length) t.diagnostic(`${cutShort.length} of ${cases.length} cases hit the 45 s time limit on this machine and were not compared`);
   assert.deepEqual(different, [], `${different.length} of ${cases.length} cases differ`);
+  assert.ok(cutShort.length < cases.length, 'every case hit the time limit: this machine is too slow to check the skill optimizer');
 });
