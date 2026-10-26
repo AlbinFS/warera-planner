@@ -2,7 +2,7 @@
  * The build being planned: player basics, skill levels, gear and food.
  * Everything on the planner page reads and edits this one object.
  */
-import { cached } from './warera.js';
+import { cached, findPlayer } from './warera.js';
 import { ALL_SKILLS, SLOTS } from '../engine/inputs.js';
 import { readShared } from './share.js';
 import { settings } from './settings.svelte.js';
@@ -25,6 +25,35 @@ function gearFrom(equipment) {
     gear[slot] = typeof item === 'string' ? item : { code: item.code, skills: { ...item.skills } };
   }
   return gear;
+}
+
+const LAST_PLAYER = 'planner.lastPlayer';
+
+/** Loading state for the player lookup, shared by every page. */
+export const playerStatus = $state({ loading: false, error: '' });
+
+/** Finds a player by name and loads them, remembering them for the next visit. */
+export async function loadByName(name) {
+  if (!name?.trim()) return;
+  playerStatus.loading = true;
+  playerStatus.error = '';
+  try {
+    await loadPlayer(await findPlayer(name.trim()));
+    try { localStorage.setItem(LAST_PLAYER, planner.player.username); } catch {}
+  } catch (err) {
+    playerStatus.error = err.message;
+  } finally {
+    playerStatus.loading = false;
+  }
+}
+
+export function lastPlayerName() {
+  try { return localStorage.getItem(LAST_PLAYER) ?? ''; } catch { return ''; }
+}
+
+/** On start-up: load the player from the last visit, unless a shared build was opened. */
+export function restoreLastPlayer() {
+  if (!planner.player && lastPlayerName()) loadByName(lastPlayerName());
 }
 
 /** Loads a player's skills and worn gear into the planner. */

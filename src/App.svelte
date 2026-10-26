@@ -9,12 +9,16 @@
   import ContractPage from './components/ContractPage.svelte';
   import BuildsPage from './components/BuildsPage.svelte';
   import BreakdownPanel from './components/BreakdownPanel.svelte';
+  import UnitPage from './components/UnitPage.svelte';
+  import ApiKeyDialog from './components/ApiKeyDialog.svelte';
+  import { getApiKey } from './lib/warera.js';
   import Dialog from './components/Dialog.svelte';
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
   import { route, navigate } from './lib/route.svelte.js';
-  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple } from '@mdi/js';
+  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant } from '@mdi/js';
   import { saved } from './lib/saved.svelte.js';
+  import { restoreLastPlayer } from './lib/planner.svelte.js';
 
   // Raw: market data never changes after loading, and the workers need plain objects.
   let data = $state.raw(null);
@@ -22,12 +26,16 @@
   let current = $state(null);
   let optimizing = $state(null); // 'gear' | 'skills' while its dialog is open
   let dialogOpen = $state(false);
+  let keyOpen = $state(false);
+  let hasKey = $state(!!getApiKey());
 
   loadMarket().then((d) => (data = d)).catch((err) => (loadError = err.message));
+  restoreLastPlayer();
 
   const PAGES = [
     { path: '/', label: 'Planner', icon: mdiShieldSword, hint: 'Your build: damage, cost, and how to improve it' },
     { path: '/contract', label: 'Contract', icon: mdiFileDocumentOutline, hint: 'The best build for a bounty contract' },
+    { path: '/unit', label: 'Unit', icon: mdiAccountGroup, hint: "Your military unit's damage right now, and its contracts" },
     { path: '/builds', label: 'Saved builds', icon: mdiBookmarkMultiple, hint: 'Your saved builds, and side-by-side comparison' },
   ];
   const page = $derived(PAGES.some((p) => p.path === route.path) ? route.path : '/');
@@ -54,7 +62,11 @@
       </a>
     {/each}
   </nav>
+  <button class="key" class:on={hasKey} onclick={() => (keyOpen = true)} title="Optional: your WarEra API key for extra data">
+    <Icon path={mdiKeyVariant} size={18} /> {hasKey ? 'API key on' : 'Add API key'}
+  </button>
 </header>
+<ApiKeyDialog bind:open={keyOpen} onchange={() => (hasKey = !!getApiKey())} />
 <SettingsBar />
 
 {#if !data}
@@ -66,6 +78,9 @@
   </main>
 {:else if page === '/contract'}
   <ContractPage {data} />
+  <footer><DataStatus /></footer>
+{:else if page === '/unit'}
+  <UnitPage {data} />
   <footer><DataStatus /></footer>
 {:else if page === '/builds'}
   <BuildsPage {data} />
@@ -101,6 +116,11 @@
   }
   .count { font-size: 11px; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 6px; font-weight: 700; }
   nav { flex-wrap: wrap; }
+  .key {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-sm);
+    background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer; font-size: 13px;
+  }
+  .key.on { color: var(--good); border-color: var(--good); }
   nav a:hover { color: var(--text); background: var(--surface-2); }
   nav a[aria-current='page'] { color: var(--text); background: var(--surface-2); box-shadow: inset 0 -2px var(--accent); }
   main {

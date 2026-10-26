@@ -43,6 +43,7 @@ function catalog(items) {
 const firstStatMin = (item) => Object.values(item.stats)[0][0];
 
 export function itemLabel(code) {
+  if (typeof code !== 'string') return '';
   const names = { knife: 'Knife', gun: 'Gun', rifle: 'Rifle', sniper: 'Sniper', tank: 'Tank', jet: 'Jet', lightAmmo: 'Light ammo', ammo: 'Ammo', heavyAmmo: 'Heavy ammo', cookedFish: 'Cooked fish', steak: 'Steak', bread: 'Bread', cocain: 'Pill', scraps: 'Scraps' };
   if (names[code]) return names[code];
   const m = code.match(/^([a-z]+)(\d)$/);

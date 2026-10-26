@@ -1,30 +1,16 @@
 <script>
-  import { findPlayer, cached } from '../lib/warera.js';
-  import { planner, loadPlayer } from '../lib/planner.svelte.js';
+  import { cached } from '../lib/warera.js';
+  import { planner, loadByName, playerStatus, lastPlayerName } from '../lib/planner.svelte.js';
   import { flagImage } from '../lib/visual.js';
   import Icon from './Icon.svelte';
   import { mdiAccountSearch } from '@mdi/js';
 
-  const LAST = 'planner.lastPlayer';
-
-  let name = $state('');
-  let error = $state('');
-  let loading = $state(false);
+  let name = $state(planner.player?.username ?? lastPlayerName());
   let country = $state(null);
 
   async function load(username) {
-    if (!username.trim()) return;
-    loading = true;
-    error = '';
-    try {
-      await loadPlayer(await findPlayer(username.trim()));
-      name = planner.player.username;
-      try { localStorage.setItem(LAST, planner.player.username); } catch {}
-    } catch (err) {
-      error = err.message;
-    } finally {
-      loading = false;
-    }
+    await loadByName(username);
+    if (planner.player?.username) name = planner.player.username;
   }
 
   // The player's country, for the flag.
@@ -33,16 +19,6 @@
     country = null;
     if (id) cached('country.getCountryById', { countryId: id }, 24 * 60 * 60 * 1000).then((c) => (country = c)).catch(() => {});
   });
-
-  // Load the last player on return visits (not when switching pages: that would undo edits).
-  if (planner.player) {
-    name = planner.player.username ?? '';
-  } else {
-    try {
-      const last = localStorage.getItem(LAST);
-      if (last) { name = last; load(last); }
-    } catch {}
-  }
 </script>
 
 <section class="card player" class:empty={!planner.player} aria-labelledby="player-title">
@@ -73,9 +49,9 @@
   <form onsubmit={(e) => { e.preventDefault(); load(name); }}>
     <label class="visually-hidden" for="player-name">Username</label>
     <span class="search"><Icon path={mdiAccountSearch} size={18} /><input id="player-name" bind:value={name} placeholder="WarEra username" autocomplete="off" spellcheck="false" /></span>
-    <button disabled={loading}>{loading ? 'Loading…' : planner.player ? 'Load' : 'Load my build'}</button>
+    <button disabled={playerStatus.loading}>{playerStatus.loading ? 'Loading…' : planner.player ? 'Load' : 'Load my build'}</button>
   </form>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if playerStatus.error}<p class="error" role="alert">{playerStatus.error}</p>{/if}
 </section>
 
 <style>

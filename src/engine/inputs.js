@@ -101,6 +101,7 @@ export function windowRound(market, skills, hours, pill) {
  * - pill, battleBonusPercent
  * - dailyContext (optional): credits to count and the build worn during the pill debuff
  * - windowHours (optional): cost and damage for that fight window instead of a full day
+ * - round (optional): { existingDamage, phases: [{ health, food, multiplier }] }, used as given
  * - lockedEquipment, lockedFood (optional): fix slots or the food
  */
 export function buildInput(market, setup) {
@@ -114,7 +115,8 @@ export function buildInput(market, setup) {
     combatOptions: {
       pillEnabled: pill,
       battleBonusPercent,
-      ...(setup.windowHours ? { round: windowRound(market, combat, setup.windowHours, pill) } : {}),
+      // An explicit fight (e.g. a player's current bars) or a window of full bars plus regen.
+      ...(setup.round ? { round: setup.round } : setup.windowHours ? { round: windowRound(market, combat, setup.windowHours, pill) } : {}),
       ...(setup.dailyContext ? { dailyContext: setup.dailyContext } : {}),
     },
     lockedEquipment: setup.lockedEquipment,

@@ -4,7 +4,7 @@
  */
 import { getEngine } from '../engine/browser.js';
 import { buildInput, debuffEquipment, skillsMarket, priceKey, SLOTS, ALL_SKILLS, ECONOMY_SKILLS } from '../engine/inputs.js';
-import { cached } from './warera.js';
+import { cached, getApiKey } from './warera.js';
 
 // The original page's default net job salary, used by its income model.
 const DEFAULT_JOB_SALARY = 0.123;
@@ -285,7 +285,22 @@ export async function loadEconomy(playerId, itemPrices) {
       productionBonus: bonus ? { total: bonus.total ?? 0 } : null,
     };
   }));
-  return { netJobSalary: DEFAULT_JOB_SALARY, companies, itemPrices };
+  return { netJobSalary: await jobSalary(playerId), companies, itemPrices };
+}
+
+/**
+ * Net salary per unit of work: the median of the player's recent wages when
+ * the visitor has added an API key (wages need one), else the original's default.
+ */
+async function jobSalary(playerId) {
+  if (!getApiKey()) return DEFAULT_JOB_SALARY;
+  try {
+    const page = await cached('transaction.getPaginatedTransactions', { userId: playerId, transactionType: 'wage', limit: 20 }, 10 * 60 * 1000);
+    const rates = (page.items ?? []).filter((t) => t.quantity > 0).map((t) => t.money / t.quantity).sort((a, b) => a - b);
+    return rates.length ? rates[rates.length >> 1] : DEFAULT_JOB_SALARY;
+  } catch {
+    return DEFAULT_JOB_SALARY;
+  }
 }
 
 /**
