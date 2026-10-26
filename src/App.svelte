@@ -1,7 +1,19 @@
 <script>
   import SettingsBar from './components/SettingsBar.svelte';
   import PlayerCard from './components/PlayerCard.svelte';
+  import SkillsPanel from './components/SkillsPanel.svelte';
+  import GearPanel from './components/GearPanel.svelte';
+  import ResultPanel from './components/ResultPanel.svelte';
+  import OptimizePanel from './components/OptimizePanel.svelte';
   import DataStatus from './components/DataStatus.svelte';
+  import { loadMarket } from './lib/market.js';
+
+  // Raw: market data never changes after loading, and the workers need plain objects.
+  let data = $state.raw(null);
+  let loadError = $state('');
+  let current = $state(null);
+
+  loadMarket().then((d) => (data = d)).catch((err) => (loadError = err.message));
 </script>
 
 <header>
@@ -13,8 +25,24 @@
 </header>
 <SettingsBar />
 <main>
-  <PlayerCard />
-  <DataStatus />
+  <div class="col">
+    <PlayerCard />
+    {#if data}
+      <SkillsPanel market={data.market} />
+      <GearPanel {data} />
+    {/if}
+  </div>
+  <div class="col">
+    {#if data}
+      <ResultPanel {data} onresult={(r) => (current = r)} />
+      <OptimizePanel {data} {current} />
+    {:else if loadError}
+      <section class="card"><p class="error">Couldn't load market data: {loadError}</p></section>
+    {:else}
+      <section class="card"><p class="muted">Loading market data…</p></section>
+    {/if}
+    <DataStatus />
+  </div>
 </main>
 
 <style>
@@ -33,12 +61,19 @@
   nav a[aria-current='page'] { color: var(--text); box-shadow: inset 0 -2px var(--accent); }
   .soon { opacity: .5; cursor: default; }
   main {
-    max-width: 1100px;
+    max-width: 1280px;
     margin: 0 auto;
     padding: var(--gap);
     display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
     gap: var(--gap);
+    align-items: start;
   }
+  .col { display: grid; gap: var(--gap); min-width: 0; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: minmax(0, 1fr); }
+  }
+  .error { color: var(--bad); }
   main :global(.card) {
     background: var(--surface);
     border: 1px solid var(--line);

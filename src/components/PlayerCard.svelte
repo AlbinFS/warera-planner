@@ -1,49 +1,50 @@
 <script>
   import { findPlayer } from '../lib/warera.js';
+  import { planner, loadPlayer } from '../lib/planner.svelte.js';
 
-  const FIGHT = [
-    ['attack', 'Attack'], ['precision', 'Precision'], ['criticalChance', 'Crit chance'],
-    ['criticalDamages', 'Crit damage'], ['armor', 'Armor'], ['dodge', 'Dodge'],
-    ['health', 'Health'], ['lootChance', 'Loot chance'], ['hunger', 'Hunger'],
-  ];
+  const LAST = 'planner.lastPlayer';
 
   let name = $state('');
-  let player = $state(null);
   let error = $state('');
   let loading = $state(false);
 
-  async function load(event) {
-    event.preventDefault();
-    if (!name.trim()) return;
+  async function load(username) {
+    if (!username.trim()) return;
     loading = true;
     error = '';
     try {
-      player = await findPlayer(name.trim());
+      await loadPlayer(await findPlayer(username.trim()));
+      name = planner.player.username;
+      try { localStorage.setItem(LAST, planner.player.username); } catch {}
     } catch (err) {
       error = err.message;
     } finally {
       loading = false;
     }
   }
+
+  // Load the last player on return visits.
+  try {
+    const last = localStorage.getItem(LAST);
+    if (last) { name = last; load(last); }
+  } catch {}
 </script>
 
-<section class="card" aria-label="Player">
-  <h2>Player</h2>
-  <form onsubmit={load}>
+<section class="card" aria-labelledby="player-title">
+  <h2 id="player-title">Player</h2>
+  <form onsubmit={(e) => { e.preventDefault(); load(name); }}>
     <label class="visually-hidden" for="player-name">Username</label>
     <input id="player-name" bind:value={name} placeholder="Username" autocomplete="off" spellcheck="false" />
     <button disabled={loading}>{loading ? 'Loading…' : 'Load'}</button>
   </form>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if player}
-    <div class="player">
-      <div><strong>{player.username}</strong> <span class="muted">· level {player.leveling?.level ?? '?'}</span></div>
-      <dl class="skills">
-        {#each FIGHT as [key, label] (key)}
-          <div><dt>{label}</dt><dd class="num">{player.skills?.[key]?.level ?? 0}</dd></div>
-        {/each}
-      </dl>
-    </div>
+  {#if planner.player}
+    <p class="who">
+      <strong>{planner.player.username}</strong>
+      <span class="muted">· level {planner.player.level} · military rank +{planner.player.militaryRankPercent}% · skills and gear loaded, edit them below</span>
+    </p>
+  {:else if !loading}
+    <p class="muted small">Load a player to start from their skills and worn gear, or edit the build below by hand.</p>
   {/if}
 </section>
 
@@ -68,9 +69,6 @@
   }
   button:disabled { opacity: .6; cursor: default; }
   .error { color: var(--bad); }
-  .player { margin-top: 12px; }
-  .skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px 16px; margin: 10px 0 0; }
-  .skills div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 4px 0; }
-  dt { color: var(--muted); }
-  dd { margin: 0; }
+  .who { margin: 10px 0 0; }
+  .small { font-size: 13px; margin: 10px 0 0; }
 </style>

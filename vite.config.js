@@ -12,7 +12,8 @@ export default defineConfig({
     format: 'es',
   },
   server: {
-    // In development, /api goes to the local Worker (`npx wrangler dev`).
-    proxy: { '/api': 'http://127.0.0.1:8787' },
+    // In development, /api goes to the local Worker (`npx wrangler dev`), or to
+    // a deployed site with API_TARGET=https://… for real data.
+    proxy: { '/api': { target: process.env.API_TARGET || 'http://127.0.0.1:8787', changeOrigin: true } },
   },
 });
