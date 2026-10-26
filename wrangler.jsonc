@@ -15,7 +15,7 @@
   },
   // Game config, item prices and the equipment trade history (tables are created by the job).
   "d1_databases": [
-    { "binding": "DB", "database_name": "warera-prices", "database_id": "REPLACE_WITH_DATABASE_ID" }
+    { "binding": "DB", "database_name": "warera-prices", "database_id": "d4819384-059f-4cb2-bac1-5b5015bc857c" }
   ],
   // Every minute; each run refreshes a small slice (see worker/job.js).
   "triggers": { "crons": ["* * * * *"] },
