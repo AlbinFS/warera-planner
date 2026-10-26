@@ -68,6 +68,8 @@ export async function loadPlayer(user) {
     militaryRankPercent: user.skills?.attack?.militaryRankPercent ?? 0,
     prestige: Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.prestige ?? 0])),
     currentGear: equipment,
+    // Economy skills as the game has them now (v0.27 added Leadership).
+    ecoLevels: Object.fromEntries(['companies', 'management', 'energy', 'production', 'leadership'].map((k) => [k, user.skills?.[k]?.level ?? 0])),
   };
   planner.skills = Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.level ?? 0]));
   planner.gear = gearFrom(equipment);

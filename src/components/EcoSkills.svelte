@@ -1,0 +1,130 @@
+<script>
+  /** The eco skill optimizer: the split of skill points that earns the most per day. */
+  import { planner } from '../lib/planner.svelte.js';
+  import { ecoSettings } from '../lib/eco.svelte.js';
+  import { ECO_SKILLS, ecoValue, ecoCost, ecoMaxLevel, dailyIncome, optimizeEcoSkills } from '../lib/eco.js';
+  import { fmt } from '../lib/format.js';
+  import Icon from './Icon.svelte';
+  import { mdiFactory, mdiLightningBolt, mdiAccountGroup, mdiCrown, mdiAccountStar } from '@mdi/js';
+
+  let { plan, config, fightPoints, estimate } = $props();
+
+  const META = {
+    companies: { label: 'Companies', icon: mdiAccountGroup, what: 'How many companies run at once (engines and employees only work in running companies).' },
+    management: { label: 'Management', icon: mdiCrown, what: '+2% output for every employee, per level.' },
+    energy: { label: 'Energy', icon: mdiLightningBolt, what: 'Pays for hiring, training and self-work (10 each); refills a tenth of the bar an hour.' },
+    production: { label: 'Production', icon: mdiFactory, what: 'Production points from each self-work.' },
+    leadership: { label: 'Leadership', icon: mdiAccountStar, what: 'Better training cards and event odds. No direct income: worth it while you train employees.' },
+  };
+
+  const skills = $derived(config.skills);
+  const level = $derived(planner.player?.level ?? 1);
+  const current = $derived(planner.player?.ecoLevels ?? Object.fromEntries(ECO_SKILLS.map((s) => [s, 0])));
+  const currentCost = $derived(ECO_SKILLS.reduce((sum, s) => sum + ecoCost(skills, s, current[s] ?? 0), 0));
+  const budget = $derived(ecoSettings.budgetMode === 'all' ? level * 4
+    : ecoSettings.budgetMode === 'custom' ? Math.max(0, Number(ecoSettings.customBudget) || 0)
+    : Math.max(0, level * 4 - fightPoints));
+
+  const now = $derived(dailyIncome(current, plan, config));
+  const best = $derived(optimizeEcoSkills(plan, config, {
+    budget, playerLevel: level, minimum: { leadership: Math.min(Number(ecoSettings.minLeadership) || 0, ecoMaxLevel(skills, 'leadership', level)) },
+  }));
+  const employeeCount = $derived(plan.companies.reduce((s, c) => s + (c.employees?.length ?? 0), 0));
+  const delta = (s) => (best ? best.levels[s] - (current[s] ?? 0) : 0);
+</script>
+
+<section class="card" aria-labelledby="eco-in-title">
+  <h2 id="eco-in-title">Your eco setup</h2>
+  <div class="inputs">
+    <label>
+      <span>Skill points for eco</span>
+      <select bind:value={ecoSettings.budgetMode}>
+        <option value="keepFight">Keep my fight skills ({Math.max(0, level * 4 - fightPoints)} points left)</option>
+        <option value="all">All {level * 4} points (pure eco)</option>
+        <option value="custom">A number I choose</option>
+      </select>
+    </label>
+    {#if ecoSettings.budgetMode === 'custom'}
+      <label><span>Points</span><input type="number" min="0" max={level * 4} bind:value={ecoSettings.customBudget} /></label>
+    {/if}
+    <label>
+      <span>Value of 1 production point (G)</span>
+      <input type="number" step="0.001" min="0" bind:value={ecoSettings.pointValue} placeholder={estimate.toFixed(4)} />
+    </label>
+    <label>
+      <span>Trainings per day (10 energy each)</span>
+      <input type="number" min="0" max="60" bind:value={ecoSettings.trainingsPerDay} />
+    </label>
+    <label>
+      <span>Keep Leadership at least</span>
+      <input type="number" min="0" max="10" bind:value={ecoSettings.minLeadership} />
+    </label>
+    <label>
+      <span>Hired manager's bonus (%)</span>
+      <input type="number" min="0" max="22" bind:value={ecoSettings.managerPercent} />
+    </label>
+    <label class="check"><input type="checkbox" bind:checked={ecoSettings.core} /> Companies in my country's core regions (+5%)</label>
+    <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy</label>
+  </div>
+  <p class="muted small">
+    The game shows the value of 1 production point; type it in to replace the estimate.
+    {#if !employeeCount}<strong>No employees entered yet:</strong> Management only pays off with employees, so add yours in the Employees tab for a real answer.{/if}
+  </p>
+</section>
+
+{#if best}
+  <section class="card" aria-labelledby="eco-out-title">
+    <h2 id="eco-out-title">Best eco skills</h2>
+    <dl class="big">
+      <div><dt>Money per day now</dt><dd class="num">{fmt(now.total, 1)} G</dd></div>
+      <div><dt>With the best skills</dt><dd class="num good">{fmt(best.result.total, 1)} G</dd></div>
+      <div><dt>Difference</dt><dd class="num">{best.result.total >= now.total ? '+' : ''}{fmt(best.result.total - now.total, 1)} G</dd></div>
+      <div><dt>Points used</dt><dd class="num">{best.spent} <small class="muted">of {budget}</small></dd></div>
+    </dl>
+    <table>
+      <thead><tr><th>Skill</th><th>Now</th><th>Best</th><th>What it does</th></tr></thead>
+      <tbody>
+        {#each ECO_SKILLS as s (s)}
+          <tr>
+            <td class="name"><Icon path={META[s].icon} size={16} color="var(--c-economy)" /> {META[s].label}</td>
+            <td class="num">{current[s] ?? 0} <small class="muted">({ecoValue(skills, s, current[s] ?? 0)})</small></td>
+            <td class="num"><strong class:up={delta(s) > 0} class:down={delta(s) < 0}>{best.levels[s]}</strong> <small class="muted">({ecoValue(skills, s, best.levels[s])})</small></td>
+            <td class="muted small">{META[s].what}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+
+    <h3>Where the money comes from (best skills)</h3>
+    <ul class="parts">
+      <li>Companies running: <strong>{best.result.activeCount}</strong> of {best.result.owned} you own (limit {best.result.limit}) → <strong>{fmt(best.result.companies, 1)} G</strong> a day from engines and employees</li>
+      <li>Energy: {fmt(best.result.energyPerDay, 0)} a day; {fmt(best.result.trainingEnergy, 0)} for trainings{#if plan.selfWork}, {best.result.selfWorkActions} self-works → {fmt(best.result.selfWorkPoints, 0)} points = <strong>{fmt(best.result.selfWork, 1)} G</strong>{/if}</li>
+    </ul>
+    <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27 gave everyone one free reset). The model: engine and employee output at today's prices for each company's good, wages as the game sets them, Management +2% per level on employee output.</p>
+  </section>
+{:else}
+  <section class="card"><p class="warn">No layout fits: the trainings need more energy than any layout within {budget} points gives. Lower the trainings per day or allow more points.</p></section>
+{/if}
+
+<style>
+  .inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: end; }
+  label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  label.check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
+  input:not([type='checkbox']), select { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 10px; color: var(--text); font-size: 14px; }
+  input[type='checkbox'] { accent-color: var(--accent); width: 18px; height: 18px; }
+  .small { font-size: 12px; margin: 10px 0 0; }
+  .big { display: flex; flex-wrap: wrap; gap: 12px 36px; margin: 0 0 14px; }
+  .big dt { color: var(--muted); font-size: 12px; }
+  .big dd { margin: 2px 0 0; font-size: 24px; font-weight: 700; }
+  .good { color: var(--good); }
+  .warn { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  td.num { white-space: nowrap; }
+  .name { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .up { color: var(--good); }
+  .down { color: var(--bad); }
+  h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 16px 0 6px; font-weight: 500; }
+  .parts { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+</style>

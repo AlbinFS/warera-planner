@@ -18,7 +18,13 @@ export function loadMarket() {
   loading ??= (async () => {
     const [config, itemPrices, equipment] = await Promise.all([getGameConfig(), getItemPrices(), getEquipmentPrices()]);
     const market = buildMarket(config.data, itemPrices.data, equipment.data.items);
-    return { market, catalog: catalog(config.data.items), priceOf: (code, skills) => market.equipmentPrices[priceKey(code, skills)], itemPrice: (code) => market.itemPrices[code] };
+    return {
+      market,
+      catalog: catalog(config.data.items),
+      upgrades: config.data.upgradesConfig ?? {},
+      priceOf: (code, skills) => market.equipmentPrices[priceKey(code, skills)],
+      itemPrice: (code) => market.itemPrices[code],
+    };
   })().catch((err) => { loading = null; throw err; });
   return loading;
 }
@@ -44,7 +50,9 @@ const firstStatMin = (item) => Object.values(item.stats)[0][0];
 
 export function itemLabel(code) {
   if (typeof code !== 'string') return '';
-  const names = { knife: 'Knife', gun: 'Gun', rifle: 'Rifle', sniper: 'Sniper', tank: 'Tank', jet: 'Jet', lightAmmo: 'Light ammo', ammo: 'Ammo', heavyAmmo: 'Heavy ammo', cookedFish: 'Cooked fish', steak: 'Steak', bread: 'Bread', cocain: 'Pill', scraps: 'Scraps' };
+  const names = { knife: 'Knife', gun: 'Gun', rifle: 'Rifle', sniper: 'Sniper', tank: 'Tank', jet: 'Jet', lightAmmo: 'Light ammo', ammo: 'Ammo', heavyAmmo: 'Heavy ammo', cookedFish: 'Cooked fish', steak: 'Steak', bread: 'Bread', cocain: 'Pill', scraps: 'Scraps',
+    fish: 'Fish', wood: 'Wood', paper: 'Paper', lead: 'Lead', petroleum: 'Petroleum', iron: 'Iron', grain: 'Grain', livestock: 'Livestock',
+    coca: 'Coca', limestone: 'Limestone', steel: 'Steel', concrete: 'Concrete', oil: 'Oil', toolbox: 'Toolbox' };
   if (names[code]) return names[code];
   const m = code.match(/^([a-z]+)(\d)$/);
   return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} T${m[2]}` : code;
