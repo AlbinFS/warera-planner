@@ -3,7 +3,7 @@
  * find cheaper/stronger alternatives, optimize gear and skills.
  */
 import { getEngine } from '../engine/browser.js';
-import { buildInput, debuffEquipment, skillsMarket, SLOTS, ALL_SKILLS, ECONOMY_SKILLS } from '../engine/inputs.js';
+import { buildInput, debuffEquipment, skillsMarket, priceKey, SLOTS, ALL_SKILLS, ECONOMY_SKILLS } from '../engine/inputs.js';
 import { cached } from './warera.js';
 
 // The original page's default net job salary, used by its income model.
@@ -81,6 +81,88 @@ export async function findHints(market, planner, settings, evaluated) {
     if (option.damage > evaluated.damage * 1.001 && option.cost <= evaluated.cost + 0.05 && (!stronger || option.damage > stronger.damage)) stronger = option;
   }
   return { cheaper, stronger };
+}
+
+/**
+ * Where the cost goes, and how many hits that buys.
+ *
+ * Costs come from price probes: the cost is linear in every price, so
+ * evaluating the same build with one price doubled changes the cost by
+ * exactly that item's share. (A zero price can't be used: it counts as a
+ * missing price.) The shares add up to the total; anything left over (e.g.
+ * daily credits) is reported as "other".
+ *
+ * Hits: damage ÷ (damage per attack × pill × battle bonus), exact for one
+ * phase. For a full day on the pill that is the pill phase only; the debuff
+ * phase after it isn't counted.
+ */
+export async function costBreakdown(market, planner, settings, evaluated) {
+  const engine = getEngine();
+  const setup = setupFor(planner, settings);
+  const run = async (m, s = setup) => {
+    const r = (await engine.optimize({ mode: 'damage', input: buildInput(m, s), target: 0, maxBudget: Infinity, graph: false })).result;
+    return r ? { cost: costOf(r.selectedDamageCostPoint, m, settings), damage: r.selectedDamageCostPoint.damagePerDay, perAttack: r.optimizedDamage } : null;
+  };
+  const base = await run(market);
+  if (!base) return null;
+
+  const probes = [];
+  // Gear worn, and in the full-day model the gear worn during the pill debuff.
+  const worn = [['planned', setup.lockedEquipment], ['debuff', setup.windowHours ? null : setup.dailyContext?.debuffBuild?.equipment]];
+  const seen = new Set();
+  for (const [phase, gear] of worn) {
+    for (const [slot, item] of Object.entries(gear ?? {})) {
+      if (!item) continue;
+      if (typeof item === 'string') {
+        if (seen.has(item)) continue;
+        seen.add(item);
+        probes.push({ kind: 'item', code: item, slot, phase });
+        continue;
+      }
+      const key = priceKey(item.code, item.skills);
+      if (seen.has(key) || !Number.isFinite(market.equipmentPrices[key])) continue;
+      seen.add(key);
+      probes.push({ kind: 'roll', key, code: item.code, skills: item.skills, slot, phase });
+    }
+  }
+  if (setup.lockedFood && setup.lockedFood !== 'none' && !seen.has(setup.lockedFood)) probes.push({ kind: 'item', code: setup.lockedFood, slot: 'food' });
+  if (settings.pill) probes.push({ kind: 'item', code: 'cocain', slot: 'pill' });
+  probes.push({ kind: 'item', code: 'scraps', slot: 'scraps' });
+  for (const [code, item] of Object.entries(market.gameConfigItems)) {
+    if (item.type === 'case' && Number.isFinite(market.itemPrices[code])) probes.push({ kind: 'item', code, slot: 'case' });
+  }
+
+  const doubled = (p) => (p.kind === 'roll'
+    ? { ...market, equipmentPrices: { ...market.equipmentPrices, [p.key]: 2 * market.equipmentPrices[p.key] } }
+    : { ...market, itemPrices: { ...market.itemPrices, [p.code]: 2 * market.itemPrices[p.code] } });
+  const shares = await Promise.all(probes.map(async (p) => {
+    const r = await run(doubled(p));
+    return r ? { ...p, amount: r.cost - base.cost } : null;
+  }));
+  const rows = shares.filter((s) => s && Math.abs(s.amount) >= 0.005);
+  const other = base.cost - rows.reduce((sum, r) => sum + r.amount, 0);
+
+  // Hits for the planned gear's phase (a window, or the pill phase of a day).
+  let phaseDamage = base.damage;
+  if (!setup.windowHours && settings.pill) {
+    const buffOnly = await run(market, { ...setup, dailyContext: undefined });
+    phaseDamage = buffOnly?.damage ?? NaN;
+  }
+  const multiplier = (settings.pill ? 1 + (market.gameConfigItems.cocain?.flatStats?.percentAttack ?? 60) / 100 : 1) * (1 + (Number(settings.battleBonus) || 0) / 100);
+  const hits = base.perAttack > 0 ? phaseDamage / (base.perAttack * multiplier) : null;
+  const food = rows.find((r) => r.slot === 'food');
+  const cases = rows.filter((r) => r.slot === 'case').map((r) => ({ code: r.code, count: -r.amount / market.itemPrices[r.code] }));
+
+  return {
+    total: base.cost,
+    rows,
+    other: Math.abs(other) >= 0.05 ? other : 0,
+    hits,
+    hitsArePillPhase: !setup.windowHours && settings.pill,
+    perAttack: base.perAttack * multiplier,
+    foodEaten: food ? food.amount / market.itemPrices[food.code] : 0,
+    cases,
+  };
 }
 
 // Stronger-for-the-same-cost search: stop when the damage bracket is this tight.

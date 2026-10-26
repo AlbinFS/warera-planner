@@ -8,6 +8,7 @@
   import DataStatus from './components/DataStatus.svelte';
   import ContractPage from './components/ContractPage.svelte';
   import BuildsPage from './components/BuildsPage.svelte';
+  import BreakdownPanel from './components/BreakdownPanel.svelte';
   import Dialog from './components/Dialog.svelte';
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
@@ -75,6 +76,7 @@
     <div class="col">
       <PlayerCard />
       <GearPanel {data} />
+      <BreakdownPanel {data} {current} />
     </div>
     <div class="col">
       <SkillsPanel market={data.market} />

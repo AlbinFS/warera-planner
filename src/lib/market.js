@@ -43,7 +43,7 @@ function catalog(items) {
 const firstStatMin = (item) => Object.values(item.stats)[0][0];
 
 export function itemLabel(code) {
-  const names = { knife: 'Knife', gun: 'Gun', rifle: 'Rifle', sniper: 'Sniper', tank: 'Tank', jet: 'Jet', lightAmmo: 'Light ammo', ammo: 'Ammo', heavyAmmo: 'Heavy ammo', cookedFish: 'Cooked fish', steak: 'Steak', bread: 'Bread' };
+  const names = { knife: 'Knife', gun: 'Gun', rifle: 'Rifle', sniper: 'Sniper', tank: 'Tank', jet: 'Jet', lightAmmo: 'Light ammo', ammo: 'Ammo', heavyAmmo: 'Heavy ammo', cookedFish: 'Cooked fish', steak: 'Steak', bread: 'Bread', cocain: 'Pill', scraps: 'Scraps' };
   if (names[code]) return names[code];
   const m = code.match(/^([a-z]+)(\d)$/);
   return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} T${m[2]}` : code;
