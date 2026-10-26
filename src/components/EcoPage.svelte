@@ -5,7 +5,7 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies } from '../lib/eco.svelte.js';
-  import { estimatePointValue, goodsProfit } from '../lib/eco.js';
+  import { estimatePointValue, goodsProfit, ecoValue } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import EcoSkills from './EcoSkills.svelte';
   import EcoProduction from './EcoProduction.svelte';
@@ -32,6 +32,7 @@
   const estimate = $derived(estimatePointValue(items, data.market.itemPrices));
   const pointValue = $derived(ecoSettings.pointValue > 0 ? ecoSettings.pointValue : estimate);
   const goods = $derived(goodsProfit(items, data.market.itemPrices));
+  const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0));
   const perPoint = $derived(Object.fromEntries(goods.map((g) => [g.code, g.perPoint])));
 
   /** Everything the model needs, from the companies, employees and settings. */
@@ -39,10 +40,10 @@
     companies: companies.map((c) => ({ ...c, employees: ecoEmployees[c.id] ?? [] })),
     perPoint,
     pointValue,
+    // The employees' shown bonus includes the owner's Management as it is now.
+    currentManagementValue: currentManagementValue,
     selfWork: ecoSettings.selfWork,
     trainingsPerDay: Number(ecoSettings.trainingsPerDay) || 0,
-    managerPercent: Number(ecoSettings.managerPercent) || 0,
-    corePercent: ecoSettings.core ? 5 : 0,
   });
 
   const fightPoints = $derived(FIGHT_SKILLS.reduce((sum, s) => {
@@ -79,7 +80,7 @@
     {:else if tab === 'skills'}
       <EcoSkills {plan} {config} {fightPoints} estimate={estimate} />
     {:else if tab === 'production'}
-      <EcoProduction {companies} {goods} {perPoint} {config} prices={data.market.itemPrices} {pointValue} />
+      <EcoProduction {companies} {goods} {perPoint} {config} prices={data.market.itemPrices} />
     {:else}
       <EcoEmployees {companies} {perPoint} {pointValue} {items} />
     {/if}

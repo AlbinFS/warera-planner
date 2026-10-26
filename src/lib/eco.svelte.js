@@ -5,7 +5,8 @@
 import { cached } from './warera.js';
 
 const SETTINGS_KEY = 'eco.settings.v1';
-const EMPLOYEES_KEY = 'eco.employees.v1';
+// v2: production, bonus and payroll as the game shows them.
+const EMPLOYEES_KEY = 'eco.employees.v2';
 
 const load = (key, fallback) => {
   try { return { ...fallback, ...JSON.parse(localStorage.getItem(key) ?? '{}') }; } catch { return { ...fallback }; }
@@ -15,8 +16,6 @@ export const ecoSettings = $state(load(SETTINGS_KEY, {
   pointValue: null, // null: use the estimate from market prices
   selfWork: false,
   trainingsPerDay: 0,
-  managerPercent: 0,
-  core: true,
   budgetMode: 'keepFight', // keepFight | all | custom
   customBudget: 0,
   minLeadership: 0,
@@ -47,6 +46,4 @@ export async function loadCompanies(playerId) {
   }));
 }
 
-export const newEmployee = () => ({
-  name: '', production: 2, traitProduction: 0, expectation: 100, wagePerDay: 0, happiness: 50, toolPercent: 0, specialization: 0, bonusPercent: 0,
-});
+export const newEmployee = () => ({ name: '', production: 2, bonusPercent: 0, payroll: 0 });

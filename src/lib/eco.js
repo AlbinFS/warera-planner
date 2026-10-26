@@ -2,11 +2,14 @@
  * Economy model for game update v0.27 (employees replace the job market).
  *
  * Sources: the v0.27 update article, the game config (skills, upgrades,
- * recipes) and community guides for the formulas the game doesn't publish:
- *   employee output / hour = (paid production + trait/event production) ÷ 4 × (1 + bonus)
- *   wage / hour            = paid production ÷ 4 × value of 1 PP × wage expectation
- *   bonus = Management (+2%/point) + manager + tool + core region (+5%)
- *           + specialization (+1%/day, max 20%) + traits/events + (happiness − 50)%
+ * recipes), community guides, and the game's own tooltips (checked against a
+ * player's employees, 2026-10-26):
+ *   employee output / day = production (as the card shows it) ÷ 4 × 24 × (1 + bonus)
+ *   bonus = Management (2% × the skill's value, which is level + 1) + manager
+ *           + tool + core region (+5%) + specialization (+1%/day, max 20%)
+ *           + traits/events + (happiness − 50)%
+ *   wage: taken from the game's payroll figure (it depends on base and
+ *   trained production, which the card doesn't show).
  * Automated Engine: 24 PP a day per level. Self-work: 10 energy each, giving the
  * Production skill's value in PP. Energy refills a tenth of the bar an hour.
  *
@@ -49,13 +52,16 @@ export function goodsProfit(items, prices) {
   return out.sort((a, b) => b.perPoint - a.perPoint);
 }
 
-/** One employee's day: points made, wage, and profit at a good's value per point. */
-export function employeeDay(e, { managementLevel, managerPercent = 0, corePercent = 0, pointValue, goodPerPoint }) {
-  const bonus = (2 * managementLevel + managerPercent + corePercent + (e.toolPercent ?? 0) + Math.min(20, e.specialization ?? 0)
-    + (e.bonusPercent ?? 0) + ((e.happiness ?? 50) - 50)) / 100;
-  const paid = e.production ?? 0;
-  const points = ((paid + (e.traitProduction ?? 0)) / 4) * (1 + bonus) * HOURS;
-  const wage = e.wagePerDay > 0 ? e.wagePerDay : (paid / 4) * pointValue * ((e.expectation ?? 100) / 100) * HOURS;
+/**
+ * One employee's day, from what the game's card shows: production (⛏), the
+ * production bonus % (⛏ +x%) and the payroll per day. The bonus is shown
+ * with the owner's current Management; for another Management value the
+ * difference is swapped in (2% per point).
+ */
+export function employeeDay(e, { managementValue, currentManagementValue = managementValue, goodPerPoint }) {
+  const bonus = ((e.bonusPercent ?? 0) + 2 * (managementValue - currentManagementValue)) / 100;
+  const points = ((e.production ?? 0) / 4) * HOURS * (1 + bonus);
+  const wage = Math.max(0, e.payroll ?? 0);
   return { points, wage, bonus, value: points * goodPerPoint, profit: points * goodPerPoint - wage };
 }
 
@@ -65,7 +71,8 @@ export const engineDaily = (upgrades, level) => upgrades.automatedEngine?.levels
 /**
  * Money per day for one eco skill layout.
  * plan: { companies: [{ id, good, engine, employees: [...] }], perPoint: {good: G},
- *         pointValue, selfWork (bool), trainingsPerDay, managerPercent, corePercent }
+ *         currentManagementValue (the one the employees' shown bonus includes),
+ *         selfWork (bool), trainingsPerDay }
  * Companies run in order of profit, up to the Companies skill's limit.
  */
 export function dailyIncome(levels, plan, config) {
@@ -75,8 +82,9 @@ export function dailyIncome(levels, plan, config) {
     const perPoint = plan.perPoint[c.good] ?? 0;
     const enginePoints = engineDaily(upgrades, c.engine);
     const staff = (c.employees ?? []).map((e) => employeeDay(e, {
-      managementLevel: levels.management, managerPercent: plan.managerPercent, corePercent: plan.corePercent,
-      pointValue: plan.pointValue, goodPerPoint: perPoint,
+      managementValue: ecoValue(skills, 'management', levels.management),
+      currentManagementValue: plan.currentManagementValue,
+      goodPerPoint: perPoint,
     }));
     const employeeProfit = staff.reduce((s, x) => s + x.profit, 0);
     return { id: c.id, good: c.good, enginePoints, engineProfit: enginePoints * perPoint, employeeProfit, perPoint, total: enginePoints * perPoint + employeeProfit };

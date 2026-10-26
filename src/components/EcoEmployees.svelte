@@ -1,24 +1,22 @@
 <script>
   /**
-   * Employees, typed in from the game (the API doesn't expose them yet).
-   * Output, wage and profit per employee with the community-documented formulas.
+   * Employees, typed in from the game (the API doesn't expose them yet):
+   * the three numbers the game shows for each one.
    */
-  import { ecoEmployees, ecoSettings, newEmployee } from '../lib/eco.svelte.js';
+  import { ecoEmployees, newEmployee } from '../lib/eco.svelte.js';
   import { employeeDay } from '../lib/eco.js';
-  import { planner } from '../lib/planner.svelte.js';
   import { fmt } from '../lib/format.js';
   import { itemImage } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
   import Icon from './Icon.svelte';
-  import { mdiPlus, mdiDelete } from '@mdi/js';
+  import { mdiPlus, mdiDelete, mdiPickaxe } from '@mdi/js';
 
   let { companies, perPoint, pointValue, items } = $props();
 
-  const management = $derived(planner.player?.ecoLevels?.management ?? 0);
-  const ctx = (c) => ({
-    managementLevel: management, managerPercent: Number(ecoSettings.managerPercent) || 0, corePercent: ecoSettings.core ? 5 : 0,
-    pointValue, goodPerPoint: perPoint[c.good] ?? 0,
-  });
+  // The card's bonus already includes Management, so nothing is swapped here.
+  const day = (e, c) => employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 });
+  // The game's own estimate values output at the market value of a point.
+  const gameEstimate = (d) => d.points * pointValue - d.wage;
 
   function add(c) {
     ecoEmployees[c.id] = [...(ecoEmployees[c.id] ?? []), newEmployee()];
@@ -29,30 +27,25 @@
 
   const totals = $derived(companies.reduce((acc, c) => {
     for (const e of ecoEmployees[c.id] ?? []) {
-      const d = employeeDay(e, ctx(c));
+      const d = day(e, c);
       acc.count++; acc.points += d.points; acc.wage += d.wage; acc.profit += d.profit;
     }
     return acc;
   }, { count: 0, points: 0, wage: 0, profit: 0 }));
-
-  const FIELDS = [
-    ['production', 'Production (base + trained)', 'Counts for output and for their wage.'],
-    ['traitProduction', 'Production from traits', 'Counts for output only: not paid for.'],
-    ['expectation', 'Wage expectation %', '70–130; lowered by Negotiation training and Modest.'],
-    ['wagePerDay', 'Or: wage per day (G)', 'From the game; overrides the expectation if set.'],
-    ['happiness', 'Happiness', '50 is neutral; each point is ±1% output.'],
-    ['toolPercent', 'Tool %', 'Common +3% … Mythic +65%.'],
-    ['specialization', 'Days on this good', '+1% a day, up to +20%.'],
-    ['bonusPercent', 'Other bonus %', 'Traits and events that change the bonus.'],
-  ];
 </script>
 
 <section class="card wipcard">
-  <p><span class="wip">WIP</span> The game's API has no employee data yet, so enter your employees from their cards in the game. Saved in this browser. Formulas from the community guides: output = (production + trait production) ÷ 4 × bonus each hour; wage = production ÷ 4 × point value × expectation (trait production isn't paid).</p>
+  <p><span class="wip">WIP</span> The game's API has no employee data yet, so copy three numbers per employee from the game:</p>
+  <ol>
+    <li><strong>Production</strong>: the <Icon path={mdiPickaxe} size={13} /> number on their card (e.g. 5).</li>
+    <li><strong>Bonus %</strong>: the <Icon path={mdiPickaxe} size={13} /> +x% on their card; hover it for the exact total (e.g. 21.9).</li>
+    <li><strong>Payroll per day</strong>: hover their profit (e.g. +2.13) and copy "Payroll" (e.g. 1.56).</li>
+  </ol>
+  <p class="muted small">Saved in this browser. Profit here uses what <em>your company's good</em> sells for per point; the game's own estimate uses the market value of a point ({fmt(pointValue, 4)}), shown alongside.</p>
   <dl class="big">
     <div><dt>Employees</dt><dd class="num">{totals.count}</dd></div>
     <div><dt>Points per day</dt><dd class="num">{fmt(totals.points, 0)}</dd></div>
-    <div><dt>Wages per day</dt><dd class="num">{fmt(totals.wage, 2)} G</dd></div>
+    <div><dt>Payroll per day</dt><dd class="num">{fmt(totals.wage, 2)} G</dd></div>
     <div><dt>Profit per day</dt><dd class="num" class:good={totals.profit >= 0} class:bad={totals.profit < 0}>{fmt(totals.profit, 2)} G</dd></div>
   </dl>
 </section>
@@ -62,28 +55,31 @@
   <section class="card" aria-label="Employees of {c.name}">
     <div class="head">
       <h2><img src={itemImage(c.good, items)} alt="" width="22" height="22" /> {c.name} · {itemLabel(c.good) || c.good}</h2>
-      <span class="muted small">{list.length} of {c.breakRoom} (break room level {c.breakRoom})</span>
+      <span class="muted small">{list.length} of {c.breakRoom} (break room level {c.breakRoom}) · {fmt(perPoint[c.good] ?? 0, 4)} G per point</span>
     </div>
-    {#each list as e, i (i)}
-      {@const d = employeeDay(e, ctx(c))}
-      <div class="employee">
-        <div class="row">
-          <input class="name" bind:value={e.name} placeholder="Name" aria-label="Employee name" />
-          <span class="result">
-            <strong>{fmt(d.points, 0)}</strong> points · wage <strong>{fmt(d.wage, 2)} G</strong> ·
-            profit <strong class:good={d.profit >= 0} class:bad={d.profit < 0}>{fmt(d.profit, 2)} G</strong> a day
-            <small class="muted">(bonus {fmt(d.bonus * 100, 1)}%)</small>
-          </span>
-          <button class="icon" onclick={() => remove(c, i)} aria-label="Remove employee"><Icon path={mdiDelete} size={16} /></button>
-        </div>
-        <div class="fields">
-          {#each FIELDS as [key, text, help] (key)}
-            <label title={help}><span>{text}</span><input type="number" step="any" bind:value={e[key]} /></label>
-          {/each}
-        </div>
-        {#if d.profit < 0}<p class="bad small">Costs more than they make: train their wage down, give them a tool, or replace them.</p>{/if}
+    {#if list.length}
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Production</th><th>Bonus %</th><th>Payroll / day</th><th class="num">Points / day</th><th class="num">Profit / day</th><th class="num" title="The game's estimate, at the market value of a point">Game's estimate</th><th></th></tr></thead>
+          <tbody>
+            {#each list as e, i (i)}
+              {@const d = day(e, c)}
+              <tr>
+                <td><input class="name" bind:value={e.name} placeholder="Name" aria-label="Name" /></td>
+                <td><input type="number" step="any" min="0" bind:value={e.production} aria-label="Production" /></td>
+                <td><input type="number" step="any" bind:value={e.bonusPercent} aria-label="Bonus percent" /></td>
+                <td><input type="number" step="any" min="0" bind:value={e.payroll} aria-label="Payroll per day" /></td>
+                <td class="num">{fmt(d.points, 1)}</td>
+                <td class="num"><strong class:good={d.profit >= 0} class:bad={d.profit < 0}>{d.profit >= 0 ? '+' : ''}{fmt(d.profit, 2)}</strong></td>
+                <td class="num muted">{gameEstimate(d) >= 0 ? '+' : ''}{fmt(gameEstimate(d), 2)}</td>
+                <td><button class="icon" onclick={() => remove(c, i)} aria-label="Remove employee"><Icon path={mdiDelete} size={16} /></button></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
-    {/each}
+      {#if list.some((e) => day(e, c).profit < 0)}<p class="bad small">Red: costs more than they make. Train their wage down (Negotiation), give them a tool, raise their happiness, or replace them.</p>{/if}
+    {/if}
     {#if list.length < c.breakRoom}
       <button class="add" onclick={() => add(c)}><Icon path={mdiPlus} size={16} /> Add employee</button>
     {/if}
@@ -91,23 +87,24 @@
 {/each}
 
 <style>
-  .wipcard p { margin: 0 0 10px; }
+  .wipcard p { margin: 0 0 8px; }
+  .wipcard ol { margin: 0 0 8px; padding-left: 20px; display: grid; gap: 3px; }
   .wip { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); margin-right: 6px; }
   .big { display: flex; flex-wrap: wrap; gap: 12px 36px; margin: 0; }
   .big dt { color: var(--muted); font-size: 12px; }
   .big dd { margin: 2px 0 0; font-size: 22px; font-weight: 700; }
   .good { color: var(--good); }
   .bad { color: var(--bad); }
-  .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
   .head h2 { display: flex; align-items: center; gap: 8px; margin: 0; }
   .small { font-size: 12px; }
-  .employee { border-top: 1px solid var(--line); padding: 10px 0; }
-  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .name { width: 160px; }
-  .result { flex: 1; font-size: 14px; }
-  .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 8px; }
-  label { display: grid; gap: 3px; font-size: 11px; color: var(--muted); }
-  input { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 8px; color: var(--text); font-size: 14px; min-width: 0; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 5px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { font-size: 11px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  .num { text-align: right; white-space: nowrap; }
+  input { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 7px; color: var(--text); font-size: 14px; width: 80px; }
+  input.name { width: 150px; }
   .icon { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px; }
   .add { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); color: var(--text); border: 1px dashed var(--line); border-radius: var(--radius-sm); padding: 7px 12px; cursor: pointer; }
 </style>

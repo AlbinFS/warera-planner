@@ -11,7 +11,7 @@
 
   const META = {
     companies: { label: 'Companies', icon: mdiAccountGroup, what: 'How many companies run at once (engines and employees only work in running companies).' },
-    management: { label: 'Management', icon: mdiCrown, what: '+2% output for every employee, per level.' },
+    management: { label: 'Management', icon: mdiCrown, what: '+2% output for every employee per point (its value is level + 1).' },
     energy: { label: 'Energy', icon: mdiLightningBolt, what: 'Pays for hiring, training and self-work (10 each); refills a tenth of the bar an hour.' },
     production: { label: 'Production', icon: mdiFactory, what: 'Production points from each self-work.' },
     leadership: { label: 'Leadership', icon: mdiAccountStar, what: 'Better training cards and event odds. No direct income: worth it while you train employees.' },
@@ -59,11 +59,6 @@
       <span>Keep Leadership at least</span>
       <input type="number" min="0" max="10" bind:value={ecoSettings.minLeadership} />
     </label>
-    <label>
-      <span>Hired manager's bonus (%)</span>
-      <input type="number" min="0" max="22" bind:value={ecoSettings.managerPercent} />
-    </label>
-    <label class="check"><input type="checkbox" bind:checked={ecoSettings.core} /> Companies in my country's core regions (+5%)</label>
     <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy</label>
   </div>
   <p class="muted small">
@@ -100,7 +95,7 @@
       <li>Companies running: <strong>{best.result.activeCount}</strong> of {best.result.owned} you own (limit {best.result.limit}) → <strong>{fmt(best.result.companies, 1)} G</strong> a day from engines and employees</li>
       <li>Energy: {fmt(best.result.energyPerDay, 0)} a day; {fmt(best.result.trainingEnergy, 0)} for trainings{#if plan.selfWork}, {best.result.selfWorkActions} self-works → {fmt(best.result.selfWorkPoints, 0)} points = <strong>{fmt(best.result.selfWork, 1)} G</strong>{/if}</li>
     </ul>
-    <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27 gave everyone one free reset). The model: engine and employee output at today's prices for each company's good, wages as the game sets them, Management +2% per level on employee output.</p>
+    <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27 gave everyone one free reset). The model: engine and employee output at today's prices for each company's good, employees' output and payroll as the game shows them, Management +2% per point of its value on employee output.</p>
   </section>
 {:else}
   <section class="card"><p class="warn">No layout fits: the trainings need more energy than any layout within {budget} points gives. Lower the trainings per day or allow more points.</p></section>

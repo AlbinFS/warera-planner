@@ -2,12 +2,11 @@
   /** What to produce and which company upgrades pay back. */
   import { ecoEmployees } from '../lib/eco.svelte.js';
   import { engineDaily, employeeDay } from '../lib/eco.js';
-  import { planner } from '../lib/planner.svelte.js';
   import { fmt } from '../lib/format.js';
   import { itemImage, rarityOf, RARITY_COLORS } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
 
-  let { companies, goods, perPoint, config, prices, pointValue } = $props();
+  let { companies, goods, perPoint, config, prices } = $props();
   const items = $derived(config.items);
   const up = $derived(config.upgrades);
 
@@ -18,7 +17,8 @@
 
   /** Points a company makes per day: engine plus its employees (as typed in). */
   function dayPoints(c) {
-    const staff = (ecoEmployees[c.id] ?? []).map((e) => employeeDay(e, { managementLevel: planner.player?.ecoLevels?.management ?? 0, pointValue, goodPerPoint: perPoint[c.good] ?? 0 }));
+    // Shown bonus already includes the owner's Management, so no change here.
+    const staff = (ecoEmployees[c.id] ?? []).map((e) => employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 }));
     return engineDaily(up, c.engine) + staff.reduce((s, x) => s + x.points, 0);
   }
   const bestGood = $derived(goods[0]);
