@@ -140,8 +140,8 @@
           <option value="gear">Gear only (planned skills)</option>
         </select>
       </label>
-      <label><span>Bounty (G per 1k damage)</span><input type="number" step="0.01" min="0" bind:value={terms.bounty} /></label>
-      <label><span>Pool loot (G per 1k damage)</span><input type="number" step="0.01" min="0" bind:value={terms.poolLoot} /></label>
+      <label><span>Bounty (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={terms.bounty} /></label>
+      <label><span>Pool loot (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={terms.poolLoot} /></label>
       <label><span>Willing to lose (G)</span><input type="number" step="1" min="0" bind:value={terms.lose} placeholder="No limit" /></label>
       <label>
         <span>Economy income (G per day)</span>
