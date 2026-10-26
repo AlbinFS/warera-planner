@@ -51,5 +51,23 @@ npm run preview
 ## Layout
 
 - `src/`: the site (Svelte). `src/lib/warera.js` calls the official API from the browser; `src/lib/settings.svelte.js` holds the fight settings shared by every page.
-- `worker/index.js`: the Cloudflare Worker. It serves `dist/` and answers `/api/*`.
-- `wrangler.jsonc`: Worker config. `public/_headers`: cache and security headers.
+- `worker/index.js`: the Cloudflare Worker. It serves `dist/` and answers `/api/*` from D1.
+- `worker/job.js`: the scheduled job (every minute). It stores game config (hourly) and item prices (every 5 minutes), and keeps the equipment trade history and per-roll prices, a few items per run.
+- `worker/prices.js`: the pricing rules (median of the last 15 trades in 7 days, else the last 5 of any age; single-stat items smoothed so a better roll is never cheaper).
+- `wrangler.jsonc`: Worker config: D1 binding, cron. `public/_headers`: cache and security headers.
+
+## Hosting (Cloudflare)
+
+- **D1 database** `warera-prices`, bound as `DB`. The job creates its tables itself.
+- **Secret** `WARERA_API_KEY`: set it on the Worker in the dashboard (Settings → Variables and Secrets, type Secret). Without it the job still stores game config and item prices, but no equipment prices.
+- Every `/api` data route answers `{ fetchedAt, stale, ... }`. When the official API is down, the job keeps the last good copy and the site shows a notice with each source's age.
+
+## Free-plan limits
+
+A scheduled run gets 10 ms of CPU. Each run handles items up to about 350 KB of stored trades. Check a change against real data with:
+
+```bash
+node tools/bench-job.mjs <trade-store.json> <game-config.json>
+```
+
+The worst run measured 7.2 ms, with a full page of new trades for every item.

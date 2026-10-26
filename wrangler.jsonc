@@ -1,5 +1,5 @@
 // One Cloudflare Worker serves the site (static files from dist/), the /api
-// routes and, later, the scheduled price job.
+// routes and the scheduled price job.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "warera-planner",
@@ -13,5 +13,12 @@
     // /api is always handled by the Worker, never by a static file.
     "run_worker_first": ["/api/*"]
   },
+  // Game config, item prices and the equipment trade history (tables are created by the job).
+  "d1_databases": [
+    { "binding": "DB", "database_name": "warera-prices", "database_id": "REPLACE_WITH_DATABASE_ID" }
+  ],
+  // Every minute; each run refreshes a small slice (see worker/job.js).
+  "triggers": { "crons": ["* * * * *"] },
+  // The API key is a secret (WARERA_API_KEY), set in the dashboard, never in this file.
   "observability": { "enabled": true }
 }

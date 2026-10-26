@@ -24,3 +24,7 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local Worker secrets and state.
+.dev.vars
+.dev.vars.*

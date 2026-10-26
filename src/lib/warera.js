@@ -31,8 +31,38 @@ export function cached(procedure, input = {}, ttlMs = 5 * 60 * 1000) {
   return promise;
 }
 
-export const getGameConfig = () => cached('gameConfig.getGameConfig', {}, 60 * 60 * 1000);
-export const getItemPrices = () => cached('itemTrading.getPrices');
+/**
+ * Game data from this site's /api, which keeps the last good copy when the
+ * official API is down. Falls back to the official API if /api has nothing.
+ * Resolves to { data, fetchedAt: Date, stale, source }.
+ */
+async function siteData(path, procedure) {
+  try {
+    const res = await fetch(path);
+    if (res.ok) {
+      const body = await res.json();
+      return { data: body.data, fetchedAt: new Date(body.fetchedAt), stale: body.stale, source: 'site' };
+    }
+  } catch {}
+  const data = await cached(procedure);
+  return { data, fetchedAt: new Date(), stale: false, source: 'official API' };
+}
+
+const once = (load) => {
+  let promise = null;
+  return () => (promise ??= load().catch((err) => { promise = null; throw err; }));
+};
+
+export const getGameConfig = once(() => siteData('/api/game-config', 'gameConfig.getGameConfig'));
+export const getItemPrices = once(() => siteData('/api/item-prices', 'itemTrading.getPrices'));
+
+/** Per-roll equipment prices; only this site has them (built from trade history). */
+export const getEquipmentPrices = once(async () => {
+  const res = await fetch('/api/equipment-prices');
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+  return { data: body, fetchedAt: new Date(body.fetchedAt), stale: body.stale, ready: body.ready, source: 'site' };
+});
 
 /** Finds a player by exact username (case-insensitive), else the best match. */
 export async function findPlayer(name) {

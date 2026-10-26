@@ -1,42 +1,48 @@
 <script>
-  import { getGameConfig, getItemPrices } from '../lib/warera.js';
+  import { getGameConfig, getItemPrices, getEquipmentPrices } from '../lib/warera.js';
 
-  // Each data source with when it arrived, so differences between tools can be traced.
-  let sources = $state([
-    { name: 'Game config', detail: '', status: 'loading', at: null },
-    { name: 'Item prices', detail: '', status: 'loading', at: null },
-    { name: 'Equipment prices', detail: '', status: 'loading', at: null },
-  ]);
+  // Each data source with when it was fetched, so differences between tools can be traced.
+  const SOURCES = [
+    { name: 'Game config', load: getGameConfig, describe: (d) => `${Object.keys(d.items ?? {}).length} items` },
+    { name: 'Item prices', load: getItemPrices, describe: (d) => `${Object.keys(d).length} prices` },
+    {
+      name: 'Equipment prices',
+      load: getEquipmentPrices,
+      describe: (d, r) => `${d.items.length} rolls${r.ready ? '' : ', history still being collected'}`,
+    },
+  ];
 
-  const done = (i, detail) => Object.assign(sources[i], { status: 'ok', detail, at: new Date() });
-  const failed = (i, err) => Object.assign(sources[i], { status: 'error', detail: err.message });
+  let rows = $state(SOURCES.map((s) => ({ name: s.name, status: 'loading', detail: '', fetchedAt: null, stale: false })));
 
-  getGameConfig()
-    .then((c) => done(0, `${Object.keys(c.items ?? {}).length} items`))
-    .catch((e) => failed(0, e));
-  getItemPrices()
-    .then((p) => done(1, `${Object.keys(p).length} prices`))
-    .catch((e) => failed(1, e));
-  fetch('/api/equipment-prices')
-    .then(async (r) => {
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error ?? `HTTP ${r.status}`);
-      done(2, `${body.items.length} rolls`);
-    })
-    .catch((e) => failed(2, e));
+  SOURCES.forEach((s, i) => {
+    s.load()
+      .then((r) => Object.assign(rows[i], { status: r.stale ? 'stale' : 'ok', detail: s.describe(r.data, r), fetchedAt: r.fetchedAt, stale: r.stale }))
+      .catch((err) => Object.assign(rows[i], { status: 'error', detail: err.message }));
+  });
 
-  const time = (d) => d?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const anyStale = $derived(rows.some((r) => r.stale));
+
+  function when(date) {
+    if (!date) return '';
+    const minutes = Math.round((Date.now() - date.getTime()) / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 120) return `${minutes} min ago`;
+    return date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+  }
 </script>
 
 <section class="card" aria-label="Data sources">
   <h2>Data</h2>
+  {#if anyStale}
+    <p class="notice" role="status">The official WarEra API isn't answering right now. Showing the last data we have; check the times below.</p>
+  {/if}
   <ul>
-    {#each sources as s (s.name)}
+    {#each rows as r (r.name)}
       <li>
-        <span class="dot {s.status}" aria-hidden="true"></span>
-        <span class="name">{s.name}</span>
+        <span class="dot {r.status}" aria-hidden="true"></span>
+        <span class="name">{r.name}</span>
         <span class="detail muted">
-          {#if s.status === 'loading'}Loading…{:else if s.status === 'ok'}{s.detail}, as of {time(s.at)}{:else}{s.detail}{/if}
+          {#if r.status === 'loading'}Loading…{:else if r.status === 'error'}{r.detail}{:else}{r.detail} · fetched {when(r.fetchedAt)}{/if}
         </span>
       </li>
     {/each}
@@ -48,7 +54,15 @@
   li { display: grid; grid-template-columns: 12px 140px 1fr; align-items: center; gap: 10px; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
   .dot.ok { background: var(--good); }
+  .dot.stale { background: var(--accent); }
   .dot.error { background: var(--bad); }
+  .notice {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--accent);
+    color: var(--text);
+  }
   @media (max-width: 520px) {
     li { grid-template-columns: 12px 1fr; }
     .detail { grid-column: 2; }
