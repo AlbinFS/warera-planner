@@ -1,0 +1,2 @@
+# LF everywhere, so the shell hooks run on every OS.
+* text=auto eol=lf

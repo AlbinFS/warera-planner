@@ -1,0 +1,3 @@
+#!/bin/sh
+# Blocks commits that contain secrets or identifying terms.
+exec node tools/check-leaks.mjs --staged
