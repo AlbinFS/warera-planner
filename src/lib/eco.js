@@ -30,13 +30,16 @@ export const ecoMaxLevel = (skills, skill, playerLevel) => Math.max(0, ...Object
   .filter(([, l]) => (l.unlockAtLevel ?? 0) <= playerLevel).map(([n]) => Number(n)));
 
 /**
- * Value of 1 production point: the game uses raw-material trades over 7 days;
- * this estimate averages the raw materials' current price per PP.
+ * Value of 1 production point. The game uses raw-material trades over the
+ * last 7 days, which current prices can't reproduce exactly; the average
+ * current price of the one-point raw materials comes closest (0.0994 vs the
+ * game's 0.1012 on 2026-10-26; livestock and fish pull an all-raws average
+ * down to 0.0969). The game's number can be typed in.
  */
 export function estimatePointValue(items, prices) {
   const values = Object.entries(items)
-    .filter(([code, it]) => it.type === 'raw' && it.productionPoints > 0 && Number.isFinite(prices[code]))
-    .map(([code, it]) => prices[code] / it.productionPoints);
+    .filter(([code, it]) => it.type === 'raw' && it.productionPoints === 1 && Number.isFinite(prices[code]))
+    .map(([code]) => prices[code]);
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0.1;
 }
 

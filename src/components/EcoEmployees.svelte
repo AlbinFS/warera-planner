@@ -3,7 +3,7 @@
    * Employees, typed in from the game (the API doesn't expose them yet):
    * the three numbers the game shows for each one.
    */
-  import { ecoEmployees, newEmployee } from '../lib/eco.svelte.js';
+  import { ecoEmployees, ecoSettings, newEmployee } from '../lib/eco.svelte.js';
   import { employeeDay } from '../lib/eco.js';
   import { fmt } from '../lib/format.js';
   import { itemImage } from '../lib/visual.js';
@@ -41,7 +41,12 @@
     <li><strong>Bonus %</strong>: the <Icon path={mdiPickaxe} size={13} /> +x% on their card; hover it for the exact total (e.g. 21.9).</li>
     <li><strong>Payroll per day</strong>: hover their profit (e.g. +2.13) and copy "Payroll" (e.g. 1.56).</li>
   </ol>
-  <p class="muted small">Saved in this browser. Profit here uses what <em>your company's good</em> sells for per point; the game's own estimate uses the market value of a point ({fmt(pointValue, 4)}), shown alongside.</p>
+  <label class="pv">
+    <span>Value of 1 production point: copy it from any employee's "Estimated profit" tooltip (the number after ×, e.g. 0.1012)</span>
+    <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={pointValue.toFixed(4)} />
+    {#if !(ecoSettings.pointValue > 0)}<small class="muted">Using an estimate from today's prices ({fmt(pointValue, 4)}); the game's own profit numbers match once you type in its value.</small>{/if}
+  </label>
+  <p class="muted small">Saved in this browser. "Profit (game)" is the game's own estimate. The column next to it values the output at what the company's good actually sells for per point: what you really earn when you sell it.</p>
   <dl class="big">
     <div><dt>Employees</dt><dd class="num">{totals.count}</dd></div>
     <div><dt>Points per day</dt><dd class="num">{fmt(totals.points, 0)}</dd></div>
@@ -60,7 +65,7 @@
     {#if list.length}
       <div class="scroll">
         <table>
-          <thead><tr><th>Name</th><th>Production</th><th>Bonus %</th><th>Payroll / day</th><th class="num">Points / day</th><th class="num">Profit / day</th><th class="num" title="The game's estimate, at the market value of a point">Game's estimate</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Production</th><th>Bonus %</th><th>Payroll / day</th><th class="num">Points / day</th><th class="num" title="Points × value of 1 production point − payroll, as the game shows it">Profit (game)</th><th class="num" title="Points × what {itemLabel(c.good) || c.good} sells for per point − payroll">At {itemLabel(c.good) || c.good}'s price</th><th></th></tr></thead>
           <tbody>
             {#each list as e, i (i)}
               {@const d = day(e, c)}
@@ -70,15 +75,15 @@
                 <td><input type="number" step="any" bind:value={e.bonusPercent} aria-label="Bonus percent" /></td>
                 <td><input type="number" step="any" min="0" bind:value={e.payroll} aria-label="Payroll per day" /></td>
                 <td class="num">{fmt(d.points, 1)}</td>
-                <td class="num"><strong class:good={d.profit >= 0} class:bad={d.profit < 0}>{d.profit >= 0 ? '+' : ''}{fmt(d.profit, 2)}</strong></td>
-                <td class="num muted">{gameEstimate(d) >= 0 ? '+' : ''}{fmt(gameEstimate(d), 2)}</td>
+                <td class="num"><strong class:good={gameEstimate(d) >= 0} class:bad={gameEstimate(d) < 0}>{gameEstimate(d) >= 0 ? '+' : ''}{fmt(gameEstimate(d), 2)}</strong></td>
+                <td class="num" class:good={d.profit >= 0} class:bad={d.profit < 0}>{d.profit >= 0 ? '+' : ''}{fmt(d.profit, 2)}</td>
                 <td><button class="icon" onclick={() => remove(c, i)} aria-label="Remove employee"><Icon path={mdiDelete} size={16} /></button></td>
               </tr>
             {/each}
           </tbody>
         </table>
       </div>
-      {#if list.some((e) => day(e, c).profit < 0)}<p class="bad small">Red: costs more than they make. Train their wage down (Negotiation), give them a tool, raise their happiness, or replace them.</p>{/if}
+      {#if list.some((e) => gameEstimate(day(e, c)) < 0)}<p class="bad small">Red: costs more than they make. Train their wage down (Negotiation), give them a tool, raise their happiness, or replace them.</p>{/if}
     {/if}
     {#if list.length < c.breakRoom}
       <button class="add" onclick={() => add(c)}><Icon path={mdiPlus} size={16} /> Add employee</button>
@@ -88,6 +93,8 @@
 
 <style>
   .wipcard p { margin: 0 0 8px; }
+  .pv { display: grid; gap: 4px; font-size: 13px; color: var(--muted); margin: 0 0 10px; max-width: 640px; }
+  .pv input { width: 140px; }
   .wipcard ol { margin: 0 0 8px; padding-left: 20px; display: grid; gap: 3px; }
   .wip { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); margin-right: 6px; }
   .big { display: flex; flex-wrap: wrap; gap: 12px 36px; margin: 0; }
