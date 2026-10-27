@@ -129,9 +129,16 @@ export async function strongestWithin(market, planner, settings, budget) {
 /** Builds around a damage target (85–115%), so a slightly lower or higher target with much better value is easy to spot. */
 export async function buildsNear(market, planner, settings, target) {
   const prep = prepFor(market, { lockedFood: foodSetting(settings) });
-  return buildFrontier(prep, planner.skills, playerOf(planner), fightOptions(settings))
-    .filter((b) => b.damage >= target * 0.85 && b.damage <= target * 1.15)
-    .map((b) => ({ ...shape(market, b), per1k: (b.cost / b.damage) * 1000 }));
+  const near = buildFrontier(prep, planner.skills, playerOf(planner), fightOptions(settings))
+    .filter((b) => b.damage >= target * 0.85 && b.damage <= target * 1.15);
+  // One build per 1% of damage (the frontier is very fine-grained), cheapest of each.
+  const kept = [];
+  for (const b of near) {
+    const last = kept.at(-1);
+    if (last && b.damage < last.damage * 1.01) { if (b.cost <= last.cost) kept[kept.length - 1] = b; continue; }
+    kept.push(b);
+  }
+  return kept.map((b) => ({ ...shape(market, b), per1k: (b.cost / b.damage) * 1000 }));
 }
 
 /** Cheapest gear (and food, unless fixed in settings) reaching a damage target. */

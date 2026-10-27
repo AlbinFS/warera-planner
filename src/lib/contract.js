@@ -44,9 +44,14 @@ export function frontier(points) {
 /** Every build worth listing across the damage range for one skill layout. */
 export async function collectBuilds(market, planner, settings, skills, onProgress) {
   const prep = prepare(market, { lockedFood: settings.food === 'any' ? undefined : settings.food });
-  const builds = buildFrontier(prep, skills, playerOf(planner), fightOptions(settings));
+  const all = buildFrontier(prep, skills, playerOf(planner), fightOptions(settings));
   onProgress?.(1);
-  if (!builds.length) throw new Error('No build can fight with these settings (missing prices?).');
+  if (!all.length) throw new Error('No build can fight with these settings (missing prices?).');
+  // One build per 0.5% of damage (the frontier is very fine-grained), always keeping the strongest.
+  const builds = [];
+  for (const [i, b] of all.entries()) {
+    if (!builds.length || i === all.length - 1 || b.damage >= builds.at(-1).damage * 1.005) builds.push(b);
+  }
   return builds.map((b) => ({ damage: b.damage, cost: b.cost, food: b.food ?? 'none', equipment: toEquipment(market, b.gear), armor: b.armor, dodge: b.dodge }));
 }
 
