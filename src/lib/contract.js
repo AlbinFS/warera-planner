@@ -52,7 +52,10 @@ export async function collectBuilds(market, planner, settings, skills, onProgres
   for (const [i, b] of all.entries()) {
     if (!builds.length || i === all.length - 1 || b.damage >= builds.at(-1).damage * 1.005) builds.push(b);
   }
-  return builds.map((b) => ({ damage: b.damage, cost: b.cost, food: b.food ?? 'none', equipment: toEquipment(market, b.gear), armor: b.armor, dodge: b.dodge }));
+  return builds.map((b) => ({
+    damage: b.damage, cost: b.cost, food: b.food ?? 'none', equipment: toEquipment(market, b.gear), armor: b.armor, dodge: b.dodge,
+    debuff: b.debuff ? { equipment: toEquipment(market, b.debuff.gear), food: b.debuff.food ?? 'none' } : null,
+  }));
 }
 
 /** Income per day for economy-skill layouts (the Eco page's model). */

@@ -133,3 +133,24 @@ test('armor wears only on hits taken: dodge spares it, the weapon wears every sw
   const armorWear = ['helmet', 'chest', 'pants', 'boots', 'gloves'].reduce((t, s) => t + wearPerSwing(market, cfg, s, gear[s]), 0);
   assert.ok(Math.abs(perSwing - armorWear * (1 - withArmor.dodge / 100)) < 1e-9, `${perSwing} vs ${armorWear * (1 - withArmor.dodge / 100)}`);
 });
+
+test('a second build for the debuff never does worse than one build all day, and buys the pill once', () => {
+  const prep = prepare(smallMarket());
+  const player = { level: 32, militaryRankPercent: 20, prestige: {} };
+  const one = { pill: true, battleBonusPercent: 70, hours: 16 };
+  const two = { ...one, splitDebuff: true };
+  for (const limit of [60, 150, Infinity]) {
+    const a = strongest(prep, layout, player, one, { bounty: 0.1 }, limit);
+    const b = strongest(prep, layout, player, two, { bounty: 0.1 }, limit);
+    assert.ok(b.damage >= a.damage * 0.995, `split ${b.damage} < single ${a.damage} at ${limit}`);
+    assert.ok(b.net >= -limit - 1e-6);
+  }
+  const b = strongest(prep, layout, player, two);
+  const pillOnly = strongest(prep, layout, player, { ...two, phase: 'pill' });
+  const debuffOnly = strongest(prep, layout, player, { ...two, phase: 'debuff' });
+  // The pill (35) is in the pill build's cost only.
+  assert.ok(pillOnly.cost - 35 < pillOnly.cost && debuffOnly.cost < pillOnly.cost);
+  assert.ok(b.debuff && b.phases.length === 2 && Math.abs(b.damage - pillOnly.damage - debuffOnly.damage) < b.damage * 0.01);
+  const target = cheapest(prep, layout, player, two, b.damage * 0.8);
+  assert.ok(target.reachedTarget && target.damage >= b.damage * 0.8 - 1);
+});

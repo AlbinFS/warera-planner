@@ -27,7 +27,7 @@
 
   // Recalculate shortly after the last edit; answers to older edits are dropped.
   $effect(() => {
-    JSON.stringify([planner.skills, planner.gear, planner.food, planner.player?.id, settings]);
+    JSON.stringify([planner.skills, planner.gear, planner.food, planner.debuff, planner.player?.id, settings]);
     const id = ++seq;
     busy = true;
     const timer = setTimeout(() => run(id), 200);
@@ -131,13 +131,13 @@
         <span class="chip good"><Icon path={mdiCheckCircle} size={16} /> Best gear for this damage and cost</span>
       {:else}
         {#if hints.stronger}
-          <button class="chip up" onclick={() => applyBuild(hints.stronger.equipment, hints.stronger.food)}
+          <button class="chip up" onclick={() => applyBuild(hints.stronger.equipment, hints.stronger.food, hints.stronger.debuff)}
             title="Apply: {fmtDamage(hints.stronger.damage)} for {fmt(hints.stronger.cost, 1)} G">
             <Icon path={mdiArrowUpBold} size={16} /> {fmtDamage(hints.stronger.damage - result.damage)} more damage, same cost
           </button>
         {/if}
         {#if hints.cheaper}
-          <button class="chip down" onclick={() => applyBuild(hints.cheaper.equipment, hints.cheaper.food)}
+          <button class="chip down" onclick={() => applyBuild(hints.cheaper.equipment, hints.cheaper.food, hints.cheaper.debuff)}
             title="Apply: {fmtDamage(hints.cheaper.damage)} for {fmt(hints.cheaper.cost, 1)} G">
             <Icon path={mdiArrowDownBold} size={16} /> {fmt(result.cost - hints.cheaper.cost, 1)} G cheaper, same damage
           </button>

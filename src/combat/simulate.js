@@ -7,7 +7,8 @@
  * the swing costs 10 × (1 − armor) health. When the health left can't pay for
  * a swing, food is eaten (if any is left in that phase) or the phase ends.
  * Case drops are rolled per swing; weapon wear, ammo and scraps follow the
- * swings, armor wear the hits taken.
+ * swings, armor wear the hits taken. With a debuff build (build.debuff:
+ * { gear, food }), the hours after the pill are fought in it.
  */
 import { playerStats, swingDamage, wearPerSwing, itemPrice, softCapPercent, usableAmmo, canFight, HEALTH_COST, ARMOR_SLOTS } from './model.js';
 import { phasesFor, configOf } from './optimize.js';
@@ -25,63 +26,79 @@ function random(seed) {
 }
 
 /**
- * build: { levels, prestige, militaryRankPercent, gear (engine rolls), food }
+ * build: { levels, prestige, militaryRankPercent, gear (engine rolls), food, debuff? }
  * session: { pill, hours } or { burst: true } (the bars as they are full, no regen)
  * terms: { bounty, perK, flat } · runs: how many fights.
  */
 export function simulate(market, build, session, { battleBonusPercent = 0, terms = {}, runs = 5000, seed = 1 } = {}) {
-  if (!canFight(build.gear)) throw new Error(`A ${build.gear.weapon.code} can’t shoot without ammo: pick ammo or a knife.`);
   const config = configOf(market);
   const stats = playerStats(config, build.levels, build.prestige);
   const opts = { battleBonusPercent, militaryRankPercent: build.militaryRankPercent };
-  const phases = session.burst
-    ? [{ multiplier: session.pill ? 1 + (config.items.cocain?.flatStats?.percentAttack ?? 60) / 100 : 1, health: stats.health, foodMax: build.food ? stats.hunger : 0, heal: build.food ? stats.health * ((config.items[build.food]?.flatStats?.healthRegenPercent ?? 0) / 100) : 0 }]
-    : phasesFor(config, stats, build.food, { pill: session.pill, hours: session.hours });
-  const swing = swingDamage(stats, build.gear, { ...opts, pill: false }, config);
-  const armor = softCapPercent(stats.armor + (build.gear.chest?.skills?.armor ?? 0) + (build.gear.pants?.skills?.armor ?? 0), stats.armorCap) / 100;
-  const dodge = softCapPercent(stats.dodge + (build.gear.boots?.skills?.dodge ?? 0), stats.dodgeCap) / 100;
-  const hitCost = HEALTH_COST * (1 - armor);
-  const hit = swing.precision / 100;
-  const crit = swing.crit / 100;
-  const critMult = 1 + swing.critDamage / 100;
-  const lootChance = stats.lootChance / 100;
-
   const price = (code) => itemPrice(market, code) ?? 0;
-  const ammo = usableAmmo(build.gear) ? price(build.gear.ammo) : 0;
-  const wear = { weapon: wearPerSwing(market, config, 'weapon', build.gear.weapon), armor: ARMOR_SLOTS.reduce((t, s) => t + wearPerSwing(market, config, 'armor', build.gear[s]), 0) };
-  const foodPrice = build.food ? price(build.food) : 0;
+  const lootChance = stats.lootChance / 100;
+  // What one build fights with: its swing, defense and costs.
+  const kit = (gear, food) => {
+    if (!canFight(gear)) throw new Error(`A ${gear.weapon.code} can’t shoot without ammo: pick ammo or a knife.`);
+    const swing = swingDamage(stats, gear, { ...opts, pill: false }, config);
+    const armor = softCapPercent(stats.armor + (gear.chest?.skills?.armor ?? 0) + (gear.pants?.skills?.armor ?? 0), stats.armorCap) / 100;
+    const dodge = softCapPercent(stats.dodge + (gear.boots?.skills?.dodge ?? 0), stats.dodgeCap) / 100;
+    return {
+      swing, armor, dodge, hitCost: HEALTH_COST * (1 - armor), hit: swing.precision / 100, crit: swing.crit / 100, critMult: 1 + swing.critDamage / 100,
+      ammo: usableAmmo(gear) ? price(gear.ammo) : 0,
+      wear: { weapon: wearPerSwing(market, config, 'weapon', gear.weapon), armor: ARMOR_SLOTS.reduce((t, s) => t + wearPerSwing(market, config, 'armor', gear[s]), 0) },
+      foodPrice: food ? price(food) : 0,
+    };
+  };
+  const main = kit(build.gear, build.food);
+  const split = !!build.debuff && !session.burst && session.pill && (session.hours ?? 8) > 8;
+  const phases = session.burst
+    ? [{ multiplier: session.pill ? 1 + (config.items.cocain?.flatStats?.percentAttack ?? 60) / 100 : 1, health: stats.health, foodMax: build.food ? stats.hunger : 0, heal: build.food ? stats.health * ((config.items[build.food]?.flatStats?.healthRegenPercent ?? 0) / 100) : 0, kit: main }]
+    : split
+      ? [
+        ...phasesFor(config, stats, build.food, { pill: true, hours: session.hours, phase: 'pill' }).map((p) => ({ ...p, kit: main })),
+        ...phasesFor(config, stats, build.debuff.food, { pill: true, hours: session.hours, phase: 'debuff' }).map((p) => ({ ...p, kit: kit(build.debuff.gear, build.debuff.food) })),
+      ]
+      : phasesFor(config, stats, build.food, { pill: session.pill, hours: session.hours }).map((p) => ({ ...p, kit: main }));
+  const { armor, dodge } = main;
   const pill = session.pill && !session.burst ? price('cocain') : 0;
   const rate = ((terms.bounty ?? 0) + (terms.perK ?? 0)) / 1000;
 
   const rnd = random(seed);
   const out = { damage: new Float64Array(runs), net: new Float64Array(runs), swings: new Float64Array(runs) };
   let misses = 0, crits = 0, landed = 0, dodged = 0, totalSwings = 0, totalTaken = 0, totalFood = 0, totalCase1 = 0, totalCase2 = 0, minHit = Infinity, maxHit = 0;
+  // Costs summed over the run, by kind (each build has its own prices).
+  const spent = { weapon: 0, armor: 0, ammo: 0, food: 0 };
   for (let r = 0; r < runs; r++) {
-    let damage = 0, swings = 0, taken = 0, food = 0, case1 = 0, case2 = 0;
+    let damage = 0, swings = 0, food = 0, case1 = 0, case2 = 0, cost = pill;
     for (const p of phases) {
+      const k = p.kit;
       let health = p.health;
       let foodLeft = p.foodMax;
-      const base = swing.base * p.multiplier;
+      const base = k.swing.base * p.multiplier;
+      let pSwings = 0, pTaken = 0, pFood = 0;
       for (;;) {
-        if (health < hitCost) {
-          if (foodLeft > 0 && p.heal > 0) { foodLeft--; food++; health += p.heal; continue; }
+        if (health < k.hitCost) {
+          if (foodLeft > 0 && p.heal > 0) { foodLeft--; pFood++; health += p.heal; continue; }
           break;
         }
-        swings++;
+        pSwings++;
         let d;
-        if (rnd() >= hit) { d = base * 0.5; misses++; } else if (rnd() < crit) { d = base * critMult; crits++; } else { d = base; landed++; }
+        if (rnd() >= k.hit) { d = base * 0.5; misses++; } else if (rnd() < k.crit) { d = base * k.critMult; crits++; } else { d = base; landed++; }
         if (d < minHit) minHit = d;
         if (d > maxHit) maxHit = d;
         damage += d;
-        if (rnd() < dodge) dodged++; else { health -= hitCost; taken++; }
+        if (rnd() < k.dodge) dodged++; else { health -= k.hitCost; pTaken++; }
         if (rnd() < lootChance) { case1++; if (rnd() < 0.01) case2++; }
       }
+      swings += pSwings; food += pFood; totalTaken += pTaken;
+      spent.weapon += pSwings * k.wear.weapon; spent.ammo += pSwings * k.ammo; spent.armor += pTaken * k.wear.armor; spent.food += pFood * k.foodPrice;
+      cost += pSwings * (k.ammo + k.wear.weapon) + pTaken * k.wear.armor + pFood * k.foodPrice;
     }
-    const cost = swings * (ammo + wear.weapon) + taken * wear.armor + food * foodPrice + pill - case1 * price('case1') - case2 * price('case2');
+    cost -= case1 * price('case1') + case2 * price('case2');
     out.damage[r] = damage;
     out.swings[r] = swings;
     out.net[r] = rate * damage + (terms.flat ?? 0) - cost;
-    totalSwings += swings; totalTaken += taken; totalFood += food; totalCase1 += case1; totalCase2 += case2;
+    totalSwings += swings; totalFood += food; totalCase1 += case1; totalCase2 += case2;
   }
   const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
   const swingsMean = totalSwings / runs;
@@ -93,7 +110,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
     // Averages per fight, for the cost and income lists.
     avg: {
       damage: mean(out.damage), net: mean(out.net), swings: swingsMean, food: totalFood / runs,
-      costs: { weapon: swingsMean * wear.weapon, armor: (totalTaken / runs) * wear.armor, ammo: swingsMean * ammo, food: (totalFood / runs) * foodPrice, pill },
+      costs: { weapon: spent.weapon / runs, armor: spent.armor / runs, ammo: spent.ammo / runs, food: spent.food / runs, pill },
       income: { case1: (totalCase1 / runs) * price('case1'), case2: (totalCase2 / runs) * price('case2'), bounty: rate * mean(out.damage), loot: terms.flat ?? 0 },
       cases: { case1: totalCase1 / runs, case2: totalCase2 / runs },
     },

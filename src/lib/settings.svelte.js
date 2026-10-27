@@ -4,7 +4,8 @@
  * bonus in two separate hidden places, which made pages disagree.)
  */
 const KEY = 'settings.v1';
-const DEFAULTS = { battleBonus: 60, pill: true, food: 'any', windowHours: 8 };
+// splitDebuff: a second build for the pill's debuff (16 h and full-day windows).
+const DEFAULTS = { battleBonus: 60, pill: true, food: 'any', windowHours: 8, splitDebuff: false };
 
 function load() {
   try {

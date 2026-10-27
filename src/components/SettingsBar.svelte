@@ -2,7 +2,7 @@
   /** The fight settings every page uses, in one visible bar. */
   import { settings, FOODS } from '../lib/settings.svelte.js';
   import Icon from './Icon.svelte';
-  import { mdiPill, mdiFire, mdiClockOutline, mdiFoodDrumstick } from '@mdi/js';
+  import { mdiPill, mdiFire, mdiClockOutline, mdiFoodDrumstick, mdiSwapHorizontal } from '@mdi/js';
 </script>
 
 <section class="bar" aria-label="Fight settings">
@@ -29,6 +29,15 @@
       <button type="button" aria-pressed={settings.windowHours === 24} onclick={() => (settings.windowHours = 24)}>A full day</button>
     </span>
   </div>
+
+  {#if settings.pill && settings.windowHours > 8}
+    <label class="toggle" title="Wear one build for the pill's 8 hours and a second, cheaper one in its debuff. The optimizers then pick both.">
+      <Icon path={mdiSwapHorizontal} size={18} color="var(--c-defense)" />
+      <span>Debuff build</span>
+      <input type="checkbox" role="switch" bind:checked={settings.splitDebuff} />
+      <span class="state">{settings.splitDebuff ? 'Own' : 'Same'}</span>
+    </label>
+  {/if}
 
   <label class="field" title="Which food the optimizers may use. Your planned food is set in the gear section.">
     <Icon path={mdiFoodDrumstick} size={18} color="var(--c-life)" />

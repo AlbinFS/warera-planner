@@ -68,6 +68,15 @@ payroll per day match exactly.
 - [ ] Compare the model's daily income with the game's own figures and find
   the rest of the gap (model 136 G/day, game about 160).
 
+### Game update 0.27.1 (2026-10-27)
+- [ ] Managers: a hired manager gives employees a bonus (the "Manager" source)
+  and is paid every hour, now a tenth of before. Their wage isn't in the API,
+  so company income doesn't subtract it yet.
+- Firing a fresh hire is free and events can happen right after hiring, so
+  rerolling a bad hire costs only the hire's energy. Homesick employees are
+  fine in their country's occupied regions (the model already uses the
+  region's current owner).
+
 ### Robustness
 - [ ] The employee procedures are undocumented and may change: handle
   missing fields, and say so on the page when loading them fails.

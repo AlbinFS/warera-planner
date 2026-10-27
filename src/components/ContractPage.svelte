@@ -192,7 +192,7 @@
 
   function useInPlanner(build) {
     if (search?.levels) for (const s of ALL_SKILLS) planner.skills[s] = search.levels[s];
-    applyBuild(build.equipment, build.food);
+    applyBuild(build.equipment, build.food, build.debuff);
     navigate('/');
   }
 

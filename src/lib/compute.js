@@ -4,17 +4,23 @@
  * breakdown, and optimize gear and skills.
  */
 import { priceKey, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
-import { prepare, strongest, cheapest, buildFrontier, rollPrice, levelCost } from '../combat/optimize.js';
+import { prepare, strongest, strongestSplit, isSplit, cheapest, buildFrontier, rollPrice, levelCost } from '../combat/optimize.js';
 import { WEAR_PER_HIT, SCRAP_BASE, itemPrice, canFight } from '../combat/model.js';
 import { searchLayout } from '../combat/client.js';
 import { incomePlan } from './income.js';
 
 const GEAR_SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 
-/** Fight settings as the engine's options. A full day is 24 h; a session can also be 16 h. */
+/**
+ * Fight settings as the engine's options. A full day is 24 h; a session can
+ * also be 16 h. splitDebuff: a second build for the pill's debuff.
+ */
 export function fightOptions(settings) {
-  return { pill: !!settings.pill, battleBonusPercent: Number(settings.battleBonus) || 0, hours: Number(settings.windowHours) || 8 };
+  return { pill: !!settings.pill, battleBonusPercent: Number(settings.battleBonus) || 0, hours: Number(settings.windowHours) || 8, splitDebuff: !!settings.splitDebuff };
 }
+
+/** Whether the settings fight the debuff with its own build. */
+export const splitActive = (market, settings) => isSplit({ items: market.gameConfigItems }, fightOptions(settings));
 
 /** The player's level, rank and prestige (a shared build carries its own). */
 export function playerOf(planner) {
@@ -60,14 +66,27 @@ function prepFor(market, { locked, lockedFood } = {}) {
 const foodSetting = (settings) => (settings.food === 'any' ? undefined : settings.food);
 const plannedFood = (planner) => (planner.food && planner.food !== 'none' ? planner.food : 'none');
 
-/** A build as the pages show it: damage, cost, equipment, food (and the engine's details). */
-const shape = (market, b) => b && { damage: b.damage, cost: b.cost, equipment: toEquipment(market, b.gear), food: b.food ?? 'none', details: b };
+/** A build as the pages show it: damage, cost, equipment, food (and the engine's details), and the debuff's own build. */
+const shape = (market, b) => b && {
+  damage: b.damage, cost: b.cost, equipment: toEquipment(market, b.gear), food: b.food ?? 'none', details: b,
+  debuff: b.debuff ? { equipment: toEquipment(market, b.debuff.gear), food: b.debuff.food ?? 'none' } : null,
+};
 
 /** Damage and cost of the planned build, or { error }. */
 export async function evaluateBuild(market, planner, settings) {
   if (!canFight(planner.gear)) return { error: 'A gun can’t shoot without ammo: pick ammo, or a knife.' };
+  const opts = fightOptions(settings);
   const prep = prepFor(market, { locked: lockedGear(market, planner.gear), lockedFood: plannedFood(planner) });
-  const b = strongest(prep, planner.skills, playerOf(planner), fightOptions(settings));
+  let b;
+  if (isSplit(prep.config, opts)) {
+    // The debuff build (or the pill build again, until one is set).
+    const debuff = planner.debuff ?? { gear: planner.gear, food: planner.food };
+    if (!canFight(debuff.gear)) return { error: 'The debuff build’s gun can’t shoot without ammo: pick ammo, or a knife.' };
+    const prepDebuff = prepFor(market, { locked: lockedGear(market, debuff.gear), lockedFood: plannedFood(debuff) });
+    b = strongestSplit(prep, planner.skills, playerOf(planner), opts, {}, Infinity, prepDebuff);
+  } else {
+    b = strongest(prep, planner.skills, playerOf(planner), opts);
+  }
   if (!b) return { error: 'This build can’t fight.' };
   return { damage: b.damage, cost: b.cost, build: { equipment: toEquipment(market, b.gear), foodCode: b.food ?? 'none' }, details: b };
 }
@@ -96,16 +115,23 @@ export async function costBreakdown(market, planner, settings, evaluated) {
   const rows = [];
   const scraps = itemPrice(market, 'scraps') ?? 0;
   let scrapCredit = 0;
-  for (const slot of GEAR_SLOTS) {
-    const r = b.gear[slot];
-    if (!r) continue;
-    // The weapon wears per swing, armor per hit taken (a dodge spares it).
-    const share = b.swings * (slot === 'weapon' ? WEAR_PER_HIT.weapon : WEAR_PER_HIT.armor * (1 - b.dodge / 100)) / 100;
-    rows.push({ kind: 'roll', key: priceKey(r.code, r.skills), code: r.code, skills: r.skills, slot, phase: 'planned', amount: share * r.price });
-    scrapCredit += share * Math.floor((SCRAP_BASE[config.items[r.code]?.rarity] ?? 0) / 3) * scraps;
-  }
-  if (b.gear.ammo) rows.push({ kind: 'item', code: b.gear.ammo, slot: 'ammo', phase: 'planned', amount: b.swings * (itemPrice(market, b.gear.ammo) ?? 0) });
-  if (b.food && b.foodEaten > 0) rows.push({ kind: 'item', code: b.food, slot: 'food', amount: b.foodEaten * (itemPrice(market, b.food) ?? 0) });
+  // Gear wear, ammo and food of one build: the pill build (all of it with one build), then the debuff's own.
+  const own = (x, phase) => {
+    const swings = phase === 'debuff' || !b.debuff ? x.swings : x.swings - b.debuff.swings;
+    const food = phase === 'debuff' || !b.debuff ? x.foodEaten : x.foodEaten - b.debuff.foodEaten;
+    for (const slot of GEAR_SLOTS) {
+      const r = x.gear[slot];
+      if (!r) continue;
+      // The weapon wears per swing, armor per hit taken (a dodge spares it).
+      const share = swings * (slot === 'weapon' ? WEAR_PER_HIT.weapon : WEAR_PER_HIT.armor * (1 - x.dodge / 100)) / 100;
+      rows.push({ kind: 'roll', key: priceKey(r.code, r.skills), code: r.code, skills: r.skills, slot, phase, amount: share * r.price });
+      scrapCredit += share * Math.floor((SCRAP_BASE[config.items[r.code]?.rarity] ?? 0) / 3) * scraps;
+    }
+    if (x.gear.ammo) rows.push({ kind: 'item', code: x.gear.ammo, slot: 'ammo', phase, amount: swings * (itemPrice(market, x.gear.ammo) ?? 0) });
+    if (x.food && food > 0) rows.push({ kind: 'item', code: x.food, slot: 'food', phase, amount: food * (itemPrice(market, x.food) ?? 0) });
+  };
+  own(b, 'planned');
+  if (b.debuff) own(b.debuff, 'debuff');
   if (settings.pill) rows.push({ kind: 'item', code: 'cocain', slot: 'pill', amount: itemPrice(market, 'cocain') ?? 0 });
   if (scrapCredit) rows.push({ kind: 'item', code: 'scraps', slot: 'scraps', amount: -scrapCredit });
   const lootChance = b.stats.lootChance / 100;
@@ -116,6 +142,7 @@ export async function costBreakdown(market, planner, settings, evaluated) {
   return {
     total, rows: rows.filter((r) => Math.abs(r.amount) >= 0.005), other: Math.abs(b.cost - total) >= 0.05 ? b.cost - total : 0,
     hits: b.swings, hitsArePillPhase: false, perAttack: b.perSwing, foodEaten: b.foodEaten, cases, phases: b.phases,
+    split: b.debuff ? { pill: b.swings - b.debuff.swings, debuff: b.debuff.swings } : null,
   };
 }
 

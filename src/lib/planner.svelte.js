@@ -14,6 +14,8 @@ export const planner = $state({
   skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, 0])),
   gear: emptyGear(), // weapon/armor: { code, skills } or null; ammo: code or null
   food: 'cookedFish',
+  // The build worn in the pill's debuff, when the settings use one: { gear, food }, or null (the same as above).
+  debuff: null,
 });
 
 /** Gear from the API's current-equipment shape. */
@@ -84,10 +86,11 @@ export async function loadPlayer(user) {
   if (location.search.includes('b=')) history.replaceState(null, '', location.pathname);
 }
 
-/** Puts an optimizer build (equipment + food) into the planner. */
-export function applyBuild(equipment, foodCode) {
+/** Puts an optimizer build (equipment + food, and the debuff's own build if it has one) into the planner. */
+export function applyBuild(equipment, foodCode, debuff = null) {
   planner.gear = gearFrom(equipment);
   if (foodCode) planner.food = foodCode;
+  if (debuff) planner.debuff = { gear: gearFrom(debuff.equipment), food: debuff.food ?? 'none' };
 }
 
 /**

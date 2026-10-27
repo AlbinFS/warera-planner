@@ -70,6 +70,16 @@ damage (1.19M vs 1.2M), wear, food, cases and scrap as the combat simulator.
   loaded), each layout counts its own company income, so points move between
   fight and economy skills wherever they earn more.
 - Searches run in workers (`src/combat/worker.js`), so the page stays responsive.
+- Two builds a day (settings bar: "Debuff build", with the pill on and a 16 h
+  or full-day window): one build for the pill's 8 hours, another for its
+  debuff. Each phase has its own health and food, so each is solved on its
+  own and the pair shares the limit or target. Most damage starts from the
+  best single build and re-solves each phase exactly with the other fixed, so
+  it never does worse than one build (measured: +2.5–5.7 % damage for the
+  same loss, about 4× the time per layout). Cheapest at a target pairs
+  sampled curves of each phase, never above the single build's cost. The
+  Planner edits both builds, Hits and costs lists each build's wear, and the
+  simulator fights the debuff hours in the debuff build.
 
 ## Results against the old optimizer
 

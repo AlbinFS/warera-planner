@@ -22,7 +22,7 @@
 
   const SESSIONS = [
     { id: '8', label: '8 h pill window', hint: 'Full bars, fighting through the pill’s 8 hours (regen included).' },
-    { id: '16', label: '16 h session', hint: 'The pill’s 8 hours, then 8 more in its −60% debuff on regen: a day with 8 hours of sleep.' },
+    { id: '16', label: '16 h session', hint: 'The pill’s 8 hours, then 8 more in its −60% debuff on regen (in the debuff build, if the settings use one): a day with 8 hours of sleep.' },
     { id: 'burst', label: 'Full bars', hint: 'One full health bar and hunger bar, no regen.' },
   ];
 
@@ -38,6 +38,10 @@
         const build = {
           levels: planner.skills, prestige: planner.player?.prestige ?? {}, militaryRankPercent: planner.player?.militaryRankPercent ?? 0,
           gear: lockedGear(data.market, planner.gear), food: planner.food && planner.food !== 'none' ? planner.food : null,
+          // The debuff build, when the settings use one and it has been set.
+          debuff: settings.splitDebuff && planner.debuff
+            ? { gear: lockedGear(data.market, planner.debuff.gear), food: planner.debuff.food && planner.debuff.food !== 'none' ? planner.debuff.food : null }
+            : null,
         };
         const session = form.session === 'burst' ? { burst: true, pill: settings.pill } : { pill: settings.pill, hours: Number(form.session) };
         const terms = { bounty: Number(form.bounty) || 0, perK: Number(form.perK) || 0, flat: Number(form.flat) || 0 };

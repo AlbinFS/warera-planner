@@ -78,7 +78,7 @@
     <p class="muted">{busy ? 'Working it out…' : 'Load or build a fighting setup to see this.'}</p>
   {:else}
     <dl class="facts" class:stale={busy}>
-      <div><dt>{breakdown.hitsArePillPhase ? 'Hits during the pill' : 'Hits'}</dt><dd class="num">{fmt(breakdown.hits, 0)}</dd></div>
+      <div><dt>{breakdown.hitsArePillPhase ? 'Hits during the pill' : 'Hits'}</dt><dd class="num">{fmt(breakdown.hits, 0)}</dd>{#if breakdown.split}<small class="muted">{fmt(breakdown.split.pill, 0)} on the pill · {fmt(breakdown.split.debuff, 0)} in the debuff</small>{/if}</div>
       <div><dt>Average damage per hit</dt><dd class="num">{fmt(breakdown.perAttack, 0)}</dd></div>
       <div><dt>Food eaten</dt><dd class="num">{fmt(breakdown.foodEaten, 1)}</dd></div>
       {#each breakdown.cases as c (c.code)}

@@ -239,8 +239,9 @@ function offenseOptions(candidates, keep) {
  * it offers. A window (with or without the pill) is one phase: the full bar
  * plus its hours of regen. A session longer than the pill's buff (8 h) goes
  * on in the debuff at its malus, on regen only.
- * opts: { pill, hours, buffHours?, debuffMultiplier?, supply?, multiplier? }
+ * opts: { pill, hours, buffHours?, debuffMultiplier?, supply?, multiplier?, phase? }
  *   supply: { health, foodMax } replaces it all with one phase (current bars).
+ *   phase: 'pill' or 'debuff' keeps only that phase (a build per phase).
  */
 export function phasesFor(config, stats, food, opts) {
   const pill = (config.items.cocain?.flatStats?.percentAttack ?? 60) / 100;
@@ -252,8 +253,16 @@ export function phasesFor(config, stats, food, opts) {
   const buff = Math.min(hours, opts.buffHours ?? config.items.cocain?.flatStats?.buffDurationHours ?? 8);
   const phases = [{ multiplier: 1 + pill, ...regen(buff, true) }];
   if (hours > buff) phases.push({ multiplier: opts.debuffMultiplier ?? 1 - pill, ...regen(hours - buff, false) });
+  if (opts.phase === 'pill') return phases.slice(0, 1);
+  if (opts.phase === 'debuff') return phases.slice(1);
   return phases;
 }
+
+/** Hours the pill's buff lasts. */
+const buffHours = (config) => config.items.cocain?.flatStats?.buffDurationHours ?? 8;
+
+/** Whether this fight uses a second build for the pill's debuff. */
+export const isSplit = (config, opts) => !!(opts.splitDebuff && opts.pill && !opts.supply && !opts.phase && (opts.hours ?? 8) > buffHours(config));
 
 /** Everything a layout needs to be solved: options and per-option economics. */
 function layout(prep, levels, prestige, opts) {
@@ -277,7 +286,8 @@ function layout(prep, levels, prestige, opts) {
   };
   const foods = prep.foods.map((food) => ({ food, price: food ? itemPrice(market, food) : 0, phases: phasesFor(config, stats, food, opts) }));
   const cases = (stats.lootChance / 100) * ((itemPrice(market, 'case1') ?? 0) + 0.01 * (itemPrice(market, 'case2') ?? 0));
-  const pill = opts.pill && !opts.supply ? itemPrice(market, 'cocain') ?? 0 : 0;
+  // The pill is bought once: with the pill phase, never with the debuff's own build.
+  const pill = opts.pill && !opts.supply && opts.phase !== 'debuff' ? itemPrice(market, 'cocain') ?? 0 : 0;
   return { stats, offsFor, defs: prep.cache.get(defKey), foods, cases, pill };
 }
 
@@ -367,6 +377,7 @@ const ctxOf = (prep, levels, player, opts) => layout(prep, levels, player.presti
  * bars when that keeps the net inside the limit.
  */
 export function strongest(prep, levels, player, opts, terms = {}, limit = Infinity) {
+  if (isSplit(prep.config, opts)) return strongestSplit(prep, levels, player, opts, terms, limit);
   const L = ctxOf(prep, levels, player, opts);
   const rate = ((terms.bounty ?? 0) + (terms.perK ?? 0)) / 1000;
   const fixed = (terms.flat ?? 0) + (terms.economy ?? 0) - L.pill;
@@ -425,6 +436,7 @@ export function strongest(prep, levels, player, opts, terms = {}, limit = Infini
  * marked reachedTarget: false.
  */
 export function cheapestMany(prep, levels, player, opts, targets) {
+  if (isSplit(prep.config, opts)) return cheapestSplit(prep, levels, player, opts, targets);
   const L = ctxOf(prep, levels, player, opts);
   const cap = new Float64Array(4), mult = new Float64Array(4), extra = new Float64Array(4), dmg = new Float64Array(4), cost = new Float64Array(4);
   const order = [0, 1, 2, 3];
@@ -478,6 +490,7 @@ export function cheapest(prep, levels, player, opts, target) {
 
 /** Builds across the damage range that no other beats on both damage and cost. */
 export function buildFrontier(prep, levels, player, opts) {
+  if (isSplit(prep.config, opts)) return frontierSplit(prep, levels, player, opts);
   const L = ctxOf(prep, levels, player, opts);
   const all = [];
   for (const f of L.foods) for (const d of L.defs) for (const o of L.offsFor(d)) {
@@ -602,4 +615,122 @@ export async function bestLayoutAsync(config, { start, searched = FIGHT, budget,
     if (!result || isBetter(r.best, result.best)) result = r;
   }
   return { ...result, steps, checked: scored.size, budget, used: space.used(result.levels) };
+}
+
+/*
+ * Two builds a day: one for the pill's 8 hours, one for its debuff. Each
+ * phase has its own health and food, so each can be solved on its own; the
+ * pair shares the limit or the target. Fighting nothing in the debuff is one
+ * of the choices. prepDebuff: the prepared market for the debuff build
+ * (another locked gear); without it both builds come from the same market.
+ *
+ * Most damage: start from the best single build, then re-solve each phase
+ * exactly with the other fixed (twice). Every step keeps the pair within the
+ * limit and adds damage, so the result is never below one build all day.
+ * Cheapest at a target and the frontier pair sampled curves of each phase
+ * (and a target never costs more than the single build's).
+ */
+const SPLIT_POINTS = 80;
+const phaseOpts = (opts, phase) => ({ ...opts, phase, splitDebuff: false });
+
+/** One phase of a build, as a build of its own (a single build split into its pill and debuff hours). */
+function phaseOf(b, index, extraCost = 0) {
+  const p = b.phases[index];
+  if (!p) return null;
+  return { ...b, damage: p.damage, cost: p.cost + extraCost, swings: p.swings, foodEaten: p.foodEaten, phases: [p], debuff: null };
+}
+/** A single build as a pair: the same gear in both phases. */
+function asPair(prep, b, terms) {
+  if (!b || b.phases.length < 2) return b && { ...b, debuff: null };
+  const pill = itemPrice(prep.market, 'cocain') ?? 0;
+  return joined(phaseOf(b, 0, pill), phaseOf(b, 1), terms);
+}
+
+/**
+ * A phase's damage against cost, sampled: its strongest build, and the
+ * cheapest build at SPLIT_POINTS damage levels up to it (one pass for all).
+ */
+function phaseCurve(prep, levels, player, opts) {
+  const top = strongest(prep, levels, player, opts);
+  if (!top) return [];
+  const targets = Array.from({ length: SPLIT_POINTS }, (_, i) => (top.damage * (i + 1)) / SPLIT_POINTS);
+  const builds = cheapestMany(prep, levels, player, opts, targets).filter((b) => b?.reachedTarget);
+  return frontier2([...builds, top], (b) => b.damage, (b) => b.cost);
+}
+
+// Both phases' curves, per skill layout and fight (cheaper and stronger hints ask for the same ones).
+const splitCache = new WeakMap();
+function phaseFrontiers(prep, levels, player, opts, prepDebuff) {
+  const other = prepDebuff ?? prep;
+  if (!splitCache.has(prep)) splitCache.set(prep, new WeakMap());
+  const byOther = splitCache.get(prep);
+  if (!byOther.has(other)) byOther.set(other, new Map());
+  const cache = byOther.get(other);
+  const key = JSON.stringify([levels, player, opts]);
+  if (!cache.has(key)) {
+    if (cache.size > 20) cache.delete(cache.keys().next().value);
+    cache.set(key, { pill: phaseCurve(prep, levels, player, phaseOpts(opts, 'pill')), debuff: [null, ...phaseCurve(other, levels, player, phaseOpts(opts, 'debuff'))] });
+  }
+  return cache.get(key);
+}
+
+/** The pill build with the debuff build added: totals of both, the debuff's own build kept. */
+function joined(a, b, terms = {}) {
+  const damage = a.damage + (b?.damage ?? 0);
+  const cost = a.cost + (b?.cost ?? 0);
+  const income = ((terms.bounty ?? 0) + (terms.perK ?? 0)) * damage / 1000 + (terms.flat ?? 0);
+  return {
+    ...a, damage, cost, income, net: income + (terms.economy ?? 0) - cost,
+    swings: a.swings + (b?.swings ?? 0), foodEaten: a.foodEaten + (b?.foodEaten ?? 0),
+    phases: [...a.phases, ...(b?.phases ?? [])], debuff: b ?? null,
+  };
+}
+
+/** Most damage with net ≥ −limit, a build per phase. */
+export function strongestSplit(prep, levels, player, opts, terms = {}, limit = Infinity, prepDebuff = null) {
+  const other = prepDebuff ?? prep;
+  const pillOpts = phaseOpts(opts, 'pill');
+  const debuffOpts = phaseOpts(opts, 'debuff');
+  const rate = ((terms.bounty ?? 0) + (terms.perK ?? 0)) / 1000;
+  // The other phase's build, fixed: its damage earns and its cost is spent, as a fixed amount.
+  const given = (x) => (x ? { ...terms, flat: (terms.flat ?? 0) + rate * x.damage - x.cost } : terms);
+  const single = other === prep ? asPair(prep, strongest(prep, levels, player, { ...opts, splitDebuff: false }, terms, limit), terms) : null;
+  let a = single ? phaseOf(single, 0, single.cost - single.phases.reduce((t, p) => t + p.cost, 0)) : strongest(prep, levels, player, pillOpts, terms, limit);
+  if (!a) return single;
+  let b = null;
+  for (let round = 0; round < 2; round++) {
+    b = strongest(other, levels, player, debuffOpts, given(a), limit);
+    a = strongest(prep, levels, player, pillOpts, given(b), limit) ?? a;
+  }
+  b = strongest(other, levels, player, debuffOpts, given(a), limit);
+  const pair = joined(a, b, terms);
+  return single && !better(pair, single) ? single : pair;
+}
+
+/** Cheapest pair of builds reaching each target (the strongest pair, reachedTarget: false, if none can). */
+export function cheapestSplit(prep, levels, player, opts, targets, prepDebuff = null) {
+  const { pill, debuff } = phaseFrontiers(prep, levels, player, opts, prepDebuff);
+  const singles = !prepDebuff || prepDebuff === prep ? cheapestMany(prep, levels, player, { ...opts, splitDebuff: false }, targets) : [];
+  const best = targets.map(() => null);
+  let top = null;
+  for (const a of pill) for (const b of debuff) {
+    const damage = a.damage + (b?.damage ?? 0);
+    const cost = a.cost + (b?.cost ?? 0);
+    if (!top || damage > top.damage) top = { damage, a, b };
+    targets.forEach((target, t) => { if (damage >= target && (!best[t] || cost < best[t].cost - 1e-9)) best[t] = { cost, a, b }; });
+  }
+  return targets.map((_, t) => {
+    const single = singles[t]?.reachedTarget ? { ...asPair(prep, singles[t], {}), reachedTarget: true } : null;
+    const pair = best[t] ? { ...joined(best[t].a, best[t].b), reachedTarget: true } : null;
+    if (single && (!pair || single.cost <= pair.cost)) return single;
+    return pair ?? (top && { ...joined(top.a, top.b), reachedTarget: false });
+  });
+}
+
+/** Pairs of builds no other pair beats on both damage and cost. */
+export function frontierSplit(prep, levels, player, opts, prepDebuff = null) {
+  const { pill, debuff } = phaseFrontiers(prep, levels, player, opts, prepDebuff);
+  const pairs = [];
+  for (const a of pill) for (const b of debuff) pairs.push({ a, b, damage: a.damage + (b?.damage ?? 0), cost: a.cost + (b?.cost ?? 0) });
+  return frontier2(pairs, (x) => x.damage, (x) => x.cost).map((x) => joined(x.a, x.b));
 }

@@ -63,7 +63,7 @@
   }
 
   function apply(option) {
-    applyBuild(option.equipment, option.food);
+    applyBuild(option.equipment, option.food, option.debuff);
     gear = null;
     nearby = [];
   }
@@ -154,7 +154,7 @@
       applying = true;
       const g = await optimizeEquipment(data.market, planner, settings, keepDamage).catch(() => null);
       applying = false;
-      if (g && !g.error) applyBuild(g.equipment, g.food);
+      if (g && !g.error) applyBuild(g.equipment, g.food, g.debuff);
     }
     found = null;
   }
