@@ -162,6 +162,7 @@
     navigate('/');
   }
 
+  const totalPoints = $derived((planner.player?.level ?? 1) * 4);
   const signed = (n) => `${n >= 0 ? '+' : ''}${fmt(n, 1)}`;
   // Every skill, economy too: kept ones still use points and count for income.
   const skillRows = $derived(search && start ? ALL_SKILLS : []);
@@ -257,10 +258,10 @@
     <section class="card" aria-labelledby="layout-title">
       <h2 id="layout-title">Suggested skills</h2>
       <dl class="summary">
-        <div><dt>Most damage within the limit</dt><dd class="num">{search.best ? fmtDamage(search.best.damage) : '–'}</dd></div>
+        <div><dt>Most damage within the limit</dt><dd class="num">{search.best ? fmtDamage(search.best.damage) : '–'}</dd>{#if Number.isFinite(maxLoss)}<small class="muted">losing at most {fmt(maxLoss, 0)} G {periodLabel(settings)}</small>{/if}</div>
         <div><dt>Its net</dt><dd class="num" class:pos={search.best?.net >= 0} class:neg={search.best?.net < 0}>{search.best ? signed(search.best.net) : '–'}</dd></div>
         {#if terms.mode === 'economy'}<div><dt>Income change per day</dt><dd class="num">{signed(search.incomeChange)}</dd></div>{/if}
-        <div><dt>Skill points</dt><dd class="num">{search.used} / {search.budget}</dd></div>
+        <div><dt>Skill points searched</dt><dd class="num">{search.used} / {search.budget}</dd>{#if totalPoints > search.budget}<small class="muted">{totalPoints - search.budget} more of your {totalPoints} are in kept economy skills</small>{/if}</div>
         <div><dt>Layouts checked</dt><dd class="num">{search.checked}</dd></div>
       </dl>
       <table class="skills">
@@ -369,6 +370,8 @@
   .summary { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 0 0 12px; }
   .summary dt { color: var(--muted); font-size: 12px; }
   .summary dd { margin: 2px 0 0; font-size: 20px; font-weight: 600; }
+  .summary div { display: grid; }
+  .summary small { font-size: 12px; }
   .pos { color: var(--good); }
   .neg { color: var(--bad); }
   table { border-collapse: collapse; width: 100%; }
