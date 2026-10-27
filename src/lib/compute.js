@@ -307,10 +307,11 @@ async function jobSalary(playerId) {
  * Skill layout search over a daily-damage range (full-day model, like the
  * original). With keepEconomy the economy skills stay as they are.
  */
-export async function optimizeSkills(market, planner, settings, { min, max, keepEconomy, onProgress, signal }) {
+export async function optimizeSkills(market, planner, settings, { min, max, keepEconomy, jobIncome = true, timeLimitMs, onProgress, signal }) {
   const p = planner.player;
   const debuffBuild = plain({ equipment: debuffEquipment(p?.currentGear), foodCode: 'none' });
-  const economy = p ? await loadEconomy(p.id, market.itemPrices).catch(() => null) : null;
+  let economy = p ? await loadEconomy(p.id, market.itemPrices).catch(() => null) : null;
+  if (economy && !jobIncome) economy = { ...economy, netJobSalary: 0 };
   const level = p?.level ?? 1;
   // The optimizer doesn't know Leadership. Kept economy skills keep it, so its points
   // aren't available; searching economy skills too sets it to 0 (it earns nothing), freeing them.
@@ -325,7 +326,7 @@ export async function optimizeSkills(market, planner, settings, { min, max, keep
     locks: keepEconomy ? plain(Object.fromEntries(VENDOR_ECONOMY_SKILLS.map((s) => [s, planner.skills[s] ?? 0]))) : {},
     resetCostPerPoint: null,
   };
-  const response = await getEngine().optimizeSkills(request, { onProgress, signal });
+  const response = await getEngine().optimizeSkills(request, { ...(timeLimitMs ? { timeLimitMs } : {}), onProgress, signal });
   if (!response?.result) return { error: reasonText(response?.reason) };
   const { best, elapsedMs } = response.result;
   return { skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, s === 'leadership' ? leadership : best.skills[s] ?? 0])), income: best.income, cost: best.meanDailyNetCost, steps: best.steps, elapsedMs, hadEconomy: !!economy };

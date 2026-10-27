@@ -12,7 +12,7 @@
  */
 import { getEngine } from '../engine/browser.js';
 import { buildInput, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
-import { setupFor, costOf } from './compute.js';
+import { setupFor, costOf, optimizeSkills } from './compute.js';
 import { loadCompanies, ecoEmployees, ecoSettings } from './eco.svelte.js';
 import { dailyIncome, goodsProfit, ecoValue } from './eco.js';
 
@@ -24,6 +24,9 @@ const BISECT_PRECISION = 1.004;
 const BISECT_COARSE = 1.03;
 // Neighbours fully scored per step, after a one-run screen of all of them.
 const SCREEN_KEEP = 4;
+// Daily damage ranges the seeding tries with the original's skill optimizer, and its time limit per run.
+const SEED_DAILY_DAMAGE = [400e3, 1e6, 2.5e6];
+const SEED_TIME_MS = 8000;
 
 /** A build's result under the contract terms; break-even is the bounty rate where net is 0. */
 export function evaluate(p, { bounty, poolLoot, economy }) {
@@ -273,6 +276,44 @@ export async function searchSkills(market, planner, settings, options) {
   const step = { n: 0 };
   const report = async (levels, best) => ({ step: step.n, levels, best: best?.outside ? null : best, checked: scored.size, budget, used: used(levels), incomeChange: await ctx.incomeChange(levels), baseIncome: ctx.baseIncome });
 
+  async function bestSeed(planned) {
+    let seed = { levels: planned, result: await score(planned) };
+    const tried = new Set();
+    // The original's optimizer runs one at a time (one skills worker); scoring its
+    // layouts uses the build optimizers, so it runs alongside the next seed.
+    const seedFor = async (daily) => {
+      const key = Math.round(daily);
+      if (tried.has(key) || signal?.aborted) return null;
+      tried.add(key);
+      const r = await optimizeSkills(market, planner, settings, {
+        min: daily / 1.25, max: daily, keepEconomy: !economySearch, jobIncome: false, timeLimitMs: SEED_TIME_MS, signal,
+      }).catch(() => null);
+      if (!r?.skills) return null;
+      const levels = { ...start, ...Object.fromEntries(searched.map((s) => [s, r.skills[s] ?? 0])) };
+      return fits(levels) ? { levels, daily, scoring: score(levels) } : null;
+    };
+    const keepBest = async (list) => {
+      for (const c of list.filter(Boolean)) {
+        const result = await c.scoring;
+        if (better(result, seed.result)) seed = { levels: c.levels, result, daily: c.daily };
+      }
+      onStep?.({ ...(await report(seed.levels, seed.result)), seeding: true });
+    };
+    const first = [];
+    for (const daily of SEED_DAILY_DAMAGE) first.push(await seedFor(daily));
+    await keepBest(first);
+    // A strong player: keep going up while the highest range wins.
+    const top = SEED_DAILY_DAMAGE.at(-1);
+    for (let daily = top * 2.5; seed.daily && seed.daily * 2.5 >= daily && daily <= 50e6; daily *= 2.5) await keepBest([await seedFor(daily)]);
+    // Refine around the best range found.
+    if (seed.daily) {
+      const more = [];
+      for (const f of [0.63, 1.58]) more.push(await seedFor(seed.daily * f));
+      await keepBest(more);
+    }
+    return seed.levels;
+  }
+
   /** Hill climb from one layout; a winning move is repeated while it keeps helping. */
   async function climb(levels) {
     let best = await score(levels);
@@ -314,8 +355,11 @@ export async function searchSkills(market, planner, settings, options) {
     const top = FIGHT_SKILLS.reduce((a, b) => (planned[b] > planned[a] ? b : a));
     planned[top] -= 1;
   }
-  // (A climb from all zeros was tried too: it ends on lopsided layouts with much less damage.)
-  const result = await climb(planned);
+  // Seeds from the original's skill optimizer (a few seconds each): its cheapest
+  // layout for a spread of daily damage ranges. The best-scoring one, or the
+  // planned layout if that's better, is where the climb starts; from there it
+  // usually needs only a few steps. (A start from all zeros ends on lopsided layouts.)
+  const result = await climb(await bestSeed(planned));
   // The climb compared layouts roughly; pin down the one it ended on.
   if (result.best && !result.best.outside) result.best = (await scoreLayout(result.levels, ctx)) ?? result.best;
   return report(result.levels, result.best);

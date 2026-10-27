@@ -232,6 +232,7 @@
           <strong>
             {#if phase === 'builds'}Listing builds for {terms.mode === 'gear' ? 'your' : 'the suggested'} skills… {Math.round(progress * 100)}%
             {:else if phase === 'income'}Loading your companies for the income model…
+            {:else if stepInfo?.seeding}Finding a starting layout…
             {:else}Optimizing skills{#if stepInfo}{' · '}step {stepInfo.step + 1}{/if}…{/if}
           </strong>
           <span class="clock num">{elapsed} s</span>
@@ -244,7 +245,7 @@
           </div>
         {/if}
         <div class="bar" class:indeterminate={phase !== 'builds'}><div style:width={phase === 'builds' ? `${Math.round(progress * 100)}%` : null}></div></div>
-        <p class="muted small">Still working: each step tries every one-level change and keeps the best. It ends by itself once no change helps; "Stop after this step" keeps the best so far.</p>
+        <p class="muted small">Still working: it first tries the original skill optimizer's layouts for a few damage ranges, then improves the best one step by step until no one-level change helps. "Stop after this step" keeps the best so far.</p>
       </div>
     {:else if finished}
       <p class="done" role="status">✓ {finished}</p>
