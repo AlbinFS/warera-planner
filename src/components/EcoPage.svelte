@@ -1,7 +1,7 @@
 <script>
   /**
    * Eco mode (game update v0.27): the eco skill optimizer, what to produce and
-   * which upgrades pay back, and employees (typed in; the API has none).
+   * which upgrades pay back, and employees (from the game).
    */
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies } from '../lib/eco.svelte.js';
@@ -69,7 +69,7 @@
     { id: 'skills', label: 'Eco skills', icon: mdiSchool },
     { id: 'playground', label: 'Skill playground', icon: mdiTuneVariant },
     { id: 'production', label: 'Production & upgrades', icon: mdiFactory },
-    { id: 'employees', label: 'Employees', icon: mdiAccountHardHat, wip: true },
+    { id: 'employees', label: 'Employees', icon: mdiAccountHardHat },
   ];
 </script>
 
@@ -84,7 +84,7 @@
   <div class="tabs" role="tablist" aria-label="Eco tools">
     {#each TABS as t (t.id)}
       <button role="tab" aria-selected={tab === t.id} onclick={() => (tab = t.id)}>
-        <Icon path={t.icon} size={18} /> {t.label}{#if t.wip}<span class="wip">WIP</span>{/if}
+        <Icon path={t.icon} size={18} /> {t.label}
       </button>
     {/each}
   </div>
@@ -115,6 +115,4 @@
     display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: none; border: 0;
     color: var(--muted); cursor: pointer; font: inherit; border-bottom: 2px solid transparent; margin-bottom: -1px;
   }
-  .tabs button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
-  .wip { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); }
-</style>
+  .tabs button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }</style>

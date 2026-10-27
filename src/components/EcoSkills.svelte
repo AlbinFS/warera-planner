@@ -85,7 +85,7 @@
   <div class="go">
     <button class="primary" onclick={optimize}>Find best eco skills</button>
     {#if outdated}<span class="warn">Settings changed: press again to update.</span>{/if}
-    {#if !employeeCount}<span class="muted small"><strong>No employees entered yet:</strong> Management only pays off with employees, so add yours in the Employees tab first.</span>{/if}
+    {#if !employeeCount}<span class="muted small"><strong>No employees:</strong> Management only pays off with employees.</span>{/if}
   </div>
 </section>
 

@@ -28,11 +28,11 @@ payroll per day match exactly.
 ## To do
 
 ### Show what the game knows (no more typing)
-- [ ] Employee cards from the API: production, bonus with each source,
+- [x] Employee cards from the API: production, bonus with each source,
   payroll, profit, traits, happiness and quit chance, potential left, retire date.
-- [ ] Drop the WIP card and the copy-these-numbers steps; keep adding by hand
-  only as a fallback when the API call fails.
-- [ ] Update texts that still say employees must be entered (Eco skills:
+- [x] Drop the WIP card and typing employees in; when loading them fails, the
+  page says so and income is counted without them.
+- [x] Update texts that still say employees must be entered (Eco skills:
   "No employees entered yet").
 - [ ] Load with `employee.getMyEmployees` (one request) where the visitor is
   the key owner; `getCompanyEmployees` for everyone else.
