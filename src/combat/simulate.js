@@ -28,7 +28,7 @@ function random(seed) {
 /**
  * build: { levels, prestige, militaryRankPercent, gear (engine rolls), food, debuff? }
  * session: { pill, hours }
- * terms: { bounty, perK, flat, economy } · runs: how many fights.
+ * terms: { bounty, perK, flat, economy, lootAt? (damage → G) } · runs: how many fights.
  */
 export function simulate(market, build, session, { battleBonusPercent = 0, terms = {}, runs = 5000, seed = 1 } = {}) {
   const config = configOf(market);
@@ -66,6 +66,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
   let misses = 0, crits = 0, landed = 0, dodged = 0, totalSwings = 0, totalTaken = 0, totalFood = 0, totalCase1 = 0, totalCase2 = 0, minHit = Infinity, maxHit = 0;
   // Costs summed over the run, by kind (each build has its own prices).
   const spent = { weapon: 0, armor: 0, ammo: 0, food: 0 };
+  let lootTotal = 0;
   for (let r = 0; r < runs; r++) {
     let damage = 0, swings = 0, food = 0, case1 = 0, case2 = 0, cost = pill;
     for (const p of phases) {
@@ -95,7 +96,9 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
     cost -= case1 * price('case1') + case2 * price('case2');
     out.damage[r] = damage;
     out.swings[r] = swings;
-    out.net[r] = rate * damage + (terms.flat ?? 0) + (terms.economy ?? 0) - cost;
+    const loot = (terms.flat ?? 0) + (terms.lootAt ? terms.lootAt(damage) : 0);
+    lootTotal += loot;
+    out.net[r] = rate * damage + loot + (terms.economy ?? 0) - cost;
     totalSwings += swings; totalFood += food; totalCase1 += case1; totalCase2 += case2;
   }
   const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
@@ -111,7 +114,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
       costs: { weapon: spent.weapon / runs, armor: spent.armor / runs, ammo: spent.ammo / runs, food: spent.food / runs, pill },
       income: {
         case1: (totalCase1 / runs) * price('case1'), case2: (totalCase2 / runs) * price('case2'),
-        bounty: ((terms.bounty ?? 0) / 1000) * mean(out.damage), lootPerK: ((terms.perK ?? 0) / 1000) * mean(out.damage), loot: terms.flat ?? 0, companies: terms.economy ?? 0,
+        bounty: ((terms.bounty ?? 0) / 1000) * mean(out.damage), lootPerK: ((terms.perK ?? 0) / 1000) * mean(out.damage), loot: lootTotal / runs, companies: terms.economy ?? 0,
       },
       cases: { case1: totalCase1 / runs, case2: totalCase2 / runs },
     },

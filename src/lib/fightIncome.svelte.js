@@ -1,31 +1,48 @@
 /**
  * What a fight earns besides its cases, shared by the Planner's Hits and
- * costs and the simulator: a bounty (G per 1k damage), battle loot (G per 1k
- * damage, or items per fight at market value) and the companies' profit for
- * a day at the planned economy skills. Remembered in this browser.
+ * costs and the simulator: a bounty (G per 1k damage), battle loot (from real
+ * battles for the fight's damage, G per 1k damage, or items per fight at
+ * market value) and the companies' profit for a day at the planned economy
+ * skills. Remembered in this browser.
  */
 import { getLootPrices } from './warera.js';
 import { incomeModel } from './contract.js';
 import { ECONOMY_SKILLS } from '../engine/inputs.js';
 import { planner } from './planner.svelte.js';
 import { fmt } from './format.js';
+import { expectedLoot } from './battleLoot.js';
 
 export const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
 
-const KEY = 'fightIncome.v1';
+// v2: loot from real battles is the default.
+const KEY = 'fightIncome.v2';
 const load = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null');
     if (saved) return saved;
+    const old = JSON.parse(localStorage.getItem('fightIncome.v1') ?? 'null');
+    if (old) return { ...old, lootMode: 'auto' };
     // The Planner's first bounty field kept its value on its own.
     return { bounty: localStorage.getItem('planner.bounty') ?? '' };
   } catch { return {}; }
 };
-export const fightIncome = $state({ bounty: '', lootMode: 'items', lootItems: 3, lootRarity: 'epic', lootPerK: 0.13, ...load() });
+// lootMode: 'auto' (from real battles), 'items' (a number per fight) or 'perK' (G per 1k damage).
+export const fightIncome = $state({ bounty: '', lootMode: 'auto', lootItems: 3, lootRarity: 'epic', lootPerK: 0.13, ...load() });
 
 // Loot prices from the site (24 h median, or 7 days without manipulated days), loaded once.
 export const lootTrades = $state({ byRarity: {} });
 getLootPrices().then((r) => (lootTrades.byRarity = r ?? {})).catch(() => {});
+
+// What real battles hand out per damage band (the site's counts), loaded once.
+export const battleLoot = $state({ data: null, error: '' });
+fetch('/api/battle-loot').then(async (r) => {
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error ?? `HTTP ${r.status}`);
+  battleLoot.data = body.data;
+}).catch((err) => { battleLoot.error = err.message; });
+
+/** Expected battle loot for a fight's damage (from real battles), or null while there's no data. */
+export const lootFor = (market, damage) => expectedLoot(battleLoot.data, damage, lootPrices(market));
 
 // Company profit per day at the planned economy skills (null without a loaded player).
 export const companyProfit = $state({ value: null });
@@ -58,15 +75,20 @@ export function lootBasis(rarity) {
 }
 
 /**
- * The fight's income as engine terms: { bounty, perK, flat (loot items' value), economy (companies) }.
+ * The fight's income as engine terms: { bounty, perK, flat (loot items' value),
+ * economy (companies), lootAt (damage → G, loot from real battles) }. With
+ * `damage`, loot from real battles is in `flat` for that damage.
  */
-export function incomeTerms(market) {
-  const items = fightIncome.lootMode === 'items';
+export function incomeTerms(market, damage = 0) {
+  const mode = fightIncome.lootMode;
+  const prices = lootPrices(market);
+  const lootAt = mode === 'auto' && battleLoot.data ? (d) => expectedLoot(battleLoot.data, d, prices)?.value ?? 0 : null;
   return {
     bounty: Math.max(0, Number(fightIncome.bounty) || 0),
-    perK: items ? 0 : Math.max(0, Number(fightIncome.lootPerK) || 0),
-    flat: items ? Math.max(0, Number(fightIncome.lootItems) || 0) * (lootPrices(market)[fightIncome.lootRarity] ?? 0) : 0,
+    perK: mode === 'perK' ? Math.max(0, Number(fightIncome.lootPerK) || 0) : 0,
+    flat: mode === 'items' ? Math.max(0, Number(fightIncome.lootItems) || 0) * (prices[fightIncome.lootRarity] ?? 0) : lootAt && damage ? lootAt(damage) : 0,
     economy: companyProfit.value ?? 0,
+    lootAt,
   };
 }
 

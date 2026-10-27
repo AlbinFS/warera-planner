@@ -14,7 +14,7 @@
   import { itemLabel } from '../lib/market.js';
   import Icon from './Icon.svelte';
   import { mdiDice5, mdiPill } from '@mdi/js';
-  import { fightIncome, incomeTerms, companyProfit } from '../lib/fightIncome.svelte.js';
+  import { fightIncome, incomeTerms, companyProfit, battleLoot } from '../lib/fightIncome.svelte.js';
   import { navigate } from '../lib/route.svelte.js';
 
   let { data } = $props();
@@ -86,7 +86,7 @@
     </p>
     <p class="muted small">
       {fmt(RUNS, 0)} fights. Income from Hits and costs on the Planner: bounty <strong>{fmt(terms.bounty, 3)}</strong> G per 1k,
-      battle loot <strong>{fightIncome.lootMode === 'items' ? `${fmt(terms.flat, 1)} G a fight` : `${fmt(terms.perK, 3)} G per 1k`}</strong>,
+      battle loot <strong>{fightIncome.lootMode === 'auto' ? (battleLoot.data ? `from ${fmt(battleLoot.data.battles, 0)} real battles, for each fight's damage` : 'from real battles (still being collected)') : fightIncome.lootMode === 'items' ? `${fmt(terms.flat, 1)} G a fight` : `${fmt(terms.perK, 3)} G per 1k`}</strong>,
       company profit <strong>{companyProfit.value != null ? `${fmt(companyProfit.value, 1)} G a day` : 'none (load your player)'}</strong>.
       <button type="button" class="link" onclick={() => navigate('/')}>Change</button>
     </p>

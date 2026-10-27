@@ -5,10 +5,13 @@
  *   the site still has them when the official API is down;
  * - trade history for the equipment items refreshed longest ago, as many as
  *   fit in about 350 KB of stored trades (the heaviest, jets, run alone), and
- *   their prices. All 36 items come round in roughly 10-15 minutes.
+ *   their prices. All 36 items come round in roughly 10-15 minutes;
+ * - the loot rankings of two finished battles (battleLoot.js), for what a
+ *   given damage earns in battle loot.
  */
 import { WareraApi } from './warera.js';
 import { toTrade, isSatisfied, prune, priceItem, keepRecent, HISTORY_MS } from './prices.js';
+import { refreshBattleLoot } from './battleLoot.js';
 
 const CONFIG_EVERY_MS = 60 * 60 * 1000;
 const ITEM_PRICES_EVERY_MS = 5 * 60 * 1000;
@@ -200,6 +203,14 @@ export async function runJob(env, now = Date.now()) {
     await refreshContracts(db, api, now);
   } catch (err) {
     console.warn(`contracts: ${err.message}`);
+  }
+
+  try {
+    const config = await readDataset(db, 'game-config');
+    const items = config ? JSON.parse(config.body).items ?? {} : {};
+    await refreshBattleLoot(db, api, now, { rarityOf: (code) => items[code]?.rarity });
+  } catch (err) {
+    console.warn(`battle loot: ${err.message}`);
   }
 
   if (!env.WARERA_API_KEY && !env.WARERA_API_BASE) {

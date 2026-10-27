@@ -11,7 +11,7 @@ import { WareraApi } from './warera.js';
 import { handleAuthRoute, currentSession, signInRequired } from './auth.js';
 
 // How old data may get before it is flagged stale (the job refreshes far more often).
-const STALE_AFTER_MS = { 'game-config': 3 * 60 * 60 * 1000, 'item-prices': 30 * 60 * 1000, equipment: 60 * 60 * 1000 };
+const STALE_AFTER_MS = { 'game-config': 3 * 60 * 60 * 1000, 'item-prices': 30 * 60 * 1000, equipment: 60 * 60 * 1000, 'battle-loot': 6 * 60 * 60 * 1000 };
 // Responses are kept in memory this long per Worker instance (the Cache API doesn't run on workers.dev).
 const MEMO_MS = 60 * 1000;
 
@@ -137,6 +137,7 @@ const routes = {
   '/api/loot-prices': (env) => lootPriceRoute(env),
   '/api/contracts': (env, request) => unitContracts(env, request),
   '/api/point-value': (env) => pointValue(env),
+  '/api/battle-loot': (env) => dataset(env, 'battle-loot'),
   '/api/company-employees': (env, request) => companyEmployees(env, request),};
 
 export default {

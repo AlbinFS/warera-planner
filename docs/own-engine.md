@@ -80,6 +80,15 @@ damage (1.19M vs 1.2M), wear, food, cases and scrap as the combat simulator.
   sampled curves of each phase, never above the single build's cost. The
   Planner edits both builds, Hits and costs lists each build's wear, and the
   simulator fights the debuff hours in the debuff build.
+- Battle loot from real battles (`worker/battleLoot.js`, `src/lib/battleLoot.js`):
+  a round's pool gets an item per 200k damage (both sides), a battle's per
+  500k, and each side's pool goes out by damage rank. The job reads the
+  damage rankings of finished battles of at least 10M (smaller ones have so
+  few drops that one lucky roll skews them), with the item each rank got,
+  and keeps running counts per damage band over the last 1000 such battles.
+  A fight's damage counts whole for battle loot and split over the usual
+  number of rounds for round loot; items are valued at the 24 h loot
+  prices. This is the default loot in Hits and costs and the simulator.
 
 ## Results against the old optimizer
 

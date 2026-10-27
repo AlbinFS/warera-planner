@@ -7,7 +7,7 @@
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
   import { costBreakdown } from '../lib/compute.js';
-  import { fightIncome, companyProfit, incomeTerms, lootPrices, lootBasis, RARITIES } from '../lib/fightIncome.svelte.js';
+  import { fightIncome, companyProfit, incomeTerms, lootPrices, lootBasis, lootFor, battleLoot, RARITIES } from '../lib/fightIncome.svelte.js';
   import { fmt, periodLabel } from '../lib/format.js';
   import { itemImage, rarityOf, RARITY_COLORS, STATS, statText } from '../lib/visual.js';
   import { itemLabel, SLOT_NAMES } from '../lib/market.js';
@@ -46,7 +46,8 @@
   const spent = $derived(costs.reduce((s, r) => s + r.amount, 0));
 
   // Income besides the cases: bounty, battle loot (per 1k damage or items per fight) and the companies' day.
-  const terms = $derived(incomeTerms(data.market));
+  const terms = $derived(incomeTerms(data.market, current?.damage ?? 0));
+  const auto = $derived(fightIncome.lootMode === 'auto' && current?.damage ? lootFor(data.market, current.damage) : null);
   const bountyIncome = $derived(current?.damage ? (terms.bounty * current.damage) / 1000 : 0);
   const lootIncome = $derived(terms.flat + (current?.damage ? (terms.perK * current.damage) / 1000 : 0));
   const income = $derived(companyProfit.value);
@@ -94,7 +95,7 @@
           <tr class="credit"><td class="pic"></td><td>Bounty <span class="muted">({fmt(terms.bounty, 3)} G per 1k × {fmt(current.damage / 1000, 0)}k damage)</span></td><td class="num amount">{fmt(-bountyIncome, 2)}</td><td></td></tr>
         {/if}
         {#if lootIncome > 0}
-          <tr class="credit"><td class="pic"></td><td>Battle loot <span class="muted">({fightIncome.lootMode === 'items' ? `${fmt(Number(fightIncome.lootItems) || 0, 1)} ${fightIncome.lootRarity} × ${fmt(prices[fightIncome.lootRarity] ?? 0, 1)} G` : `${fmt(terms.perK, 3)} G per 1k`})</span></td><td class="num amount">{fmt(-lootIncome, 2)}</td><td></td></tr>
+          <tr class="credit"><td class="pic"></td><td>Battle loot <span class="muted">({auto ? `about ${fmt(auto.items, 1)} items, ${fmt(auto.epicPlus, 1)} epic or better` : fightIncome.lootMode === 'items' ? `${fmt(Number(fightIncome.lootItems) || 0, 1)} ${fightIncome.lootRarity} × ${fmt(prices[fightIncome.lootRarity] ?? 0, 1)} G` : `${fmt(terms.perK, 3)} G per 1k`})</span></td><td class="num amount">{fmt(-lootIncome, 2)}</td><td></td></tr>
         {/if}
         {#if income != null}
           <tr class="credit"><td class="pic"></td><td>Company profit <span class="muted">(a day, at these economy skills)</span></td><td class="num amount">{fmt(-income, 2)}</td><td></td></tr>
@@ -111,6 +112,7 @@
         <span>Battle loot</span>
         <span class="row">
           <select bind:value={fightIncome.lootMode} aria-label="How loot is counted">
+            <option value="auto">From real battles</option>
             <option value="items">Items per fight</option>
             <option value="perK">G per 1k damage</option>
           </select>
@@ -121,7 +123,8 @@
             <input class="short" type="number" step="0.001" min="0" bind:value={fightIncome.lootPerK} aria-label="Loot, G per 1k damage" />
           {/if}
         </span>
-        {#if fightIncome.lootMode === 'items'}<small class="muted">{fmt(prices[fightIncome.lootRarity] ?? 0, 1)} G each ({lootBasis(fightIncome.lootRarity)})</small>{/if}
+        {#if fightIncome.lootMode === 'items'}<small class="muted">{fmt(prices[fightIncome.lootRarity] ?? 0, 1)} G each ({lootBasis(fightIncome.lootRarity)})</small>
+        {:else if fightIncome.lootMode === 'auto'}<small class="muted">{#if auto}What {fmt(auto.battles, 0)} recent battles over {fmt(auto.minDamage / 1e6, 0)}M damage gave for this damage (counted over {auto.rounds} rounds), at the 24 h loot prices.{:else if battleLoot.data}Needs a build that fights.{:else}Real battles are still being collected{battleLoot.error ? ` (${battleLoot.error})` : ''}.{/if}</small>{/if}
       </label>
     </div>
     <p class="muted small">
