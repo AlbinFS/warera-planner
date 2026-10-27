@@ -437,29 +437,16 @@ export function maxLevel(config, skill, playerLevel) {
 }
 
 /**
- * Best skill layout. score(levels) → result; isBetter(a, b) compares results.
- * searched: the skills to move; budget: points for them (the rest of `start`
- * stays). Climbs from `start` and from spread layouts; keeps the best.
+ * The space a skill search moves in: which layouts fit the budget, the
+ * neighbours of a layout (raise one level, lowering one or two others to pay),
+ * and the starting layouts (the given one, trimmed to the budget, and two
+ * that spread the points).
  */
-export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel, score, quickScore = null, isBetter = better, onStep, shouldStop }) {
-  const { config } = prep;
-  const scored = new Map();
+export function layoutSpace(config, { start, searched = FIGHT, budget, playerLevel }) {
   const used = (l) => searched.reduce((t, s) => t + levelCost(config, s, l[s] ?? 0), 0);
   const max = Object.fromEntries(searched.map((s) => [s, maxLevel(config, s, playerLevel)]));
   const fits = (l) => used(l) <= budget && searched.every((s) => l[s] >= 0 && l[s] <= max[s]);
   const keyOf = (l) => searched.map((s) => l[s]).join(',');
-  const scoreOf = (l) => {
-    const key = keyOf(l);
-    if (!scored.has(key)) scored.set(key, score(l));
-    return scored.get(key);
-  };
-  const quick = new Map();
-  const quickOf = (l) => {
-    const key = keyOf(l);
-    if (scored.has(key)) return scored.get(key);
-    if (!quick.has(key)) quick.set(key, quickScore(l));
-    return quick.get(key);
-  };
   const neighbours = (l) => {
     const out = [];
     for (const up of searched) {
@@ -478,39 +465,6 @@ export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel,
       }
     }
     return out;
-  };
-  let steps = 0;
-  const climb = (levels) => {
-    let best = scoreOf(levels);
-    for (;;) {
-      if (shouldStop?.()) break;
-      let winner = null;
-      let winnerLevels = null;
-      const all = neighbours(levels);
-      const pick = (list) => {
-        for (const l of list) {
-          const r = scoreOf(l);
-          if (isBetter(r, winner)) { winner = r; winnerLevels = l; }
-        }
-      };
-      if (quickScore) {
-        // Rank every neighbour quickly and score the most promising few in full;
-        // only when none of those helps are all of them scored in full, so the
-        // climb never stops where a full score would still find a better move.
-        const ranked = all.map((l) => ({ l, r: quickOf(l) })).filter((x) => x.r);
-        ranked.sort((a, b) => (isBetter(a.r, b.r) ? -1 : isBetter(b.r, a.r) ? 1 : 0));
-        pick(ranked.slice(0, FULL_SCORES_PER_STEP).map((x) => x.l));
-        if (!isBetter(winner, best)) pick(all);
-      } else {
-        pick(all);
-      }
-      if (!isBetter(winner, best)) break;
-      levels = winnerLevels;
-      best = winner;
-      steps++;
-      onStep?.({ step: steps, levels, best, checked: scored.size, budget, used: used(levels) });
-    }
-    return { levels, best };
   };
   const trim = (l) => {
     l = { ...l };
@@ -534,11 +488,111 @@ export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel,
   };
   const even = Object.fromEntries(FIGHT.map((s) => [s, 1]));
   const starts = [trim(start), spread(even), spread({ ...even, attack: 1.3, lootChance: 0.8, hunger: 0.6 })];
+  return { used, fits, keyOf, neighbours, starts };
+}
+
+/**
+ * Best skill layout. score(levels) → result; isBetter(a, b) compares results.
+ * searched: the skills to move; budget: points for them (the rest of `start`
+ * stays). Climbs from `start` and from spread layouts; keeps the best.
+ * quickScore (optional) ranks neighbours with a thinner option list first.
+ */
+export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel, score, quickScore = null, isBetter = better, onStep, shouldStop }) {
+  const space = layoutSpace(prep.config, { start, searched, budget, playerLevel });
+  const scored = new Map();
+  const scoreOf = (l) => {
+    const key = space.keyOf(l);
+    if (!scored.has(key)) scored.set(key, score(l));
+    return scored.get(key);
+  };
+  const quick = new Map();
+  const quickOf = (l) => {
+    const key = space.keyOf(l);
+    if (scored.has(key)) return scored.get(key);
+    if (!quick.has(key)) quick.set(key, quickScore(l));
+    return quick.get(key);
+  };
+  let steps = 0;
+  const climb = (levels) => {
+    let best = scoreOf(levels);
+    for (;;) {
+      if (shouldStop?.()) break;
+      let winner = null;
+      let winnerLevels = null;
+      const all = space.neighbours(levels);
+      const pick = (list) => {
+        for (const l of list) {
+          const r = scoreOf(l);
+          if (isBetter(r, winner)) { winner = r; winnerLevels = l; }
+        }
+      };
+      if (quickScore) {
+        // Rank every neighbour quickly and score the most promising few in full;
+        // only when none of those helps are all of them scored in full.
+        const ranked = all.map((l) => ({ l, r: quickOf(l) })).filter((x) => x.r);
+        ranked.sort((a, b) => (isBetter(a.r, b.r) ? -1 : isBetter(b.r, a.r) ? 1 : 0));
+        pick(ranked.slice(0, FULL_SCORES_PER_STEP).map((x) => x.l));
+        if (!isBetter(winner, best)) pick(all);
+      } else {
+        pick(all);
+      }
+      if (!isBetter(winner, best)) break;
+      levels = winnerLevels;
+      best = winner;
+      steps++;
+      onStep?.({ step: steps, levels, best, checked: scored.size, budget, used: space.used(levels) });
+    }
+    return { levels, best };
+  };
   let result = null;
-  for (const s of starts) {
+  for (const s of space.starts) {
     if (shouldStop?.()) break;
     const r = climb(s);
     if (!result || isBetter(r.best, result.best)) result = r;
   }
-  return { ...result, steps, checked: scored.size, budget, used: used(result.levels) };
+  return { ...result, steps, checked: scored.size, budget, used: space.used(result.levels) };
+}
+
+/**
+ * bestLayout with the scoring done elsewhere (a pool of workers):
+ * scoreMany(layouts) → Promise of results in the same order. Each step's
+ * neighbours are scored together, so they run in parallel.
+ */
+export async function bestLayoutAsync(config, { start, searched = FIGHT, budget, playerLevel, scoreMany, isBetter = better, onStep, shouldStop }) {
+  const space = layoutSpace(config, { start, searched, budget, playerLevel });
+  const scored = new Map();
+  const scoreAll = async (list) => {
+    const fresh = [...new Map(list.map((l) => [space.keyOf(l), l])).entries()].filter(([k]) => !scored.has(k));
+    if (fresh.length) {
+      const results = await scoreMany(fresh.map(([, l]) => l));
+      fresh.forEach(([k], i) => scored.set(k, results[i]));
+    }
+    return list.map((l) => scored.get(space.keyOf(l)));
+  };
+  let steps = 0;
+  const climb = async (levels) => {
+    let [best] = await scoreAll([levels]);
+    for (;;) {
+      if (shouldStop?.()) break;
+      const all = space.neighbours(levels);
+      const results = await scoreAll(all);
+      let winner = null;
+      let winnerLevels = null;
+      results.forEach((r, i) => { if (isBetter(r, winner)) { winner = r; winnerLevels = all[i]; } });
+      if (!isBetter(winner, best)) break;
+      levels = winnerLevels;
+      best = winner;
+      steps++;
+      onStep?.({ step: steps, levels, best, checked: scored.size, budget, used: space.used(levels) });
+    }
+    return { levels, best };
+  };
+  // The starts are independent, but each climb's steps already fill the pool.
+  let result = null;
+  for (const s of space.starts) {
+    if (shouldStop?.()) break;
+    const r = await climb(s);
+    if (!result || isBetter(r.best, result.best)) result = r;
+  }
+  return { ...result, steps, checked: scored.size, budget, used: space.used(result.levels) };
 }

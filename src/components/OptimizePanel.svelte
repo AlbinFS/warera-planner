@@ -105,7 +105,7 @@
     let hi = parseAmount(max);
     if (!lo || !hi) {
       // Default range: around the planned build's full-day damage.
-      const daily = await evaluateBuild(data.market, planner, { ...settings, windowHours: 24 });
+      const daily = await evaluateBuild(data.market, planner, settings);
       if (daily.error) throw new Error(`Set a damage range: ${daily.error}`);
       lo = daily.damage * 0.9;
       hi = daily.damage * 1.15;
@@ -242,7 +242,7 @@
   </div>
   <form class="line" onsubmit={(e) => { e.preventDefault(); runSkills(); }}>
     {#if skillsMode === 'range'}
-      <label><span>Daily damage from</span><input bind:value={min} placeholder="auto" inputmode="decimal" /></label>
+      <label><span>Damage {periodLabel(settings)} from</span><input bind:value={min} placeholder="auto" inputmode="decimal" /></label>
       <label><span>to</span><input bind:value={max} placeholder="auto" inputmode="decimal" /></label>
     {:else}
       <label><span>Budget in G {periodLabel(settings)}</span><input bind:value={skillsBudget} placeholder={current?.cost != null ? fmt(current.cost, 0) : 'e.g. 300'} inputmode="decimal" /></label>
@@ -256,7 +256,7 @@
   </form>
   <p class="hint muted">
     {#if skillsMode === 'range'}
-      Spreads your skill points for the lowest cost across the range{keepEconomy ? '' : ', with your company income counted'}. Uses the full-day model, like the original; takes up to 45 seconds.
+      Spreads your skill points for the lowest average cost across the range (the cheapest build at four damage targets in it){keepEconomy ? '' : ', with your company income counted'}, for the fight length in the settings bar.
     {:else}
       The skill layout and gear with the most damage {periodLabel(settings)} that costs no more than the budget{keepEconomy ? '' : '; economy skills are searched too and their income change is counted'}. Starts from your planned skills; takes a minute or two.
     {/if}
@@ -301,7 +301,7 @@
       <p class="muted small">
         {#if found.hadEconomy}Income with this layout: {fmt(found.income, 1)} G per day. {/if}
         {#if found.incomeChange != null}Income change: {found.incomeChange >= 0 ? '+' : ''}{fmt(found.incomeChange, 1)} G per day. {/if}
-        {#if found.elapsedMs >= 44000}The search hit its 45-second limit; running it again may find a slightly better layout.{/if}
+        
       </p>
       {#if changed.length || found.budgetBuild}
         {#if found.budgetBuild}

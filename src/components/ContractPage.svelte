@@ -281,7 +281,7 @@
           </div>
         {/if}
         <div class="bar" class:indeterminate={phase !== 'builds'}><div style:width={phase === 'builds' ? `${Math.round(progress * 100)}%` : null}></div></div>
-        <p class="muted small">Still working: it first tries the original skill optimizer's layouts for a few damage ranges, then improves the best one step by step until no one-level change helps. "Stop after this step" keeps the best so far.</p>
+        <p class="muted small">Still working: each step tries every one-level change (raise one skill, lower one or two to pay for it) with the best gear for each, and keeps the best, until no change helps. "Stop after this step" keeps the best so far.</p>
       </div>
     {:else if finished}
       <p class="done" role="status">✓ {finished}</p>
