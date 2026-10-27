@@ -1,6 +1,7 @@
 /**
- * Eco page state: the player's companies (from the API), employees typed in
- * by the player (the API has none; kept in this browser) and eco settings.
+ * Eco page state: the player's companies and their employees (from the API;
+ * employees can still be added or edited by hand, kept in this browser) and
+ * eco settings.
  */
 import { cached } from './warera.js';
 
@@ -33,7 +34,10 @@ $effect.root(() => {
 export async function loadCompanies(playerId) {
   const list = await cached('company.getCompanies', { userId: playerId, perPage: 100 }, 5 * 60 * 1000);
   const ids = (list.items ?? []).map((c) => (typeof c === 'string' ? c : c._id)).filter(Boolean);
-  const companies = await Promise.all(ids.map((companyId) => cached('company.getById', { companyId }, 5 * 60 * 1000)));
+  const [companies] = await Promise.all([
+    Promise.all(ids.map((companyId) => cached('company.getById', { companyId }, 5 * 60 * 1000))),
+    loadEmployees(ids).catch(() => {}), // without them, the ones typed in stay
+  ]);
   return companies.map((c) => ({
     id: c._id,
     name: c.name,
@@ -45,6 +49,30 @@ export async function loadCompanies(playerId) {
     stock: c.production ?? 0,
     disabled: c.disabledAt != null,
   }));
+}
+
+/**
+ * Employees from the game, through the site (the API needs a key for them), in
+ * the numbers the game's card shows: production, bonus % (Management
+ * included) and payroll per day (the API's wage is per hour).
+ */
+async function loadEmployees(ids) {
+  for (let i = 0; i < ids.length; i += 20) {
+    const chunk = ids.slice(i, i + 20);
+    const res = await fetch(`/api/company-employees?ids=${chunk.join(',')}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { companies } = await res.json();
+    for (const id of chunk) {
+      if (!Array.isArray(companies[id])) continue;
+      ecoEmployees[id] = companies[id].map((e) => ({
+        name: e.name ?? '',
+        production: e.breakdown?.production?.total ?? (e.base?.production ?? 0) + (e.trained?.production ?? 0),
+        bonusPercent: Math.round((e.productionBonus?.total ?? 0) * 100) / 100,
+        payroll: Math.round((e.wage ?? 0) * 24 * 1000) / 1000,
+        fromGame: true,
+      }));
+    }
+  }
 }
 
 export const newEmployee = () => ({ name: '', production: 2, bonusPercent: 0, payroll: 0 });

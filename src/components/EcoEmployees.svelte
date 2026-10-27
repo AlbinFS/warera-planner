@@ -1,7 +1,7 @@
 <script>
   /**
-   * Employees, typed in from the game (the API doesn't expose them yet):
-   * the three numbers the game shows for each one.
+   * Employees: loaded from the game with the companies, or typed in, as the
+   * three numbers the game shows for each one.
    */
   import { ecoEmployees, ecoSettings, newEmployee } from '../lib/eco.svelte.js';
   import { employeeDay } from '../lib/eco.js';
@@ -53,7 +53,7 @@
 </script>
 
 <section class="card wipcard">
-  <p><span class="wip">WIP</span> The game's API has no employee data yet, so copy three numbers per employee from the game:</p>
+  <p><span class="wip">WIP</span> Your employees load from the game with your companies (reloaded every time, so edits last until then). To add one by hand, copy three numbers from the game:</p>
   <ol>
     <li><strong>Production</strong>: the <Icon path={mdiPickaxe} size={13} /> number on their card (e.g. 5).</li>
     <li><strong>Bonus %</strong>: the <Icon path={mdiPickaxe} size={13} /> +x% on their card; hover it for the exact total (e.g. 21.9).</li>
@@ -64,7 +64,7 @@
     <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={pointValue.toFixed(4)} />
     {#if !(ecoSettings.pointValue > 0)}<small class="muted">Using an estimate {estimateNote} ({fmt(pointValue, 4)}); the game's own profit numbers match once you type in its value.</small>{/if}
   </label>
-  <p class="muted small">Saved in this browser. "Profit (game)" is the game's own estimate. The column next to it values the output at what the company's good actually sells for per point: what you really earn when you sell it.</p>
+  <p class="muted small">"Profit (game)" is the game's own estimate. The column next to it values the output at what the company's good actually sells for per point: what you really earn when you sell it.</p>
   <dl class="big">
     <div><dt>Employees</dt><dd class="num">{totals.count}</dd></div>
     <div><dt>Points per day</dt><dd class="num">{fmt(totals.points, 0)}</dd></div>
