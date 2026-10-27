@@ -57,7 +57,7 @@
         {/each}
       </div>
       <p class="small">
-        {#if r.waste > 0}<span class="warn">{r.waste} point{r.waste > 1 ? 's' : ''} above the {r.pct}% step do nothing.</span>{:else if r.pct > 0}<span class="good">Exactly on the {r.pct}% step.</span>{/if}
+        {#if r.waste > 0}<span class="warn">{r.waste} point{r.waste > 1 ? 's' : ''} above the {r.pct}% step {r.waste > 1 ? 'do' : 'does'} nothing.</span>{:else if r.pct > 0}<span class="good">Exactly on the {r.pct}% step.</span>{/if}
         Next step ({r.nextPct}%): <strong>+{r.toNext}</strong> {r.key}.
       </p>
     </div>

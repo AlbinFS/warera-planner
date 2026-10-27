@@ -56,6 +56,22 @@ export function frontier2(list, value, cost) {
 }
 
 /**
+ * 2D frontier that also keeps equal-cost items with lower values: armor and
+ * dodge only count in whole percents, so a roll that costs the same but sits
+ * lower can be the one landing exactly on a step.
+ */
+function frontierTies(list, value, cost) {
+  const sorted = [...list].sort((a, b) => cost(a) - cost(b) || value(b) - value(a));
+  const kept = [];
+  let best = -Infinity, group = -Infinity, groupCost = NaN;
+  for (const x of sorted) {
+    if (!(Math.abs(cost(x) - groupCost) <= 1e-9)) { best = Math.max(best, group); group = -Infinity; groupCost = cost(x); }
+    if (value(x) > best + 1e-9) { kept.push(x); group = Math.max(group, value(x)); }
+  }
+  return kept;
+}
+
+/**
  * Prepared market: per-slot frontiers that don't depend on the skills.
  * `locked`: slots fixed to a roll ({ code, skills, price }) or null (empty);
  * `lockedFood`: a food code, 'none', or undefined (free choice).
@@ -79,9 +95,9 @@ export function prepare(market, { locked = {}, lockedFood } = {}) {
     weapon: pick('weapon', pareto(rolls.weapon, [stat('attack'), stat('criticalChance')], (r) => wearOf(r, 'weapon'))),
     helmet: pick('helmet', frontier2(rolls.helmet, stat('criticalDamages'), (r) => wearOf(r, 'helmet'))),
     gloves: pick('gloves', frontier2(rolls.gloves, stat('precision'), (r) => wearOf(r, 'gloves'))),
-    chest: pick('chest', frontier2(rolls.chest, stat('armor'), (r) => wearOf(r, 'chest'))),
-    pants: pick('pants', frontier2(rolls.pants, stat('armor'), (r) => wearOf(r, 'pants'))),
-    boots: pick('boots', frontier2(rolls.boots, stat('dodge'), (r) => wearOf(r, 'boots'))),
+    chest: pick('chest', frontierTies(rolls.chest, stat('armor'), (r) => wearOf(r, 'chest'))),
+    pants: pick('pants', frontierTies(rolls.pants, stat('armor'), (r) => wearOf(r, 'pants'))),
+    boots: pick('boots', frontierTies(rolls.boots, stat('dodge'), (r) => wearOf(r, 'boots'))),
   };
   const ammos = 'ammo' in locked ? [locked.ammo] : [null, ...AMMOS.filter((a) => itemPrice(market, a) != null)];
   const foods = lockedFood === 'none' ? [null] : lockedFood ? [lockedFood] : [null, ...FOODS.filter((f) => itemPrice(market, f) != null)];
@@ -91,7 +107,7 @@ export function prepare(market, { locked = {}, lockedFood } = {}) {
     const value = (c?.skills.armor ?? 0) + (p?.skills.armor ?? 0);
     const cost = wearOf(c, 'chest') + wearOf(p, 'pants');
     const prev = pairs.get(value);
-    if (!prev || cost < prev.cost) pairs.set(value, { chest: c, pants: p, value, cost });
+    if (!prev || cost < prev.cost - 1e-9) pairs.set(value, { chest: c, pants: p, value, cost });
   }
   return { market, config, slots, ammos, foods, armorPairs: [...pairs.values()], wearOf, pairCache: new Map(), cache: new Map() };
 }
@@ -108,14 +124,16 @@ function defenseOptions(prep, stats) {
   for (const a of prep.armorPairs) {
     const pct = softCapPercent(stats.armor + a.value, stats.armorCap);
     const prev = byArmor.get(pct);
-    if (!prev || a.cost < prev.cost) byArmor.set(pct, { ...a, pct });
+    // Cheapest per step; at the same cost the lower value, so no point sits above the step.
+    if (!prev || a.cost < prev.cost - 1e-9 || (a.cost <= prev.cost + 1e-9 && a.value < prev.value)) byArmor.set(pct, { ...a, pct });
   }
   const byDodge = new Map();
   for (const b of prep.slots.boots) {
     const pct = softCapPercent(stats.dodge + (b?.skills.dodge ?? 0), stats.dodgeCap);
     const cost = prep.wearOf(b, 'boots');
+    const value = b?.skills.dodge ?? 0;
     const prev = byDodge.get(pct);
-    if (!prev || cost < prev.cost) byDodge.set(pct, { boots: b, pct, cost });
+    if (!prev || cost < prev.cost - 1e-9 || (cost <= prev.cost + 1e-9 && value < prev.value)) byDodge.set(pct, { boots: b, pct, cost, value });
   }
   const armors = frontier2([...byArmor.values()], (a) => a.pct, (a) => a.cost);
   const dodges = frontier2([...byDodge.values()], (d) => d.pct, (d) => d.cost);

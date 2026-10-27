@@ -14,6 +14,7 @@
   import { shareLink } from '../lib/share.js';
   import { saveBuild } from '../lib/saved.svelte.js';
   import { itemLabel } from '../lib/market.js';
+  import { statText } from '../lib/visual.js';
   import { navigate } from '../lib/route.svelte.js';
   import Dialog from './Dialog.svelte';
 
@@ -51,6 +52,23 @@
       busy = false;
       hints = { cheaper: null, stronger: null, loading: false };
     }
+  }
+
+  // What a hint changes against the planned build, so applying it is never a surprise.
+  const SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
+  const rollText = (r, slot) => (r?.code ? `${itemLabel(r.code)} ${Object.entries(r.skills ?? {}).map(([k, v]) => statText(k, v)).join('/')}` : `no ${slot}`);
+  function changesOf(hint) {
+    const out = [];
+    for (const slot of SLOTS) {
+      const a = planner.gear[slot], b = hint.equipment[slot];
+      if ((a?.code ?? null) === (b?.code ?? null) && JSON.stringify(a?.skills ?? {}) === JSON.stringify(b?.skills ?? {})) continue;
+      out.push(`${rollText(a, slot)} → ${rollText(b, slot)}`);
+    }
+    if ((planner.gear.ammo ?? null) !== (hint.equipment.ammo ?? null)) out.push(`${planner.gear.ammo ? itemLabel(planner.gear.ammo) : 'no ammo'} → ${hint.equipment.ammo ? itemLabel(hint.equipment.ammo) : 'no ammo'}`);
+    if ((planner.food ?? 'none') !== (hint.food ?? 'none')) out.push(`Food ${hint.food && hint.food !== 'none' ? itemLabel(hint.food) : 'none'}`);
+    const d = hint.details, r = result?.details;
+    if (d && r) out.push(`ARM ${r.armor}% → ${d.armor}%, DDG ${r.dodge}% → ${d.dodge}%, ${Math.round(r.swings)} → ${Math.round(d.swings)} hits`);
+    return out;
   }
 
   // Saving: a name suggested from the weapon, damage and cost.
@@ -127,6 +145,13 @@
       {/if}
     {/if}
   </div>
+  {#if result && !result.error && !hints.loading && (hints.stronger || hints.cheaper)}
+    <div class="changes muted small">
+      {#each [['More damage', hints.stronger], ['Cheaper', hints.cheaper]].filter(([, h]) => h) as [label, h] (label)}
+        <p><strong>{label}:</strong> {changesOf(h).join(' · ')}</p>
+      {/each}
+    </div>
+  {/if}
 
   <div class="actions">
     <button class="action" onclick={() => onoptimize?.('gear')}><Icon path={mdiTshirtCrew} size={18} /> Optimize gear</button>
@@ -172,6 +197,8 @@
   .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
   .value { font-size: 26px; font-weight: 700; line-height: 1.15; }
   .value small { font-size: 14px; color: var(--muted); font-weight: 500; }
+  .changes { grid-column: 1 / -1; margin-top: -4px; }
+  .changes p { margin: 2px 0; line-height: 1.4; }
   .hints { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; min-height: 30px; }
   .chip {
     display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
