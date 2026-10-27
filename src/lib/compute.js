@@ -3,12 +3,11 @@
  * evaluate the planned build, find cheaper/stronger alternatives, the cost
  * breakdown, and optimize gear and skills.
  */
-import { priceKey, SLOTS, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
+import { priceKey, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
 import { prepare, strongest, cheapest, buildFrontier, rollPrice, levelCost } from '../combat/optimize.js';
 import { WEAR_PER_HIT, SCRAP_BASE, itemPrice } from '../combat/model.js';
 import { searchLayout } from '../combat/client.js';
 import { incomePlan } from './income.js';
-import { cached, getApiKey } from './warera.js';
 
 const GEAR_SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 
@@ -178,13 +177,3 @@ export async function optimizeSkills(market, planner, settings, { min, max, keep
     cost: r.best.cost, elapsedMs: Date.now() - started, hadEconomy: false,
   };
 }
-
-/** The player's companies in the old income model's shape (kept for the Eco tools that list them). */
-export async function loadEconomy(playerId, itemPrices) {
-  const list = await cached('company.getCompanies', { userId: playerId, perPage: 100 });
-  const ids = (list.items ?? []).map((c) => (typeof c === 'string' ? c : c._id)).filter(Boolean);
-  const companies = await Promise.all(ids.map((companyId) => cached('company.getById', { companyId })));
-  return { companies, itemPrices, hasKey: !!getApiKey() };
-}
-
-export { SLOTS };
