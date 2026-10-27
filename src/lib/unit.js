@@ -85,7 +85,8 @@ export async function memberDamage(market, member, settings) {
   if (!r) return { ...base, damage: 0, perAttempt: 0, attempts: 0, error: 'Their gear can’t fight.' };
 
   const multiplier = pill.multiplier * (1 + opts.battleBonusPercent / 100);
-  const perAttempt = r.perSwing / pill.multiplier / (1 + opts.battleBonusPercent / 100);
+  // r.perSwing is per swing before the pill (its phase applies it); the simulation wants it before the bonus too.
+  const perAttempt = r.perSwing / (1 + opts.battleBonusPercent / 100);
   const value = (s) => skillValue(market.gameConfigSkills[s], levels[s], prestige[s]);
   const statSum = (stat) => Object.values(gear).reduce((sum, g) => sum + (g && typeof g === 'object' ? g.skills?.[stat] ?? 0 : 0), 0);
   return {

@@ -17,7 +17,11 @@
 import { playerStats, wearPerSwing, itemPrice, softCapPercent, FOODS, AMMOS, HEALTH_COST } from './model.js';
 
 // Offense options closer than this in cost per swing (G) count as one: the strongest is kept.
+// The coarse size is for quick comparisons between neighbouring skill layouts.
 const COST_BUCKET = 0.0005;
+const COARSE_BUCKET = 0.004;
+// Neighbours scored in full per climb step, after the quick comparison of all of them.
+const FULL_SCORES_PER_STEP = 3;
 const SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 export const FIGHT = ['attack', 'precision', 'criticalChance', 'criticalDamages', 'armor', 'dodge', 'health', 'lootChance', 'hunger'];
 
@@ -120,7 +124,7 @@ function defenseOptions(prep, stats) {
  * so their best pairs are found once per crit value; each weapon is tried
  * with those only.
  */
-function offenseOptions(prep, stats, opts) {
+function offenseOptions(prep, stats, opts, bucket = COST_BUCKET) {
   const { market, config, slots, ammos } = prep;
   const pct = (code) => (code ? (config.items[code]?.flatStats?.percentAttack ?? 0) / 100 : 0);
   const mult = (1 + (opts.militaryRankPercent ?? 0) / 100) * (opts.multiplier ?? 1) * (1 + (opts.battleBonusPercent ?? 0) / 100);
@@ -151,14 +155,15 @@ function offenseOptions(prep, stats, opts) {
   for (const w of slots.weapon) {
     const wCost = prep.wearOf(w, 'weapon');
     const pairs = pairsFor(v(w, 'criticalChance'));
-    for (const ammo of ammos) {
-      if (ammo && (!w || w.code === 'knife')) continue; // a knife (or no weapon) fires no ammo
+    // A knife (or no weapon) fires no ammo: any ammo set is simply not used.
+    const usable = [...new Set(ammos.map((a) => (a && w && w.code !== 'knife' ? a : null)))];
+    for (const ammo of usable) {
       const aCost = ammo ? itemPrice(market, ammo) : 0;
       const aPct = pct(ammo);
       for (const pair of pairs) {
         const cost = wCost + aCost + pair.cost;
         const d = damage(v(w, 'attack'), v(w, 'criticalChance'), v(pair.h, 'criticalDamages'), v(pair.g, 'precision'), aPct);
-        const key = Math.round(cost / COST_BUCKET);
+        const key = Math.round(cost / bucket);
         const prev = buckets.get(key);
         if (!prev || d > prev.dmg) buckets.set(key, { weapon: w, ammo, helmet: pair.h, gloves: pair.g, dmg: d, cost });
       }
@@ -194,9 +199,10 @@ function layout(prep, levels, prestige, opts) {
   const stats = playerStats(config, levels, prestige);
   // Offense is scored at ×1; each phase scales it by its multiplier.
   const fightOpts = { ...opts, multiplier: 1 };
-  const offKey = `o${stats.attack}|${stats.precision}|${stats.criticalChance}|${stats.criticalDamages}|${opts.militaryRankPercent}|${opts.battleBonusPercent}`;
+  const bucket = opts.coarse ? COARSE_BUCKET : COST_BUCKET;
+  const offKey = `o${bucket}|${stats.attack}|${stats.precision}|${stats.criticalChance}|${stats.criticalDamages}|${opts.militaryRankPercent}|${opts.battleBonusPercent}`;
   const defKey = `d${stats.armor}|${stats.dodge}`;
-  if (!prep.cache.has(offKey)) prep.cache.set(offKey, offenseOptions(prep, stats, fightOpts));
+  if (!prep.cache.has(offKey)) prep.cache.set(offKey, offenseOptions(prep, stats, fightOpts, bucket));
   if (!prep.cache.has(defKey)) prep.cache.set(defKey, defenseOptions(prep, stats));
   const foods = prep.foods.map((food) => ({ food, price: food ? itemPrice(market, food) : 0, phases: phasesFor(config, stats, food, opts) }));
   const cases = (stats.lootChance / 100) * ((itemPrice(market, 'case1') ?? 0) + 0.01 * (itemPrice(market, 'case2') ?? 0));
@@ -334,23 +340,59 @@ export function strongest(prep, levels, player, opts, terms = {}, limit = Infini
   return buildOf(L, best.o, best.d, best.f, fill, terms);
 }
 
+/**
+ * Cheapest builds reaching each of `targets` damage (one pass over the
+ * options for all targets). Per option the kinds of swing are taken cheapest
+ * per damage first (those that earn, i.e. cost below 0, always). Returns one
+ * build per target; a target no option reaches gets the strongest build,
+ * marked reachedTarget: false.
+ */
+export function cheapestMany(prep, levels, player, opts, targets) {
+  const L = ctxOf(prep, levels, player, opts);
+  const cap = new Float64Array(4), mult = new Float64Array(4), extra = new Float64Array(4), dmg = new Float64Array(4), cost = new Float64Array(4);
+  const order = [0, 1, 2, 3];
+  const best = targets.map(() => null);
+  let top = null;
+  for (const f of L.foods) for (const d of L.defs) {
+    let n = 0;
+    for (const p of f.phases) {
+      cap[n] = p.health / d.hp; mult[n] = p.multiplier; extra[n] = 0; n++;
+      if (p.foodMax > 0 && p.heal > 0) { cap[n] = (p.foodMax * p.heal) / d.hp; mult[n] = p.multiplier; extra[n] = f.price * (d.hp / p.heal); n++; }
+    }
+    for (const o of L.offs) {
+      const base = o.cost + d.cost - L.cases;
+      let maxDamage = 0;
+      for (let i = 0; i < n; i++) { dmg[i] = o.dmg * mult[i]; cost[i] = base + extra[i]; order[i] = i; maxDamage += dmg[i] * cap[i]; }
+      if (!top || maxDamage > top.damage) top = { damage: maxDamage, o, d, f };
+      for (let a = 1; a < n; a++) for (let b = a; b > 0 && cost[order[b]] / dmg[order[b]] < cost[order[b - 1]] / dmg[order[b - 1]]; b--) [order[b], order[b - 1]] = [order[b - 1], order[b]];
+      for (let t = 0; t < targets.length; t++) {
+        if (maxDamage < targets[t]) continue;
+        let need = targets[t];
+        let spent = 0;
+        for (let k = 0; k < n; k++) {
+          const i = order[k];
+          if (cost[i] < 0) { spent += cost[i] * cap[i]; need -= dmg[i] * cap[i]; continue; }
+          if (need <= 0) break;
+          const x = Math.min(cap[i], need / dmg[i]);
+          spent += x * cost[i];
+          need -= x * dmg[i];
+        }
+        if (need > 1e-6) continue;
+        if (!best[t] || spent < best[t].spent - 1e-9) best[t] = { spent, o, d, f };
+      }
+    }
+  }
+  return targets.map((target, t) => {
+    const b = best[t];
+    if (b) return { ...buildOf(L, b.o, b.d, b.f, fillForTarget(segmentsOf(L, b.o, b.d, b.f), target), {}), reachedTarget: true };
+    if (!top) return null;
+    return { ...buildOf(L, top.o, top.d, top.f, segmentsOf(L, top.o, top.d, top.f).map((seg) => ({ seg, x: seg.cap })), {}), reachedTarget: false };
+  });
+}
+
 /** Cheapest build reaching `target` damage (or the strongest, if none can). */
 export function cheapest(prep, levels, player, opts, target) {
-  const L = ctxOf(prep, levels, player, opts);
-  let best = null;
-  let top = null;
-  for (const f of L.foods) for (const d of L.defs) for (const o of L.offs) {
-    const segs = segmentsOf(L, o, d, f);
-    const all = segs.map((seg) => ({ seg, x: seg.cap }));
-    const dmg = totals(all).damage;
-    if (!top || dmg > top.dmg) top = { o, d, f, fill: all, dmg };
-    const fill = fillForTarget(segs, target);
-    if (!fill) continue;
-    const cost = totals(fill).cost;
-    if (!best || cost < best.cost - 1e-9) best = { cost, o, d, f, fill };
-  }
-  if (best) return { ...buildOf(L, best.o, best.d, best.f, best.fill, {}), reachedTarget: true };
-  return top ? { ...buildOf(L, top.o, top.d, top.f, top.fill, {}), reachedTarget: false } : null;
+  return cheapestMany(prep, levels, player, opts, [target])[0];
 }
 
 /** Builds across the damage range that no other beats on both damage and cost. */
@@ -387,16 +429,24 @@ export function maxLevel(config, skill, playerLevel) {
  * searched: the skills to move; budget: points for them (the rest of `start`
  * stays). Climbs from `start` and from spread layouts; keeps the best.
  */
-export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel, score, isBetter = better, onStep, shouldStop }) {
+export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel, score, quickScore = null, isBetter = better, onStep, shouldStop }) {
   const { config } = prep;
   const scored = new Map();
   const used = (l) => searched.reduce((t, s) => t + levelCost(config, s, l[s] ?? 0), 0);
   const max = Object.fromEntries(searched.map((s) => [s, maxLevel(config, s, playerLevel)]));
   const fits = (l) => used(l) <= budget && searched.every((s) => l[s] >= 0 && l[s] <= max[s]);
+  const keyOf = (l) => searched.map((s) => l[s]).join(',');
   const scoreOf = (l) => {
-    const key = searched.map((s) => l[s]).join(',');
+    const key = keyOf(l);
     if (!scored.has(key)) scored.set(key, score(l));
     return scored.get(key);
+  };
+  const quick = new Map();
+  const quickOf = (l) => {
+    const key = keyOf(l);
+    if (scored.has(key)) return scored.get(key);
+    if (!quick.has(key)) quick.set(key, quickScore(l));
+    return quick.get(key);
   };
   const neighbours = (l) => {
     const out = [];
@@ -424,7 +474,14 @@ export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel,
       if (shouldStop?.()) break;
       let winner = null;
       let winnerLevels = null;
-      for (const l of neighbours(levels)) {
+      let candidates = neighbours(levels);
+      if (quickScore) {
+        // Rank every neighbour quickly; score the most promising few in full.
+        const ranked = candidates.map((l) => ({ l, r: quickOf(l) })).filter((x) => x.r);
+        ranked.sort((a, b) => (isBetter(a.r, b.r) ? -1 : isBetter(b.r, a.r) ? 1 : 0));
+        candidates = ranked.slice(0, FULL_SCORES_PER_STEP).map((x) => x.l);
+      }
+      for (const l of candidates) {
         const r = scoreOf(l);
         if (isBetter(r, winner)) { winner = r; winnerLevels = l; }
       }

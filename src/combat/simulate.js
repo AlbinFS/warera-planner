@@ -8,7 +8,7 @@
  * a swing, food is eaten (if any is left in that phase) or the phase ends.
  * Case drops are rolled per swing; wear, ammo and scraps follow the swings.
  */
-import { playerStats, swingDamage, wearPerSwing, itemPrice, softCapPercent, HEALTH_COST, ARMOR_SLOTS } from './model.js';
+import { playerStats, swingDamage, wearPerSwing, itemPrice, softCapPercent, usableAmmo, HEALTH_COST, ARMOR_SLOTS } from './model.js';
 import { phasesFor, configOf } from './optimize.js';
 
 /** Small fast seeded random numbers (mulberry32), so a run can be repeated. */
@@ -45,7 +45,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
   const lootChance = stats.lootChance / 100;
 
   const price = (code) => itemPrice(market, code) ?? 0;
-  const ammo = build.gear.ammo ? price(build.gear.ammo) : 0;
+  const ammo = usableAmmo(build.gear) ? price(build.gear.ammo) : 0;
   const wear = { weapon: wearPerSwing(market, config, 'weapon', build.gear.weapon), armor: ARMOR_SLOTS.reduce((t, s) => t + wearPerSwing(market, config, 'armor', build.gear[s]), 0) };
   const foodPrice = build.food ? price(build.food) : 0;
   const pill = session.pill && !session.burst ? price('cocain') : 0;

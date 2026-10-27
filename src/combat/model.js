@@ -65,6 +65,9 @@ export function playerStats(config, levels, prestige = {}) {
   };
 }
 
+/** The ammo a build actually fires: none with a knife or no weapon. */
+export const usableAmmo = (gear) => (gear.ammo && gear.weapon?.code && gear.weapon.code !== 'knife' ? gear.ammo : null);
+
 /** Expected damage per swing and its parts. gear: { weapon, helmet, gloves } rolls ({ skills }), ammo code. */
 export function swingDamage(stats, gear, opts, config) {
   const s = (slot, k) => gear[slot]?.skills?.[k] ?? 0;
@@ -74,7 +77,8 @@ export function swingDamage(stats, gear, opts, config) {
   let attack = stats.attack + s('weapon', 'attack');
   if (precision > 100) { attack += (precision - 100) * stats.precisionOverflow; precision = 100; }
   if (crit > 100) { critDamage += (crit - 100) * stats.critOverflow; crit = 100; }
-  const ammo = gear.ammo ? (config.items[gear.ammo]?.flatStats?.percentAttack ?? 0) / 100 : 0;
+  const fired = usableAmmo(gear);
+  const ammo = fired ? (config.items[fired]?.flatStats?.percentAttack ?? 0) / 100 : 0;
   const pill = opts.pill ? (config.items.cocain?.flatStats?.percentAttack ?? 60) / 100 : 0;
   const base = attack * (1 + (opts.militaryRankPercent ?? 0) / 100) * (1 + ammo) * (1 + pill) * (1 + (opts.battleBonusPercent ?? 0) / 100);
   const miss = 1 - precision / 100;
@@ -120,7 +124,7 @@ export function fight({ market, config, stats, gear, food, opts, terms = {}, lim
   const dmg = swingDamage(stats, gear, opts, config);
   const hp = healthPerSwing(stats, gear);
   const supply = fightSupply(stats, food, opts.hours ?? 8, config);
-  const ammoPrice = gear.ammo ? itemPrice(market, gear.ammo) ?? 0 : 0;
+  const ammoPrice = usableAmmo(gear) ? itemPrice(market, gear.ammo) ?? 0 : 0;
   const wear = wearPerSwing(market, config, 'weapon', gear.weapon) + ARMOR_SLOTS.reduce((t, s) => t + wearPerSwing(market, config, s, gear[s]), 0);
   const lootChance = stats.lootChance / 100;
   const cases = lootChance * ((itemPrice(market, 'case1') ?? 0) + CASE2_SHARE * (itemPrice(market, 'case2') ?? 0));

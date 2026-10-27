@@ -6,7 +6,7 @@
  *         objective: { kind: 'damage', terms, limit } | { kind: 'range', targets },
  *         income?: { plan, config } (economy skills searched: their income counts) }
  */
-import { prepare, strongest, cheapest, bestLayout } from './optimize.js';
+import { prepare, strongest, cheapestMany, bestLayout } from './optimize.js';
 import { dailyIncome } from '../lib/eco.js';
 
 const ECONOMY = ['production', 'energy', 'companies', 'management', 'leadership'];
@@ -46,8 +46,7 @@ function run(id, args) {
     // Lowest mean cost of the cheapest build at each damage target (minus any income gained).
     score = (l) => {
       let total = 0;
-      for (const t of objective.targets) {
-        const b = cheapest(prep, l, player, opts, t);
+      for (const b of cheapestMany(prep, l, player, opts, objective.targets)) {
         if (!b?.reachedTarget) return { cost: Infinity, unreachable: true };
         total += b.cost;
       }
