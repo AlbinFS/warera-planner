@@ -42,8 +42,15 @@ export async function loadContracts(unitId) {
   const battleIds = [...new Set(items.map((c) => c.battle).filter(Boolean))];
   const battles = await cachedBatch(battleIds.map((battleId) => ['battle.getById', { battleId }]), 5 * 60 * 1000).catch(() => []);
   const running = new Map(battleIds.map((id, i) => [id, battles[i]?.isActive ?? null]));
-  return items.map((c) => ({ ...c, battleActive: running.get(c.battle) ?? null }))
-    .sort((a, b) => (b.battleActive === true) - (a.battleActive === true) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  // Progress of won contracts with a recorded start: the unit's battle damage on that side since then.
+  const tracked = items.filter((c) => c.status === 'won' && c.startDamage != null && running.get(c.battle) !== false);
+  const sides = [...new Map(tracked.map((c) => [`${c.battle}|${c.forCountrySide}`, c])).values()];
+  const pages = await cachedBatch(sides.map((c) => ['battleRanking.getRanking', { battleId: c.battle, side: c.forCountrySide, dataType: 'damage', type: 'mu', limit: 100 }]), 60 * 1000).catch(() => []);
+  const unitDamage = new Map(sides.map((c, i) => [`${c.battle}|${c.forCountrySide}`, pages[i]?.items?.find((x) => x.mu === unitId)?.value ?? null]));
+  return items.map((c) => {
+    const now = unitDamage.get(`${c.battle}|${c.forCountrySide}`);
+    return { ...c, battleActive: running.get(c.battle) ?? null, done: c.startDamage != null && now != null ? Math.max(0, now - c.startDamage) : null };
+  }).sort((a, b) => (b.battleActive === true) - (a.battleActive === true) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 /** Pill state from the attack skill: +60% while on the pill, a debuff after. */

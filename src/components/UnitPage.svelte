@@ -140,16 +140,30 @@
   const fighting = $derived(rows.filter((r) => r.d.damage > 0).length);
 
   const countryName = (id) => countries[id]?.name ?? 'a country';
+  const time = (iso) => new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  // Where a contract stands: its auction ('active'), then 'won' until the battle ends.
+  const stateOf = (c) => (c.status === 'active' ? 'auction open' : c.status !== 'won' ? c.status : c.battleActive === false ? 'battle over' : 'in progress');
   const contractLabel = (c) => [
     `For ${countryName(c.forCountry)} (${c.forCountrySide})`,
-    `min ${fmtDamage(c.minimumDamage)}`,
+    // Exact enough to tell apart two contracts in one battle (4.996M and 5.000M).
+    `min ${fmt(c.minimumDamage / 1e6, 3)}M`,
     `${fmt(c.currentPerK, 3)} G per 1k`,
     `${fmt(c.currentPayout, 0)} G`,
-    c.roundNumber ? `round ${c.roundNumber}` : null,
-    c.status === 'won' ? 'won' : c.status === 'active' ? 'auction: leading' : c.status,
-    c.battleActive === false ? 'battle over' : null,
+    stateOf(c),
+    c.status === 'won' ? `won ${time(c.updatedAt)}` : null,
   ].filter(Boolean).join(' · ');
-  const pct = (a, b) => (b > 0 ? Math.min(100, (a / b) * 100) : 0);
+  const pct = (a, b) => (b > 0 ? Math.max(0, Math.min(100, (a / b) * 100)) : 0);
+
+  // Damage already done on a contract: tracked by the site, or typed in from the game (kept in this browser).
+  const DONE_KEY = 'unit.contractDone';
+  let typedDone = $state((() => { try { return JSON.parse(localStorage.getItem(DONE_KEY) ?? '{}'); } catch { return {}; } })());
+  $effect(() => { const v = JSON.stringify(typedDone); try { localStorage.setItem(DONE_KEY, v); } catch {} });
+  /** "3.72m", "3720k" or "3720000" → 3720000. */
+  function parseAmount(text) {
+    const m = String(text ?? '').trim().toLowerCase().replace(/,/g, '.').match(/^(\d+(?:\.\d+)?)\s*([km]?)$/);
+    return m ? Number(m[1]) * (m[2] === 'm' ? 1e6 : m[2] === 'k' ? 1e3 : 1) : null;
+  }
+  const doneOf = (c) => c.done ?? parseAmount(typedDone[c._id]);
 
   // Sorting the members table: click a column to sort, again to reverse.
   const gearValue = (gear) => Object.values(gear ?? {}).reduce((sum, g) => sum + (g && typeof g === 'object' ? data.priceOf(g.code, g.skills) || 0 : 0), 0);
@@ -217,19 +231,39 @@
             </select>
           </label>
           {#if contract}
-            {@const enough = safeTotal >= contract.minimumDamage}
-            <div class="meter" aria-label="Unit damage against the contract minimum">
-              <div class="fill avg" style:width="{pct(total, contract.minimumDamage)}%"></div>
-              <div class="fill safe" style:width="{pct(safeTotal, contract.minimumDamage)}%"></div>
+            {@const min = contract.minimumDamage}
+            {@const done = doneOf(contract) ?? 0}
+            {@const left = Math.max(0, min - done)}
+            {@const over = contract.battleActive === false}
+            {@const verdict = left <= 0 ? 'done' : safeTotal >= left ? 'safe' : total >= left ? 'risky' : 'short'}
+            {#if !over && contract.status === 'won'}
+              <div class="progress-row">
+                <span>Done so far</span>
+                {#if contract.done != null}
+                  <strong class="num">{fmtDamage(contract.done)}</strong> <small class="muted">tracked since it was won</small>
+                {:else}
+                  <input class="done-in" placeholder="e.g. 3.72m" bind:value={typedDone[contract._id]} aria-label="Damage already done on this contract" />
+                  <small class="muted">from the game: this contract was won before the site tracked it</small>
+                {/if}
+              </div>
+            {/if}
+            <div class="meter" aria-label="Contract minimum: done so far, then what the unit can still add">
+              <div class="seg done" style:width="{pct(done, min)}%" title="Done so far: {fmtDamage(done)}"></div>
+              <div class="seg safe" style:width="{pct(Math.min(safeTotal, left), min)}%" title="Available even with bad luck: {fmtDamage(safeTotal)}"></div>
+              <div class="seg avg" style:width="{pct(Math.min(total, left) - Math.min(safeTotal, left), min)}%" title="Available on average: {fmtDamage(total)}"></div>
             </div>
-            <p class:good={enough} class:warn={!enough}>
-              {#if enough}
-                The unit can reach the {fmtDamage(contract.minimumDamage)} minimum even with bad luck ({fmtDamage(safeTotal)} reached 95% of the time).
-              {:else if total >= contract.minimumDamage}
-                On average the unit reaches the {fmtDamage(contract.minimumDamage)} minimum, but with bad luck it falls short: plan for {fmtDamage(contract.minimumDamage - safeTotal)} more.
-              {:else}
-                The unit is {fmtDamage(contract.minimumDamage - total)} short of the {fmtDamage(contract.minimumDamage)} minimum right now.
-              {/if}
+            <div class="meter-legend">
+              <span><i class="key done"></i> done {fmtDamage(done)}</span>
+              <span><i class="key safe"></i> available with bad luck {fmtDamage(safeTotal)}</span>
+              <span><i class="key avg"></i> on average {fmtDamage(total)}</span>
+              <span class="muted">minimum {fmtDamage(min)}</span>
+            </div>
+            <p class="verdict" data-verdict={over ? 'over' : verdict}>
+              {#if over}The battle is over.
+              {:else if verdict === 'done'}The minimum is reached.
+              {:else if verdict === 'safe'}{fmtDamage(left)} to go: the unit can finish it now, even with bad luck.
+              {:else if verdict === 'risky'}{fmtDamage(left)} to go: enough on average, but with bad luck {fmtDamage(left - safeTotal)} short.
+              {:else}{fmtDamage(left)} to go: the unit is {fmtDamage(left - total)} short right now (bars refill every hour).{/if}
               Pays {fmt(contract.currentPayout, 0)} G.
             </p>
           {/if}
@@ -264,10 +298,10 @@
                       {#if readiness(r.user, r.d.pill)}{@const ready = readiness(r.user, r.d.pill)}<span class="pill ready" title={ready === 'ready to pill' ? 'Full bars and not on the pill or in its debuff' : 'Bars are full: waiting wastes regen'}>{ready}</span>{/if}
                     </span>
                   </td>
-                  <td class="bars">
+                  <td><div class="bars">
                     <span title="Health now"><Icon path={mdiHeart} size={13} color="var(--c-life)" /> {fmt(r.user.skills?.health?.currentBarValue, 0)}/{r.user.skills?.health?.total ?? r.user.skills?.health?.value}</span>
                     <span title="Hunger now (meals they can eat)"><Icon path={mdiSilverwareForkKnife} size={13} color="var(--c-crit)" /> {fmt(r.user.skills?.hunger?.currentBarValue, 1)}/{r.user.skills?.hunger?.total ?? r.user.skills?.hunger?.value}</span>
-                  </td>
+                  </div></td>
                   <td class="gear"><GearStrip equipment={r.d.gear} food={r.d.food} {items} /></td>
                   <td class="num dmg">{r.d.error ? '' : fmtDamage(r.d.damage)}{#if r.d.error}<small class="error">{r.d.error}</small>{/if}</td>
                   <td class="num">{r.d.damage ? fmtDamage(r.safe) : ''}</td>
@@ -300,12 +334,26 @@
   .big dd { margin: 2px 0 0; font-size: 30px; font-weight: 700; }
   .contract label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); max-width: 720px; }
   .contract label span { display: inline-flex; align-items: center; gap: 6px; }
-  .meter { position: relative; height: 12px; border-radius: 6px; background: var(--surface-2); overflow: hidden; margin: 12px 0 6px; max-width: 720px; }
-  .fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; }
-  .fill.avg { background: color-mix(in srgb, var(--good) 35%, transparent); }
-  .fill.safe { background: var(--good); }
+  .meter { display: flex; height: 14px; border-radius: 7px; background: var(--surface-2); overflow: hidden; margin: 10px 0 0; max-width: 720px; }
   .good { color: var(--good); }
   .warn { color: var(--accent); }
+  .progress-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 4px; font-size: 14px; }
+  .done-in { width: 110px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 8px; color: var(--text); font-size: 14px; }
+  .meter .seg { height: 100%; }
+  .meter .seg.done { background: var(--good); }
+  .meter .seg.safe { background: color-mix(in srgb, var(--good) 45%, transparent); }
+  .meter .seg.avg { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--good) 35%, transparent) 0 6px, transparent 6px 10px); }
+  .meter-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; margin-top: 6px; }
+  .meter-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .key { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+  .key.done { background: var(--good); }
+  .key.safe { background: color-mix(in srgb, var(--good) 45%, transparent); }
+  .key.avg { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--good) 35%, transparent) 0 3px, transparent 3px 5px); border: 1px solid color-mix(in srgb, var(--good) 45%, transparent); }
+  .verdict { margin: 8px 0 0; font-weight: 600; }
+  .verdict[data-verdict='done'], .verdict[data-verdict='safe'] { color: var(--good); }
+  .verdict[data-verdict='risky'] { color: var(--accent); }
+  .verdict[data-verdict='short'] { color: var(--bad); }
+  .verdict[data-verdict='over'] { color: var(--muted); }
   .error { color: var(--bad); display: block; }
   .progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
   .progress div { height: 100%; background: var(--accent); transition: width .15s; }

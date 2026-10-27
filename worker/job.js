@@ -28,6 +28,8 @@ const GAME_CONFIG_KEYS = ['items', 'skills', 'battle', 'region', 'upgradesConfig
 const CONTRACT_PAGE = 50;
 const CONTRACT_BACKFILL_PAGES = 10;
 const CONTRACT_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
+// How recently a contract must have been won for its unit's starting damage to be recorded.
+const CONTRACT_START_WINDOW_MS = 10 * 60 * 1000;
 
 // Raw-material trades, totalled per day, for the value of 1 production point
 // (the game averages raw-material trades over the last 7 days).
@@ -71,8 +73,11 @@ let schemaReady = false;
 export async function ensureSchema(db) {
   if (schemaReady) return;
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
-  // Added later: databases made before get the column here (it fails once it exists).
+  // Added later: databases made before get the columns here (each fails once it exists).
   await db.prepare('ALTER TABLE equipment ADD COLUMN recent TEXT').run().catch(() => {});
+  // A won contract's progress: the unit's damage in its battle when it was won (contracts.start_damage).
+  await db.prepare('ALTER TABLE contracts ADD COLUMN start_damage REAL').run().catch(() => {});
+  await db.prepare('ALTER TABLE contracts ADD COLUMN start_at INTEGER').run().catch(() => {});
   schemaReady = true;
 }
 
@@ -269,8 +274,10 @@ async function refreshContracts(db, api, now) {
     }
     const changed = items.filter((c) => stored.get(c._id) !== Date.parse(c.updatedAt ?? c.createdAt));
     if (!changed.length) return;
+    // An upsert, so a won contract's starting damage stays.
     await db.batch(changed.map((c) => db.prepare(
-      'INSERT OR REPLACE INTO contracts (id, winner, status, battle, created_at, updated_at, body) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      `INSERT INTO contracts (id, winner, status, battle, created_at, updated_at, body) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET winner = excluded.winner, status = excluded.status, battle = excluded.battle, updated_at = excluded.updated_at, body = excluded.body`,
     ).bind(c._id, c.currentWinner ?? null, c.status, c.battle ?? null, Date.parse(c.createdAt), Date.parse(c.updatedAt ?? c.createdAt), JSON.stringify(c))));
   };
 
@@ -290,7 +297,37 @@ async function refreshContracts(db, api, now) {
       cursor = more.nextCursor;
     }
   }
+  await recordContractStarts(db, api, now);
   await db.prepare('DELETE FROM contracts WHERE created_at < ?').bind(now - CONTRACT_KEEP_MS).run();
+}
+
+/**
+ * A contract counts the damage its unit deals after winning it, and the API
+ * doesn't share that progress (API keys can't read contracts). So when a
+ * contract has just been won, the unit's damage in its battle on that side is
+ * recorded: progress is the damage since. Only contracts won in the last few
+ * minutes get one (an older start would be wrong).
+ */
+async function recordContractStarts(db, api, now) {
+  const { results } = await db.prepare(
+    `SELECT id, winner, battle, body FROM contracts
+     WHERE status = 'won' AND start_damage IS NULL AND battle IS NOT NULL AND winner IS NOT NULL AND updated_at > ? LIMIT 10`,
+  ).bind(now - CONTRACT_START_WINDOW_MS).all();
+  if (!results.length) return;
+  const wanted = results.map((r) => ({ ...r, side: JSON.parse(r.body).forCountrySide ?? 'attacker' }));
+  const keys = [...new Map(wanted.map((w) => [`${w.battle}|${w.side}`, w])).values()];
+  const pages = await api.batch('battleRanking.getRanking', keys.map((k) => ({ battleId: k.battle, side: k.side, dataType: 'damage', type: 'mu', limit: 100 })));
+  const byKey = new Map(keys.map((k, i) => [`${k.battle}|${k.side}`, pages[i]?.items ?? null]));
+  const writes = [];
+  for (const w of wanted) {
+    const items = byKey.get(`${w.battle}|${w.side}`);
+    if (!items) continue;
+    const row = items.find((x) => x.mu === w.winner);
+    // Not in a full page: they may be further down, so no start rather than a wrong one.
+    if (!row && items.length >= 100) continue;
+    writes.push(db.prepare('UPDATE contracts SET start_damage = ?, start_at = ? WHERE id = ?').bind(row?.value ?? 0, now, w.id));
+  }
+  if (writes.length) await db.batch(writes);
 }
 
 /**

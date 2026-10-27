@@ -103,8 +103,10 @@ async function unitContracts(env, request) {
   const mu = new URL(request.url).searchParams.get('mu');
   if (!mu || !/^[a-f0-9]{24}$/.test(mu)) return json({ error: 'Give ?mu=<unit id>.' }, 400);
   await ensureSchema(env.DB);
-  const { results } = await env.DB.prepare('SELECT body FROM contracts WHERE winner = ? ORDER BY created_at DESC LIMIT 50').bind(mu).all();
-  return json(`{"items":[${results.map((r) => r.body).join(',')}]}`, 200, 60);
+  const { results } = await env.DB.prepare('SELECT body, start_damage, start_at FROM contracts WHERE winner = ? ORDER BY created_at DESC LIMIT 50').bind(mu).all();
+  // The unit's battle damage when the contract was won (see job.js), for its progress.
+  const item = (r) => (r.start_damage == null ? r.body : `${r.body.slice(0, -1)},"startDamage":${r.start_damage},"startAt":${r.start_at}}`);
+  return json(`{"items":[${results.map(item).join(',')}]}`, 200, 60);
 }
 
 /**
@@ -137,8 +139,7 @@ const routes = {
   '/api/loot-prices': (env) => lootPriceRoute(env),
   '/api/contracts': (env, request) => unitContracts(env, request),
   '/api/point-value': (env) => pointValue(env),
-  '/api/battle-loot': (env) => dataset(env, 'battle-loot'),
-  '/api/company-employees': (env, request) => companyEmployees(env, request),};
+  '/api/battle-loot': (env) => dataset(env, 'battle-loot'),  '/api/company-employees': (env, request) => companyEmployees(env, request),};
 
 export default {
   async fetch(request, env) {
