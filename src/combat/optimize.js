@@ -23,11 +23,6 @@ const COST_BUCKET = 0.004;
 // Options are kept if they're on the frontier at any of this many dodge %s across the range
 // (5: the same best layouts as pricing every dodge % exactly, at under half the time).
 const KEEP_STEPS = 5;
-// The quick view keeps this many options, evenly spread along each frontier.
-const QUICK_OFFENSE = 150;
-const QUICK_DEFENSE = 40;
-// Neighbours scored in full per climb step, after the quick comparison of all of them.
-const FULL_SCORES_PER_STEP = 3;
 const SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 export const FIGHT = ['attack', 'precision', 'criticalChance', 'criticalDamages', 'armor', 'dodge', 'health', 'lootChance', 'hunger'];
 
@@ -120,12 +115,6 @@ export function prepare(market, { locked = {}, lockedFood } = {}) {
   const topDodge = Math.max(0, ...Object.values(dodgeLevels).map((l) => l.value ?? 0)) + Math.max(0, ...slots.boots.map((b) => b?.skills.dodge ?? 0));
   const minKeep = 1 - softCapPercent(topDodge, config.skills.dodge?.softCap ?? 40) / 100;
   return { market, config, slots, ammos, foods, armorPairs: [...pairs.values()], wearOf, maxOffArmor, minKeep, pairCache: new Map(), cache: new Map() };
-}
-
-/** At most n items of a frontier, evenly spread (both ends kept). */
-function thin(list, n) {
-  if (list.length <= n) return list;
-  return Array.from({ length: n }, (_, i) => list[Math.round((i * (list.length - 1)) / (n - 1))]);
 }
 
 /**
@@ -276,24 +265,20 @@ function layout(prep, levels, prestige, opts) {
   const defKey = `d${stats.armor}|${stats.dodge}`;
   if (!prep.cache.has(defKey)) prep.cache.set(defKey, defenseOptions(prep, stats));
   // Offense depends on the dodge % (it spares the helmet and gloves): one list per dodge %.
-  const q = opts.quick ? 'q' : '';
   const offsFor = (d) => {
-    const key = `${q}${offKey}|${d.dodge}`;
+    const key = `${offKey}|${d.dodge}`;
     let offs = prep.cache.get(key);
     if (!offs) {
       if (!prep.cache.has(offKey)) prep.cache.set(offKey, offenseCandidates(prep, stats, fightOpts));
       offs = offenseOptions(prep.cache.get(offKey), d.keep);
-      // A thinner view for ranking neighbouring layouts quickly.
-      if (q) offs = thin(offs, QUICK_OFFENSE);
       prep.cache.set(key, offs);
     }
     return offs;
   };
-  if (opts.quick && !prep.cache.has(`q${defKey}`)) prep.cache.set(`q${defKey}`, thin(prep.cache.get(defKey), QUICK_DEFENSE));
   const foods = prep.foods.map((food) => ({ food, price: food ? itemPrice(market, food) : 0, phases: phasesFor(config, stats, food, opts) }));
   const cases = (stats.lootChance / 100) * ((itemPrice(market, 'case1') ?? 0) + 0.01 * (itemPrice(market, 'case2') ?? 0));
   const pill = opts.pill && !opts.supply ? itemPrice(market, 'cocain') ?? 0 : 0;
-  return { stats, offsFor, defs: prep.cache.get(q + defKey), foods, cases, pill };
+  return { stats, offsFor, defs: prep.cache.get(defKey), foods, cases, pill };
 }
 
 /**
@@ -576,69 +561,7 @@ export function layoutSpace(config, { start, searched = FIGHT, budget, playerLev
 }
 
 /**
- * Best skill layout. score(levels) → result; isBetter(a, b) compares results.
- * searched: the skills to move; budget: points for them (the rest of `start`
- * stays). Climbs from `start` and from spread layouts; keeps the best.
- * quickScore (optional) ranks neighbours with a thinner option list first.
- */
-export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel, score, quickScore = null, isBetter = better, onStep, shouldStop }) {
-  const space = layoutSpace(prep.config, { start, searched, budget, playerLevel });
-  const scored = new Map();
-  const scoreOf = (l) => {
-    const key = space.keyOf(l);
-    if (!scored.has(key)) scored.set(key, score(l));
-    return scored.get(key);
-  };
-  const quick = new Map();
-  const quickOf = (l) => {
-    const key = space.keyOf(l);
-    if (scored.has(key)) return scored.get(key);
-    if (!quick.has(key)) quick.set(key, quickScore(l));
-    return quick.get(key);
-  };
-  let steps = 0;
-  const climb = (levels) => {
-    let best = scoreOf(levels);
-    for (;;) {
-      if (shouldStop?.()) break;
-      let winner = null;
-      let winnerLevels = null;
-      const all = space.neighbours(levels);
-      const pick = (list) => {
-        for (const l of list) {
-          const r = scoreOf(l);
-          if (isBetter(r, winner)) { winner = r; winnerLevels = l; }
-        }
-      };
-      if (quickScore) {
-        // Rank every neighbour quickly and score the most promising few in full;
-        // only when none of those helps are all of them scored in full.
-        const ranked = all.map((l) => ({ l, r: quickOf(l) })).filter((x) => x.r);
-        ranked.sort((a, b) => (isBetter(a.r, b.r) ? -1 : isBetter(b.r, a.r) ? 1 : 0));
-        pick(ranked.slice(0, FULL_SCORES_PER_STEP).map((x) => x.l));
-        if (!isBetter(winner, best)) pick(all);
-      } else {
-        pick(all);
-      }
-      if (!isBetter(winner, best)) break;
-      levels = winnerLevels;
-      best = winner;
-      steps++;
-      onStep?.({ step: steps, levels, best, checked: scored.size, budget, used: space.used(levels) });
-    }
-    return { levels, best };
-  };
-  let result = null;
-  for (const s of space.starts) {
-    if (shouldStop?.()) break;
-    const r = climb(s);
-    if (!result || isBetter(r.best, result.best)) result = r;
-  }
-  return { ...result, steps, checked: scored.size, budget, used: space.used(result.levels) };
-}
-
-/**
- * bestLayout with the scoring done elsewhere (a pool of workers):
+ * Best skill layout, with the scoring done elsewhere (a pool of workers):
  * scoreMany(layouts) → Promise of results in the same order. Each step's
  * neighbours are scored together, so they run in parallel.
  */

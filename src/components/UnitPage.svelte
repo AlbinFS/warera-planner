@@ -29,7 +29,6 @@
   let error = $state('');
   let progress = $state(0);
   let countries = $state.raw({});
-  let regions = $state.raw({});
   let retryId = $state(null);
 
   // Start with the loaded player's unit.
@@ -94,15 +93,13 @@
     try {
       status = 'Loading the unit…';
       unit = await loadUnitById(muId);
-      const [members, unitContracts, countryList, regionMap] = await Promise.all([
+      const [members, unitContracts, countryList] = await Promise.all([
         loadMembers(unit),
         loadContracts(unit._id).catch(() => []),
         cached('country.getAllCountries', {}, 60 * 60 * 1000).catch(() => []),
-        cached('region.getRegionsObject', {}, 60 * 60 * 1000).catch(() => ({})),
       ]);
       if (id !== seq) return;
       countries = Object.fromEntries((countryList ?? []).map((c) => [c._id, c]));
-      regions = regionMap ?? {};
       contracts = unitContracts;
       picked = unitContracts.find((c) => c.battleActive !== false)?._id ?? null;
       await compute(members, id);
@@ -142,7 +139,6 @@
   const contract = $derived(contracts.find((c) => c._id === picked) ?? null);
   const fighting = $derived(rows.filter((r) => r.d.damage > 0).length);
 
-  const regionName = (id) => regions?.[id]?.name ?? 'a region';
   const countryName = (id) => countries[id]?.name ?? 'a country';
   const contractLabel = (c) => [
     `For ${countryName(c.forCountry)} (${c.forCountrySide})`,

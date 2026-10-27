@@ -56,7 +56,7 @@ export async function collectBuilds(market, planner, settings, skills, onProgres
 }
 
 /** Income per day for economy-skill layouts (the Eco page's model). */
-export async function incomeModel(market, upgrades, planner) {
+export async function incomeModel(market, planner) {
   const model = await incomePlan(market, planner);
   return (levels) => incomeOf(model, levels);
 }
@@ -78,7 +78,7 @@ export async function searchSkills(market, planner, settings, options) {
   const report = (s) => ({
     step: s.steps ?? s.step ?? 0, levels: { ...start, ...s.levels }, checked: s.checked, budget: s.budget, used: s.used,
     best: s.best && { ...evaluate({ damage: s.best.damage, cost: s.best.cost }, { ...terms, economy: (terms.economy ?? 0) + (s.best.incomeChange ?? 0) }), armor: s.best.armor, dodge: s.best.dodge },
-    incomeChange: s.best?.incomeChange ?? 0, baseIncome: income ? incomeOf(income, start) : undefined,
+    incomeChange: s.best?.incomeChange ?? 0,
   });
   const r = await searchLayout(market, {
     lockedFood: settings.food === 'any' ? undefined : settings.food, start, searched, budget,

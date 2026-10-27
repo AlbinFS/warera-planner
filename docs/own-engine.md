@@ -64,9 +64,12 @@ damage (1.19M vs 1.2M), wear, food, cases and scrap as the combat simulator.
   pays for itself, then the others by damage per gold lost; "cheapest for a
   target" takes them by cost per damage.
 - Skills: a climb over layouts (raise one level, lower one or two to pay),
-  from the planned layout and two spread layouts. Neighbours are ranked with a
-  quicker, coarser offense list; the best few are scored in full.
-- Searches run in a worker (`src/combat/worker.js`), so the page stays responsive.
+  from the planned layout and two spread layouts. Every neighbour is scored in
+  full, a step's neighbours in parallel on a pool of workers.
+- With economy skills searched (the contract page's default once a player is
+  loaded), each layout counts its own company income, so points move between
+  fight and economy skills wherever they earn more.
+- Searches run in workers (`src/combat/worker.js`), so the page stays responsive.
 
 ## Results against the old optimizer
 
