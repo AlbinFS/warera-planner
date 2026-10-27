@@ -49,7 +49,7 @@
   // Contract terms, remembered in this browser.
   const KEY = 'contract.terms.v1';
   const saved = (() => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}'); } catch { return {}; } })();
-  let terms = $state({ mode: 'skills', bounty: 0.08, poolLoot: 0.13, lootItems: 0, lootRarity: 'epic', lose: '1', income: 0, sort: 'damage', show: 'frontier', ...saved });
+  let terms = $state({ mode: 'skills', bounty: 0.08, poolLoot: 0.13, lootMode: 'perK', lootItems: 3, lootRarity: 'epic', lose: '1', income: 0, sort: 'damage', show: 'frontier', ...saved });
 
   // Battle loot: equipment pieces dropped per fight, each worth the median market
   // price of that rarity's weapons and armour (every roll, from the trade history).
@@ -64,7 +64,9 @@
     }
     return Object.fromEntries(Object.entries(byRarity).map(([k, v]) => [k, v.sort((a, b) => a - b)[v.length >> 1]]));
   });
-  const loot = $derived(Math.max(0, Number(terms.lootItems) || 0) * (lootPrice[terms.lootRarity] ?? 0));
+  // Loot is counted one way: G per 1k damage, or a number of items per fight.
+  const byItems = $derived(terms.lootMode === 'items');
+  const loot = $derived(byItems ? Math.max(0, Number(terms.lootItems) || 0) * (lootPrice[terms.lootRarity] ?? 0) : 0);
   $effect(() => {
     const snapshot = JSON.stringify(terms);
     try { localStorage.setItem(KEY, snapshot); } catch {}
@@ -87,7 +89,7 @@
   const maxLoss = $derived(String(terms.lose).trim() === '' ? Infinity : Math.max(0, Number(terms.lose) || 0));
   const contract = $derived({
     bounty: Number(terms.bounty) || 0,
-    poolLoot: Number(terms.poolLoot) || 0,
+    poolLoot: byItems ? 0 : Number(terms.poolLoot) || 0,
     loot,
     economy: (Number(terms.income) || 0) + (search?.incomeChange ?? 0),
   });
@@ -187,7 +189,7 @@
     <h2>Find the best build for a contract</h2>
     <ol>
       <li><strong>Load your player</strong> below. The search starts from the skills set on the Planner page, economy skills included.</li>
-      <li><strong>Enter the contract:</strong> what it pays per 1k damage, the pool loot you expect, and how much you're willing to lose.</li>
+      <li><strong>Enter the contract:</strong> what it pays per 1k damage, the loot you expect (per 1k damage or as items per fight), and how much you're willing to lose.</li>
       <li><strong>Press Optimize.</strong> You get the skills and gear with the most damage that stays within your loss.</li>
       <li><strong>Pick a build</strong> from the list and press "Use in planner" to fine-tune it.</li>
     </ol>
@@ -216,16 +218,24 @@
         </select>
       </label>
       <label><span>Bounty (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={terms.bounty} /></label>
-      <label><span>Pool loot (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={terms.poolLoot} /></label>
       <label>
-        <span>Battle loot (items {periodLabel(settings)})</span>
-        <span class="loot">
-          <input type="number" step="0.5" min="0" bind:value={terms.lootItems} aria-label="Battle loot items" />
-          <select bind:value={terms.lootRarity} aria-label="Battle loot rarity">
-            {#each RARITIES as r (r)}<option value={r} disabled={!lootPrice[r]}>{r}</option>{/each}
-          </select>
-        </span>
-        <small class="muted">{fmt(lootPrice[terms.lootRarity] ?? 0, 1)} G each{loot ? ` · ${fmt(loot, 1)} G in all` : ''}. Pieces dropped in the battle, whatever the damage; 0 to use pool loot only.</small>
+        <span>Loot</span>
+        <select bind:value={terms.lootMode} aria-label="How loot is counted">
+          <option value="perK">G per 1k damage</option>
+          <option value="items">Items {periodLabel(settings)}</option>
+        </select>
+        {#if byItems}
+          <span class="loot">
+            <input type="number" step="0.5" min="0" bind:value={terms.lootItems} aria-label="Loot items" />
+            <select bind:value={terms.lootRarity} aria-label="Loot item rarity">
+              {#each RARITIES as r (r)}<option value={r} disabled={!lootPrice[r]}>{r}</option>{/each}
+            </select>
+          </span>
+          <small class="muted">{fmt(lootPrice[terms.lootRarity] ?? 0, 1)} G each · {fmt(loot, 1)} G in all, whatever the damage.</small>
+        {:else}
+          <input type="number" step="0.001" min="0" bind:value={terms.poolLoot} aria-label="Loot, G per 1k damage" />
+          <small class="muted">Measured from battle data: about 0.12–0.16.</small>
+        {/if}
       </label>
       <label><span>Willing to lose (G)</span><input type="number" step="1" min="0" bind:value={terms.lose} placeholder="No limit" /></label>
       <label>
@@ -248,8 +258,8 @@
       </div>
     </form>
     <p class="hint muted">
-      Net = (bounty + pool loot) × damage / 1000 + battle loot + economy income − cost, {periodLabel(settings)} (fight window, pill, bonus and food come from the settings bar).
-      Pool loot measured from battle data is about 0.12–0.16. The skill search starts from the skills in the planner.
+      Net = bounty × damage / 1000 + loot + economy income − cost, {periodLabel(settings)} (fight window, pill, bonus and food come from the settings bar).
+      The skill search starts from the skills in the planner.
     </p>
     {#if running}
       <div class="running" role="status" aria-live="polite">
