@@ -15,7 +15,7 @@
   const levelCost = (kind, level) => up[kind]?.levels?.[String(level)];
   const maxLevel = (kind) => Math.max(...Object.keys(up[kind]?.levels ?? { 1: 1 }).map(Number));
 
-  /** Points a company makes per day: engine plus its employees (as typed in). */
+  /** Points a company makes per day: engine plus its employees. */
   function dayPoints(c) {
     // Shown bonus already includes the owner's Management, so no change here.
     const staff = (ecoEmployees[c.id] ?? []).map((e) => employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 }));

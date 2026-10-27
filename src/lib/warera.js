@@ -136,6 +136,14 @@ export const getEquipmentPrices = once(async () => {
   return { data: body, fetchedAt: new Date(body.fetchedAt), stale: body.stale, ready: body.ready, source: 'site' };
 });
 
+/** Battle-loot value per rarity: 24 h trade median, or 7 days without manipulated days. Only this site has it. */
+export const getLootPrices = once(async () => {
+  const res = await fetch('/api/loot-prices');
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+  return body.rarities;
+});
+
 /** Finds a player by exact username (case-insensitive), else the best match. */
 export async function findPlayer(name) {
   const found = await cached('search.searchAnything', { searchText: name });

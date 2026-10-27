@@ -1,8 +1,13 @@
 <script>
-  /** Hits, food and cases for the planned build, and where its cost goes. */
+  /**
+   * Hits, food and cases for the planned build, and where its cost goes; with
+   * the bounty, battle loot and the companies' profit, the true net (the
+   * simulator uses the same income).
+   */
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
   import { costBreakdown } from '../lib/compute.js';
+  import { fightIncome, companyProfit, incomeTerms, lootPrices, lootBasis, lootFor, battleLoot, RARITIES } from '../lib/fightIncome.svelte.js';
   import { fmt, periodLabel } from '../lib/format.js';
   import { itemImage, rarityOf, RARITY_COLORS, STATS, statText } from '../lib/visual.js';
   import { itemLabel, SLOT_NAMES } from '../lib/market.js';
@@ -39,6 +44,15 @@
   const costs = $derived(breakdown ? breakdown.rows.filter((r) => r.amount > 0).sort((a, b) => b.amount - a.amount) : []);
   const credits = $derived(breakdown ? breakdown.rows.filter((r) => r.amount < 0).sort((a, b) => a.amount - b.amount) : []);
   const spent = $derived(costs.reduce((s, r) => s + r.amount, 0));
+
+  // Income besides the cases: bounty, battle loot (per 1k damage or items per fight) and the companies' day.
+  const terms = $derived(incomeTerms(data.market, current?.damage ?? 0));
+  const auto = $derived(fightIncome.lootMode === 'auto' && current?.damage ? lootFor(data.market, current.damage) : null);
+  const bountyIncome = $derived(current?.damage ? (terms.bounty * current.damage) / 1000 : 0);
+  const lootIncome = $derived(terms.flat + (current?.damage ? (terms.perK * current.damage) / 1000 : 0));
+  const income = $derived(companyProfit.value);
+  const prices = $derived(lootPrices(data.market));
+  const net = $derived(breakdown ? breakdown.total - bountyIncome - lootIncome - (income ?? 0) : 0);
 </script>
 
 <section class="card" aria-labelledby="breakdown-title" aria-busy={busy}>
@@ -47,7 +61,7 @@
     <p class="muted">{busy ? 'Working it out…' : 'Load or build a fighting setup to see this.'}</p>
   {:else}
     <dl class="facts" class:stale={busy}>
-      <div><dt>{breakdown.hitsArePillPhase ? 'Hits during the pill' : 'Hits'}</dt><dd class="num">{fmt(breakdown.hits, 0)}</dd></div>
+      <div><dt>{breakdown.hitsArePillPhase ? 'Hits during the pill' : 'Hits'}</dt><dd class="num">{fmt(breakdown.hits, 0)}</dd>{#if breakdown.split}<small class="muted">{fmt(breakdown.split.pill, 0)} on the pill · {fmt(breakdown.split.debuff, 0)} in the debuff</small>{/if}</div>
       <div><dt>Average damage per hit</dt><dd class="num">{fmt(breakdown.perAttack, 0)}</dd></div>
       <div><dt>Food eaten</dt><dd class="num">{fmt(breakdown.foodEaten, 1)}</dd></div>
       {#each breakdown.cases as c (c.code)}
@@ -77,13 +91,46 @@
             <td></td>
           </tr>
         {/each}
+        {#if bountyIncome > 0}
+          <tr class="credit"><td class="pic"></td><td>Bounty <span class="muted">({fmt(terms.bounty, 3)} G per 1k × {fmt(current.damage / 1000, 0)}k damage)</span></td><td class="num amount">{fmt(-bountyIncome, 2)}</td><td></td></tr>
+        {/if}
+        {#if lootIncome > 0}
+          <tr class="credit"><td class="pic"></td><td>Battle loot <span class="muted">({auto ? `about ${fmt(auto.items, 1)} items, ${fmt(auto.epicPlus, 1)} epic or better` : fightIncome.lootMode === 'items' ? `${fmt(Number(fightIncome.lootItems) || 0, 1)} ${fightIncome.lootRarity} × ${fmt(prices[fightIncome.lootRarity] ?? 0, 1)} G` : `${fmt(terms.perK, 3)} G per 1k`})</span></td><td class="num amount">{fmt(-lootIncome, 2)}</td><td></td></tr>
+        {/if}
+        {#if income != null}
+          <tr class="credit"><td class="pic"></td><td>Company profit <span class="muted">(a day, at these economy skills)</span></td><td class="num amount">{fmt(-income, 2)}</td><td></td></tr>
+        {/if}
         {#if breakdown.other}
           <tr><td></td><td class="muted">Other (daily credits, gear without a price)</td><td class="num amount">{fmt(breakdown.other, 2)}</td><td></td></tr>
         {/if}
-        <tr class="total"><td></td><td>Net cost</td><td class="num amount">{fmt(breakdown.total, 2)}</td><td></td></tr>
+        <tr class="total" class:profit={net < 0}><td></td><td>{net < 0 ? 'Net profit' : 'Net cost'}</td><td class="num amount">{fmt(Math.abs(net), 2)}</td><td></td></tr>
       </tbody>
     </table>
-    <p class="muted small">Gear costs are its wear: the share of the item's market price used up. Credits are what broken gear's scraps and expected case drops are worth.</p>
+    <div class="income-in" role="group" aria-label="Fight income">
+      <label><span>Bounty (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={fightIncome.bounty} placeholder="0.08" /></label>
+      <label>
+        <span>Battle loot</span>
+        <span class="row">
+          <select bind:value={fightIncome.lootMode} aria-label="How loot is counted">
+            <option value="auto">From real battles</option>
+            <option value="items">Items per fight</option>
+            <option value="perK">G per 1k damage</option>
+          </select>
+          {#if fightIncome.lootMode === 'items'}
+            <input class="short" type="number" step="0.5" min="0" bind:value={fightIncome.lootItems} aria-label="Loot items" />
+            <select bind:value={fightIncome.lootRarity} aria-label="Loot rarity">{#each RARITIES as r (r)}<option value={r} disabled={!prices[r]}>{r}</option>{/each}</select>
+          {:else}
+            <input class="short" type="number" step="0.001" min="0" bind:value={fightIncome.lootPerK} aria-label="Loot, G per 1k damage" />
+          {/if}
+        </span>
+        {#if fightIncome.lootMode === 'items'}<small class="muted">{fmt(prices[fightIncome.lootRarity] ?? 0, 1)} G each ({lootBasis(fightIncome.lootRarity)})</small>
+        {:else if fightIncome.lootMode === 'auto'}<small class="muted">{#if auto}What {fmt(auto.battles, 0)} recent battles over {fmt(auto.minDamage / 1e6, 0)}M damage gave for this damage (counted over {auto.rounds} rounds), at the 24 h loot prices.{:else if battleLoot.data}Needs a build that fights.{:else}Real battles are still being collected{battleLoot.error ? ` (${battleLoot.error})` : ''}.{/if}</small>{/if}
+      </label>
+    </div>
+    <p class="muted small">
+      Gear costs are its wear: the share of the item's market price used up. Credits are what broken gear's scraps and expected case drops
+      are worth, the bounty and battle loot this fight earns, and {planner.player ? "your companies' profit for a day at the planned economy skills" : "(once you load your player) your companies' profit"}.
+    </p>
   {/if}
 </section>
 
@@ -103,6 +150,13 @@
   .sub td { color: var(--muted); }
   .credit td { color: var(--good); }
   .total td { font-weight: 700; border-bottom: 0; border-top: 2px solid var(--line); }
+  .total.profit td { color: var(--good); }
+  .income-in { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 12px; }
+  .income-in label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  .income-in .row { display: flex; gap: 6px; }
+  .income-in input, .income-in select { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 8px; color: var(--text); font-size: 14px; }
+  .income-in input { width: 100px; }
+  .income-in input.short { width: 70px; }
   .small { font-size: 12px; margin: 8px 0 0; }
   @media (max-width: 520px) { .bar { display: none; } }
 </style>

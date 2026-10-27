@@ -7,9 +7,6 @@ import { buildMarket, priceKey } from '../engine/inputs.js';
 
 export const GEAR_SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 export const SLOT_NAMES = { weapon: 'Weapon', ammo: 'Ammo', helmet: 'Helmet', chest: 'Chest', pants: 'Pants', boots: 'Boots', gloves: 'Gloves' };
-export const STAT_NAMES = {
-  attack: 'Attack', criticalChance: 'Crit chance', criticalDamages: 'Crit damage', armor: 'Armor', dodge: 'Dodge', precision: 'Precision',
-};
 
 let loading = null;
 

@@ -5,10 +5,13 @@
  *   the site still has them when the official API is down;
  * - trade history for the equipment items refreshed longest ago, as many as
  *   fit in about 350 KB of stored trades (the heaviest, jets, run alone), and
- *   their prices. All 36 items come round in roughly 10-15 minutes.
+ *   their prices. All 36 items come round in roughly 10-15 minutes;
+ * - the loot rankings of two finished battles (battleLoot.js), for what a
+ *   given damage earns in battle loot.
  */
 import { WareraApi } from './warera.js';
-import { toTrade, isSatisfied, prune, priceItem, HISTORY_MS } from './prices.js';
+import { toTrade, isSatisfied, prune, priceItem, keepRecent, HISTORY_MS } from './prices.js';
+import { refreshBattleLoot } from './battleLoot.js';
 
 const CONFIG_EVERY_MS = 60 * 60 * 1000;
 const ITEM_PRICES_EVERY_MS = 5 * 60 * 1000;
@@ -59,7 +62,8 @@ const SCHEMA = [
      exhausted INTEGER NOT NULL DEFAULT 0,
      ready INTEGER NOT NULL DEFAULT 0,
      prices TEXT,
-     updated_at INTEGER NOT NULL
+     updated_at INTEGER NOT NULL,
+     recent TEXT
    )`,
 ];
 
@@ -67,6 +71,8 @@ let schemaReady = false;
 export async function ensureSchema(db) {
   if (schemaReady) return;
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+  // Added later: databases made before get the column here (it fails once it exists).
+  await db.prepare('ALTER TABLE equipment ADD COLUMN recent TEXT').run().catch(() => {});
   schemaReady = true;
 }
 
@@ -102,8 +108,8 @@ async function equipmentItems(db) {
 
 async function loadEntry(db, code) {
   const row = await db.prepare('SELECT * FROM equipment WHERE code = ?').bind(code).first();
-  if (!row) return { trades: [], cursor: null, oldestAt: null, exhausted: false, ready: false };
-  return { trades: JSON.parse(row.trades), cursor: row.cursor, oldestAt: row.oldest_at, exhausted: !!row.exhausted, ready: !!row.ready };
+  if (!row) return { trades: [], recent: null, cursor: null, oldestAt: null, exhausted: false, ready: false };
+  return { trades: JSON.parse(row.trades), recent: row.recent ? JSON.parse(row.recent) : null, cursor: row.cursor, oldestAt: row.oldest_at, exhausted: !!row.exhausted, ready: !!row.ready };
 }
 
 /**
@@ -127,8 +133,10 @@ async function refreshItem(api, { code, dynamicStats }, entry, firstPage, now) {
     entry.oldestAt = fresh.length ? fresh.at(-1)[1] : null;
     if (!firstPage.nextCursor) entry.exhausted = true;
   }
+  // Loot prices use every trade of the last 7 days; the first time, from the stored ones.
+  entry.changed = fresh.length > 0 || entry.recent == null;
+  entry.recent = keepRecent(entry.recent ?? keepRecent([], entry.trades, now), fresh, now);
   entry.trades = [...fresh, ...entry.trades];
-  entry.changed = fresh.length > 0;
 
   // Coverage only matters while the history is being filled; once an item is
   // ready, new trades only add to it.
@@ -162,9 +170,9 @@ function saveEntry(db, code, entry, now) {
     return db.prepare('UPDATE equipment SET prices = ?, ready = ?, updated_at = ? WHERE code = ?')
       .bind(prices, entry.ready ? 1 : 0, now, code).run();
   }
-  return db.prepare(`INSERT OR REPLACE INTO equipment (code, trades, cursor, oldest_at, exhausted, ready, prices, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(code, JSON.stringify(entry.trades), entry.cursor, entry.oldestAt, entry.exhausted ? 1 : 0, entry.ready ? 1 : 0, prices, now)
+  return db.prepare(`INSERT OR REPLACE INTO equipment (code, trades, cursor, oldest_at, exhausted, ready, prices, updated_at, recent)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(code, JSON.stringify(entry.trades), entry.cursor, entry.oldestAt, entry.exhausted ? 1 : 0, entry.ready ? 1 : 0, prices, now, JSON.stringify(entry.recent))
     .run();
 }
 
@@ -195,6 +203,14 @@ export async function runJob(env, now = Date.now()) {
     await refreshContracts(db, api, now);
   } catch (err) {
     console.warn(`contracts: ${err.message}`);
+  }
+
+  try {
+    const config = await readDataset(db, 'game-config');
+    const items = config ? JSON.parse(config.body).items ?? {} : {};
+    await refreshBattleLoot(db, api, now, { rarityOf: (code) => items[code]?.rarity });
+  } catch (err) {
+    console.warn(`battle loot: ${err.message}`);
   }
 
   if (!env.WARERA_API_KEY && !env.WARERA_API_BASE) {

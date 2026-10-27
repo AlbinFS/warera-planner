@@ -1,338 +1,224 @@
 /**
- * Planner calculations on top of the engine: evaluate the planned build,
- * find cheaper/stronger alternatives, optimize gear and skills.
+ * Planner calculations on top of our own combat engine (src/combat):
+ * evaluate the planned build, find cheaper/stronger alternatives, the cost
+ * breakdown, and optimize gear and skills.
  */
-import { getEngine } from '../engine/browser.js';
-import { buildInput, debuffEquipment, skillsMarket, priceKey, SLOTS, ALL_SKILLS, VENDOR_ECONOMY_SKILLS } from '../engine/inputs.js';
-import { cached, getApiKey } from './warera.js';
+import { priceKey, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
+import { prepare, strongest, strongestSplit, isSplit, cheapest, buildFrontier, rollPrice, levelCost } from '../combat/optimize.js';
+import { WEAR_PER_HIT, SCRAP_BASE, itemPrice, canFight } from '../combat/model.js';
+import { searchLayout } from '../combat/client.js';
+import { incomePlan } from './income.js';
 
-// The original page's default net job salary, used by its income model.
-const DEFAULT_JOB_SALARY = 0.123;
-
-/** A plain copy: the planner's reactive state can't be posted to a worker as it is. */
-const plain = (value) => JSON.parse(JSON.stringify(value));
+const GEAR_SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 
 /**
- * The engine setup for a planned build. `windowHours` 24 means the full-day
- * model; `skills` replaces the planned skill levels (the contract search tries many).
+ * Fight settings as the engine's options. A full day is 24 h; a session can
+ * also be 16 h. splitDebuff: a second build for the pill's debuff.
  */
-export function setupFor(planner, settings, { locked = true, windowHours = settings.windowHours, skills = planner.skills } = {}) {
+export function fightOptions(settings) {
+  return { pill: !!settings.pill, battleBonusPercent: Number(settings.battleBonus) || 0, hours: Number(settings.windowHours) || 8, splitDebuff: !!settings.splitDebuff };
+}
+
+/** Whether the settings fight the debuff with its own build. */
+export const splitActive = (market, settings) => isSplit({ items: market.gameConfigItems }, fightOptions(settings));
+
+/** The player's level, rank and prestige (a shared build carries its own). */
+export function playerOf(planner) {
   const p = planner.player;
-  return plain({
-    level: p?.level ?? 1,
-    militaryRankPercent: p?.militaryRankPercent ?? 0,
-    skills,
-    prestige: p?.prestige ?? {},
-    pill: settings.pill,
-    battleBonusPercent: Number(settings.battleBonus) || 0,
-    windowHours: windowHours === 24 ? null : windowHours,
-    // Credits counted like the original page; the gear worn now is what the pill debuff phase uses.
-    dailyContext: {
-      settings: { scraps: true, cases: true, income: false, dailyWeekly: false },
-      incomeCredit: 0,
-      rewardCredit: 0,
-      debuffBuild: { equipment: debuffEquipment(p?.currentGear), foodCode: 'none' },
-    },
-    ...(locked
-      ? { lockedEquipment: Object.fromEntries(SLOTS.map((s) => [s, planner.gear[s] ?? null])), lockedFood: planner.food }
-      : { lockedFood: settings.food === 'any' ? undefined : settings.food }),
-  });
+  return { level: p?.level ?? 1, militaryRankPercent: p?.militaryRankPercent ?? 0, prestige: p?.prestige ?? {} };
 }
 
-/** A result point's cost: per window (the pill added, since the window cost leaves it out) or per day. */
-export function costOf(point, market, settings) {
-  if (settings.windowHours !== 24 && point.roundNetCost != null) {
-    return point.roundNetCost + (settings.pill ? market.itemPrices.cocain ?? 0 : 0);
+/** The planner's gear as engine rolls ({ code, skills, price }; ammo a code). */
+export function lockedGear(market, gear) {
+  const locked = {};
+  for (const slot of GEAR_SLOTS) {
+    const g = gear[slot];
+    locked[slot] = g?.code ? { code: g.code, skills: g.skills ?? {}, price: rollPrice(market, g.code, g.skills, priceKey) ?? 0 } : null;
   }
-  return point.dailyNetCost;
+  locked.ammo = gear.ammo ?? null;
+  return locked;
 }
 
-/** Damage and cost of the planned build, or { error } when it can't fight (e.g. a gun without ammo). */
+/** Engine gear → the planner's equipment shape. */
+export function toEquipment(market, gear) {
+  const out = {};
+  for (const slot of GEAR_SLOTS) {
+    const r = gear[slot];
+    out[slot] = r ? { code: r.code, type: market.gameConfigItems[r.code]?.type ?? 'equipment', skills: { ...r.skills }, maxState: 100, state: 100 } : null;
+  }
+  out.ammo = gear.ammo ?? null;
+  return out;
+}
+
+// Prepared markets, by what's fixed (a handful at most: planned gear, free gear).
+const preps = new Map();
+function prepFor(market, { locked, lockedFood } = {}) {
+  const key = JSON.stringify([locked ?? null, lockedFood ?? null]);
+  let entry = preps.get(key);
+  if (!entry || entry.market !== market) {
+    entry = { market, prep: prepare(market, { locked: locked ?? {}, lockedFood }) };
+    preps.set(key, entry);
+    if (preps.size > 8) preps.delete(preps.keys().next().value);
+  }
+  return entry.prep;
+}
+
+const foodSetting = (settings) => (settings.food === 'any' ? undefined : settings.food);
+const plannedFood = (planner) => (planner.food && planner.food !== 'none' ? planner.food : 'none');
+
+/** A build as the pages show it: damage, cost, equipment, food (and the engine's details), and the debuff's own build. */
+const shape = (market, b) => b && {
+  damage: b.damage, cost: b.cost, equipment: toEquipment(market, b.gear), food: b.food ?? 'none', details: b,
+  debuff: b.debuff ? { equipment: toEquipment(market, b.debuff.gear), food: b.debuff.food ?? 'none' } : null,
+};
+
+/** Damage and cost of the planned build, or { error }. */
 export async function evaluateBuild(market, planner, settings) {
-  const input = buildInput(market, setupFor(planner, settings));
-  const reply = await getEngine().optimize({ mode: 'damage', input, target: 0, maxBudget: Infinity, graph: false });
-  const r = reply.result;
-  if (!r) return { error: reasonText(reply.reason) };
-  const point = r.selectedDamageCostPoint;
-  return {
-    damage: point.damagePerDay,
-    cost: costOf(point, market, settings),
-    build: r.build,
-  };
+  if (!canFight(planner.gear)) return { error: 'A gun can’t shoot without ammo: pick ammo, or a knife.' };
+  const opts = fightOptions(settings);
+  const prep = prepFor(market, { locked: lockedGear(market, planner.gear), lockedFood: plannedFood(planner) });
+  let b;
+  if (isSplit(prep.config, opts)) {
+    // The debuff build (or the pill build again, until one is set).
+    const debuff = planner.debuff ?? { gear: planner.gear, food: planner.food };
+    if (!canFight(debuff.gear)) return { error: 'The debuff build’s gun can’t shoot without ammo: pick ammo, or a knife.' };
+    const prepDebuff = prepFor(market, { locked: lockedGear(market, debuff.gear), lockedFood: plannedFood(debuff) });
+    b = strongestSplit(prep, planner.skills, playerOf(planner), opts, {}, Infinity, prepDebuff);
+  } else {
+    b = strongest(prep, planner.skills, playerOf(planner), opts);
+  }
+  if (!b) return { error: 'This build can’t fight.' };
+  return { damage: b.damage, cost: b.cost, build: { equipment: toEquipment(market, b.gear), foodCode: b.food ?? 'none' }, details: b };
 }
 
 /**
- * Cheaper build with the same damage and stronger build for the same cost.
- * Each is null when the planned build is already best.
- *
- * The hints worker only knows the full-day model, so it is used for that
- * setting; for a fight window the main optimizer answers instead, which
- * handles the window exactly.
+ * A debuff build for the planned pill build: the cheapest gear doing the
+ * same damage in the debuff as the pill gear would. { equipment, food,
+ * saving (G), damage } or null when the pill gear is already the cheapest.
  */
+export async function suggestDebuff(market, planner, settings) {
+  const opts = { ...fightOptions(settings), splitDebuff: false, phase: 'debuff' };
+  const player = playerOf(planner);
+  const worn = prepFor(market, { locked: lockedGear(market, planner.gear), lockedFood: plannedFood(planner) });
+  const same = strongest(worn, planner.skills, player, opts);
+  if (!same?.damage) return null;
+  const b = cheapest(prepFor(market, { lockedFood: foodSetting(settings) }), planner.skills, player, opts, same.damage);
+  if (!b?.reachedTarget || b.cost >= same.cost - 0.05) return null;
+  return { equipment: toEquipment(market, b.gear), food: b.food ?? 'none', saving: same.cost - b.cost, damage: b.damage };
+}
+
+/** Cheaper build with the same damage and stronger build for the same cost (null when the planned one is best). */
 export async function findHints(market, planner, settings, evaluated) {
-  const input = buildInput(market, setupFor(planner, settings, { locked: false }));
-  if (settings.windowHours !== 24) return windowHints(market, settings, input, evaluated);
-  const points = await getEngine().hints(input, plain({ equipment: evaluated.build.equipment, foodCode: evaluated.build.foodCode }));
-  let cheaper = null;
-  let stronger = null;
-  for (const p of points) {
-    const option = { damage: p.damagePerDay, cost: costOf(p, market, settings), equipment: p.equipment, food: p.foodCode };
-    if (option.damage >= evaluated.damage * 0.999 && option.cost < evaluated.cost - 0.05 && (!cheaper || option.cost < cheaper.cost)) cheaper = option;
-    if (option.damage > evaluated.damage * 1.001 && option.cost <= evaluated.cost + 0.05 && (!stronger || option.damage > stronger.damage)) stronger = option;
-  }
+  const prep = prepFor(market, { lockedFood: foodSetting(settings) });
+  const player = playerOf(planner);
+  const opts = fightOptions(settings);
+  const same = cheapest(prep, planner.skills, player, opts, evaluated.damage * 0.9999);
+  const top = strongest(prep, planner.skills, player, opts, {}, evaluated.cost + 1e-6);
+  const cheaper = same?.reachedTarget && same.cost < evaluated.cost - 0.05 ? shape(market, same) : null;
+  const stronger = top && top.damage > evaluated.damage * 1.001 ? shape(market, top) : null;
   return { cheaper, stronger };
 }
 
 /**
- * Where the cost goes, and how many hits that buys.
- *
- * Costs come from price probes: the cost is linear in every price, so
- * evaluating the same build with one price doubled changes the cost by
- * exactly that item's share. (A zero price can't be used: it counts as a
- * missing price.) The shares add up to the total; anything left over (e.g.
- * daily credits) is reported as "other".
- *
- * Hits: damage ÷ (damage per attack × pill × battle bonus), exact for one
- * phase. For a full day on the pill that is the pill phase only; the debuff
- * phase after it isn't counted.
+ * Where the cost goes, and how many hits that buys: wear per piece (its
+ * market price over its life), ammo, food, the pill, and the credits (scraps
+ * from broken gear, expected case drops).
  */
 export async function costBreakdown(market, planner, settings, evaluated) {
-  const engine = getEngine();
-  const setup = setupFor(planner, settings);
-  const run = async (m, s = setup) => {
-    const r = (await engine.optimize({ mode: 'damage', input: buildInput(m, s), target: 0, maxBudget: Infinity, graph: false })).result;
-    return r ? { cost: costOf(r.selectedDamageCostPoint, m, settings), damage: r.selectedDamageCostPoint.damagePerDay, perAttack: r.optimizedDamage } : null;
-  };
-  const base = await run(market);
-  if (!base) return null;
-
-  const probes = [];
-  // Gear worn, and in the full-day model the gear worn during the pill debuff.
-  const worn = [['planned', setup.lockedEquipment], ['debuff', setup.windowHours ? null : setup.dailyContext?.debuffBuild?.equipment]];
-  const seen = new Set();
-  for (const [phase, gear] of worn) {
-    for (const [slot, item] of Object.entries(gear ?? {})) {
-      if (!item) continue;
-      if (typeof item === 'string') {
-        if (seen.has(item)) continue;
-        seen.add(item);
-        probes.push({ kind: 'item', code: item, slot, phase });
-        continue;
-      }
-      const key = priceKey(item.code, item.skills);
-      if (seen.has(key) || !Number.isFinite(market.equipmentPrices[key])) continue;
-      seen.add(key);
-      probes.push({ kind: 'roll', key, code: item.code, skills: item.skills, slot, phase });
+  const b = evaluated.details;
+  if (!b) return null;
+  const config = { items: market.gameConfigItems };
+  const rows = [];
+  const scraps = itemPrice(market, 'scraps') ?? 0;
+  let scrapCredit = 0;
+  // Gear wear, ammo and food of one build: the pill build (all of it with one build), then the debuff's own.
+  const own = (x, phase) => {
+    const swings = phase === 'debuff' || !b.debuff ? x.swings : x.swings - b.debuff.swings;
+    const food = phase === 'debuff' || !b.debuff ? x.foodEaten : x.foodEaten - b.debuff.foodEaten;
+    for (const slot of GEAR_SLOTS) {
+      const r = x.gear[slot];
+      if (!r) continue;
+      // The weapon wears per swing, armor per hit taken (a dodge spares it).
+      const share = swings * (slot === 'weapon' ? WEAR_PER_HIT.weapon : WEAR_PER_HIT.armor * (1 - x.dodge / 100)) / 100;
+      rows.push({ kind: 'roll', key: priceKey(r.code, r.skills), code: r.code, skills: r.skills, slot, phase, amount: share * r.price });
+      scrapCredit += share * Math.floor((SCRAP_BASE[config.items[r.code]?.rarity] ?? 0) / 3) * scraps;
     }
-  }
-  if (setup.lockedFood && setup.lockedFood !== 'none' && !seen.has(setup.lockedFood)) probes.push({ kind: 'item', code: setup.lockedFood, slot: 'food' });
-  if (settings.pill) probes.push({ kind: 'item', code: 'cocain', slot: 'pill' });
-  probes.push({ kind: 'item', code: 'scraps', slot: 'scraps' });
-  for (const [code, item] of Object.entries(market.gameConfigItems)) {
-    if (item.type === 'case' && Number.isFinite(market.itemPrices[code])) probes.push({ kind: 'item', code, slot: 'case' });
-  }
-
-  const doubled = (p) => (p.kind === 'roll'
-    ? { ...market, equipmentPrices: { ...market.equipmentPrices, [p.key]: 2 * market.equipmentPrices[p.key] } }
-    : { ...market, itemPrices: { ...market.itemPrices, [p.code]: 2 * market.itemPrices[p.code] } });
-  const shares = await Promise.all(probes.map(async (p) => {
-    const r = await run(doubled(p));
-    return r ? { ...p, amount: r.cost - base.cost } : null;
-  }));
-  const rows = shares.filter((s) => s && Math.abs(s.amount) >= 0.005);
-  const other = base.cost - rows.reduce((sum, r) => sum + r.amount, 0);
-
-  // Hits for the planned gear's phase (a window, or the pill phase of a day).
-  let phaseDamage = base.damage;
-  if (!setup.windowHours && settings.pill) {
-    const buffOnly = await run(market, { ...setup, dailyContext: undefined });
-    phaseDamage = buffOnly?.damage ?? NaN;
-  }
-  const multiplier = (settings.pill ? 1 + (market.gameConfigItems.cocain?.flatStats?.percentAttack ?? 60) / 100 : 1) * (1 + (Number(settings.battleBonus) || 0) / 100);
-  const hits = base.perAttack > 0 ? phaseDamage / (base.perAttack * multiplier) : null;
-  const food = rows.find((r) => r.slot === 'food');
-  const cases = rows.filter((r) => r.slot === 'case').map((r) => ({ code: r.code, count: -r.amount / market.itemPrices[r.code] }));
-
+    if (x.gear.ammo) rows.push({ kind: 'item', code: x.gear.ammo, slot: 'ammo', phase, amount: swings * (itemPrice(market, x.gear.ammo) ?? 0) });
+    if (x.food && food > 0) rows.push({ kind: 'item', code: x.food, slot: 'food', phase, amount: food * (itemPrice(market, x.food) ?? 0) });
+  };
+  own(b, 'planned');
+  if (b.debuff) own(b.debuff, 'debuff');
+  if (settings.pill) rows.push({ kind: 'item', code: 'cocain', slot: 'pill', amount: itemPrice(market, 'cocain') ?? 0 });
+  if (scrapCredit) rows.push({ kind: 'item', code: 'scraps', slot: 'scraps', amount: -scrapCredit });
+  const lootChance = b.stats.lootChance / 100;
+  const case1 = b.swings * lootChance;
+  const cases = [{ code: 'case1', count: case1 }, { code: 'case2', count: case1 * 0.01 }].filter((c) => itemPrice(market, c.code) != null);
+  for (const c of cases) rows.push({ kind: 'item', code: c.code, slot: 'case', amount: -c.count * itemPrice(market, c.code) });
+  const total = rows.reduce((s, r) => s + r.amount, 0);
   return {
-    total: base.cost,
-    rows,
-    other: Math.abs(other) >= 0.05 ? other : 0,
-    hits,
-    hitsArePillPhase: !setup.windowHours && settings.pill,
-    perAttack: base.perAttack * multiplier,
-    foodEaten: food ? food.amount / market.itemPrices[food.code] : 0,
-    cases,
+    total, rows: rows.filter((r) => Math.abs(r.amount) >= 0.005), other: Math.abs(b.cost - total) >= 0.05 ? b.cost - total : 0,
+    hits: b.swings, hitsArePillPhase: false, perAttack: b.perSwing, foodEaten: b.foodEaten, cases, phases: b.phases,
+    split: b.debuff ? { pill: b.swings - b.debuff.swings, debuff: b.debuff.swings } : null,
   };
 }
 
-// Stronger-for-the-same-cost search: stop when the damage bracket is this tight.
-const BISECT_PRECISION = 1.005;
-
-/**
- * Window hints from the main optimizer: the cheapest build reaching the
- * planned damage, and (by bisection on the damage target) the strongest
- * build that costs no more than the planned one.
- */
-async function windowHints(market, settings, input, evaluated) {
-  const engine = getEngine();
-  const at = async (target) => {
-    const r = await engine.cheapestBuild(input, Math.round(target));
-    if (!r) return null;
-    return { damage: r.selectedDamageCostPoint.damagePerDay, cost: costOf(r.selectedDamageCostPoint, market, settings), equipment: r.build.equipment, food: r.build.foodCode };
-  };
-  const affordable = (o) => o && o.cost <= evaluated.cost + 0.05;
-
-  const [same, top] = await Promise.all([at(Math.ceil(evaluated.damage)), at(1e12)]);
-  const cheaper = same && same.damage >= evaluated.damage * 0.999 && same.cost < evaluated.cost - 0.05 ? same : null;
-
-  let best = affordable(top) ? top : null;
-  if (!best && top) {
-    let lo = evaluated.damage;
-    let hi = top.damage;
-    while (hi / lo > BISECT_PRECISION) {
-      const mid = Math.sqrt(lo * hi);
-      const o = await at(mid);
-      if (affordable(o)) { best = !best || o.damage > best.damage ? o : best; lo = Math.max(mid, o.damage); } else hi = mid;
-    }
-  }
-  const stronger = best && best.damage > evaluated.damage * 1.001 ? best : null;
-  return { cheaper, stronger };
-}
-
-/**
- * The most damage whose cheapest build costs no more than `budget` (per
- * window or per day, as the settings say): bisection on the damage target.
- */
+/** The most damage whose cost is at most `budget` (per window or per day, as the settings say). */
 export async function strongestWithin(market, planner, settings, budget) {
-  const input = buildInput(market, setupFor(planner, settings, { locked: false }));
-  const engine = getEngine();
-  const at = async (target) => {
-    const r = await engine.cheapestBuild(input, Math.round(target));
-    if (!r) return null;
-    return { damage: r.selectedDamageCostPoint.damagePerDay, cost: costOf(r.selectedDamageCostPoint, market, settings), equipment: r.build.equipment, food: r.build.foodCode, reachedTarget: true };
-  };
-  const [cheapest, top] = await Promise.all([at(0), at(1e12)]);
-  if (!cheapest || !top) return { error: 'No build can fight with these settings.' };
-  if (cheapest.cost > budget) return { error: `Even the cheapest build costs ${cheapest.cost.toFixed(1)} G.` };
-  if (top.cost <= budget) return top;
-  let best = cheapest;
-  let lo = Math.max(1, cheapest.damage);
-  let hi = top.damage;
-  while (hi / lo > BISECT_PRECISION) {
-    const mid = Math.sqrt(lo * hi);
-    const o = await at(mid);
-    if (o && o.cost <= budget) { if (o.damage > best.damage) best = o; lo = Math.max(mid, o.damage); } else hi = mid;
-  }
-  return best;
+  const prep = prepFor(market, { lockedFood: foodSetting(settings) });
+  const b = strongest(prep, planner.skills, playerOf(planner), fightOptions(settings), {}, budget);
+  if (!b) return { error: 'No build costs that little with these skills and settings.' };
+  return { ...shape(market, b), reachedTarget: true };
 }
 
-/**
- * Builds around a damage target (85–115%), cheapest per damage, so a slightly
- * lower or higher target with much better value is easy to spot.
- */
+/** Builds around a damage target (85–115%), so a slightly lower or higher target with much better value is easy to spot. */
 export async function buildsNear(market, planner, settings, target) {
-  const input = buildInput(market, setupFor(planner, settings, { locked: false }));
-  const engine = getEngine();
-  // A damage run with the curve on returns the frontier from its target upward.
-  const [low, high] = await Promise.all([engine.damageCurve(input, Math.round(target * 0.85)), engine.damageCurve(input, Math.round(target))]);
-  const points = [];
-  for (const r of [low, high]) {
-    for (const f of r?.foodDamageCostResults ?? []) {
-      points.push({ damage: f.damagePerDay, cost: costOf(f, market, settings), equipment: f.equipment, food: f.foodCode });
-    }
-  }
-  const inRange = points.filter((p) => Number.isFinite(p.cost) && p.damage >= target * 0.85 && p.damage <= target * 1.15);
-  // Keep builds no other beats on both damage and cost, one per damage level.
-  const sorted = inRange.sort((a, b) => b.damage - a.damage || a.cost - b.cost);
+  const prep = prepFor(market, { lockedFood: foodSetting(settings) });
+  const near = buildFrontier(prep, planner.skills, playerOf(planner), fightOptions(settings))
+    .filter((b) => b.damage >= target * 0.85 && b.damage <= target * 1.15);
+  // One build per 1% of damage (the frontier is very fine-grained), cheapest of each.
   const kept = [];
-  let cheapest = Infinity;
-  for (const p of sorted) if (p.cost < cheapest - 0.05) { kept.push(p); cheapest = p.cost; }
-  return kept.reverse().map((p) => ({ ...p, per1k: (p.cost / p.damage) * 1000 }));
+  for (const b of near) {
+    const last = kept.at(-1);
+    if (last && b.damage < last.damage * 1.01) { if (b.cost <= last.cost) kept[kept.length - 1] = b; continue; }
+    kept.push(b);
+  }
+  return kept.map((b) => ({ ...shape(market, b), per1k: (b.cost / b.damage) * 1000 }));
 }
 
 /** Cheapest gear (and food, unless fixed in settings) reaching a damage target. */
 export async function optimizeEquipment(market, planner, settings, target) {
-  const input = buildInput(market, setupFor(planner, settings, { locked: false }));
-  const reply = await getEngine().optimize({ mode: 'damage', input, target: Math.round(target), maxBudget: Infinity, graph: false });
-  if (!reply.result) return { error: reasonText(reply.reason) };
-  const r = reply.result;
+  const prep = prepFor(market, { lockedFood: foodSetting(settings) });
+  const b = cheapest(prep, planner.skills, playerOf(planner), fightOptions(settings), target);
+  if (!b) return { error: 'No build can fight with these settings.' };
+  return { ...shape(market, b), reachedTarget: b.reachedTarget };
+}
+
+/** Points the skills outside `searched` use. */
+export function keptPoints(market, levels, searched) {
+  const config = { skills: market.gameConfigSkills };
+  return ALL_SKILLS.filter((s) => !searched.includes(s)).reduce((t, s) => t + levelCost(config, s, levels[s] ?? 0), 0);
+}
+
+/**
+ * Skills for a daily-damage range: the layout whose cheapest builds at four
+ * targets across the range cost least on average. With keepEconomy off the
+ * economy skills move too, with their income change counted (Leadership earns
+ * nothing, so it's set to 0 and its points freed).
+ */
+export async function optimizeSkills(market, planner, settings, { min, max, keepEconomy, onProgress, signal }) {
+  const started = Date.now();
+  const searched = keepEconomy ? FIGHT_SKILLS : [...FIGHT_SKILLS, ...ECONOMY_SKILLS.filter((s) => s !== 'leadership')];
+  const start = { ...planner.skills, ...(keepEconomy ? {} : { leadership: 0 }) };
+  const level = planner.player?.level ?? 1;
+  const income = !keepEconomy && planner.player?.id ? await incomePlan(market, planner).catch(() => null) : null;
+  const targets = Array.from({ length: 4 }, (_, i) => min + ((max - min) * i) / 3);
+  const r = await searchLayout(market, {
+    lockedFood: foodSetting(settings), start, searched, budget: level * 4 - keptPoints(market, start, searched),
+    player: playerOf(planner), opts: fightOptions(settings), objective: { kind: 'range', targets }, income,
+  }, { onProgress: (s) => onProgress?.({ evaluations: s.checked }), signal });
+  if (!r?.best || r.best.unreachable) return { error: 'No skill layout reaches that damage range with these settings.' };
   return {
-    damage: r.selectedDamageCostPoint.damagePerDay,
-    cost: costOf(r.selectedDamageCostPoint, market, settings),
-    reachedTarget: r.reachedTarget,
-    equipment: r.build.equipment,
-    food: r.build.foodCode,
+    skills: { ...start, ...r.levels }, income: r.best.income ?? 0, incomeChange: income ? r.best.income ?? 0 : null,
+    cost: r.best.cost, elapsedMs: Date.now() - started, hadEconomy: false,
   };
-}
-
-/** The player's companies in the shape the skill optimizer's income model expects. */
-export async function loadEconomy(playerId, itemPrices) {
-  const list = await cached('company.getCompanies', { userId: playerId, perPage: 100 });
-  const ids = (list.items ?? []).map((c) => (typeof c === 'string' ? c : c._id)).filter(Boolean);
-  const companies = await Promise.all(ids.map(async (companyId) => {
-    const [company, bonus] = await Promise.all([
-      cached('company.getById', { companyId }),
-      cached('company.getProductionBonus', { companyId }).catch(() => null),
-    ]);
-    return {
-      company: {
-        _id: company._id,
-        itemCode: company.itemCode,
-        // The official API marks a switched-off company with disabledAt; the worker reads `disabled`.
-        disabled: company.disabled === true || company.disabledAt != null,
-        activeUpgradeLevels: { automatedEngine: company.activeUpgradeLevels?.automatedEngine ?? 0 },
-      },
-      productionBonus: bonus ? { total: bonus.total ?? 0 } : null,
-    };
-  }));
-  return { netJobSalary: await jobSalary(playerId), companies, itemPrices };
-}
-
-/**
- * Net salary per unit of work: the median of the player's recent wages when
- * the visitor has added an API key (wages need one), else the original's default.
- */
-async function jobSalary(playerId) {
-  if (!getApiKey()) return DEFAULT_JOB_SALARY;
-  try {
-    const page = await cached('transaction.getPaginatedTransactions', { userId: playerId, transactionType: 'wage', limit: 20 }, 10 * 60 * 1000);
-    const rates = (page.items ?? []).filter((t) => t.quantity > 0).map((t) => t.money / t.quantity).sort((a, b) => a - b);
-    return rates.length ? rates[rates.length >> 1] : DEFAULT_JOB_SALARY;
-  } catch {
-    return DEFAULT_JOB_SALARY;
-  }
-}
-
-/**
- * Skill layout search over a daily-damage range (full-day model, like the
- * original). With keepEconomy the economy skills stay as they are.
- */
-export async function optimizeSkills(market, planner, settings, { min, max, keepEconomy, jobIncome = true, timeLimitMs, onProgress, signal }) {
-  const p = planner.player;
-  const debuffBuild = plain({ equipment: debuffEquipment(p?.currentGear), foodCode: 'none' });
-  let economy = p ? await loadEconomy(p.id, market.itemPrices).catch(() => null) : null;
-  if (economy && !jobIncome) economy = { ...economy, netJobSalary: 0 };
-  const level = p?.level ?? 1;
-  // The optimizer doesn't know Leadership. Kept economy skills keep it, so its points
-  // aren't available; searching economy skills too sets it to 0 (it earns nothing), freeing them.
-  const leadership = keepEconomy ? planner.skills.leadership ?? 0 : 0;
-  const leadershipCost = market.gameConfigSkills.leadership?.levels?.[String(leadership)]?.totalCost ?? (leadership * (leadership + 1)) / 2;
-  const request = {
-    market: skillsMarket(market, debuffBuild),
-    player: { level, totalSkillPoints: level * 4 - leadershipCost, militaryRankPercent: p?.militaryRankPercent ?? 0, skills: plain(planner.skills) },
-    combat: { pillEnabled: settings.pill, battleBonusPercent: Number(settings.battleBonus) || 0, scraps: true, debuffBuild },
-    economy: economy ?? { netJobSalary: 0, companies: [], itemPrices: market.itemPrices },
-    range: { min: Math.round(min), max: Math.round(max), steps: 4 },
-    locks: keepEconomy ? plain(Object.fromEntries(VENDOR_ECONOMY_SKILLS.map((s) => [s, planner.skills[s] ?? 0]))) : {},
-    resetCostPerPoint: null,
-  };
-  const response = await getEngine().optimizeSkills(request, { ...(timeLimitMs ? { timeLimitMs } : {}), onProgress, signal });
-  if (!response?.result) return { error: reasonText(response?.reason) };
-  const { best, elapsedMs } = response.result;
-  return { skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, s === 'leadership' ? leadership : best.skills[s] ?? 0])), income: best.income, cost: best.meanDailyNetCost, steps: best.steps, elapsedMs, hadEconomy: !!economy };
-}
-
-function reasonText(reason) {
-  if (!reason) return 'No build can do this with these settings.';
-  return String(reason).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
 }

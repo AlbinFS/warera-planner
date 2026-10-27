@@ -5,8 +5,9 @@
  * mercenary contracts with their minimum damage.
  */
 import { cached, cachedBatch } from './warera.js';
-import { getEngine } from '../engine/browser.js';
-import { buildInput, skillValue, ALL_SKILLS, SLOTS } from '../engine/inputs.js';
+import { skillValue, ALL_SKILLS, SLOTS } from '../engine/inputs.js';
+import { prepare, strongest } from '../combat/optimize.js';
+import { lockedGear } from './compute.js';
 
 // Simulated fights per member; the 5th percentile is "reached 95% of the time".
 const SIMULATIONS = 2000;
@@ -75,38 +76,33 @@ export async function memberDamage(market, member, settings) {
   const base = { pill, health, foodCount, food: null, gear, levels };
   if (health <= 0 && foodCount < 1) return { ...base, damage: 0, perAttempt: 0, attempts: 0 };
 
-  const setup = {
-    level: user.leveling?.level ?? 1,
-    militaryRankPercent: user.skills?.attack?.militaryRankPercent ?? 0,
-    skills: levels,
-    prestige,
-    pill: false,
-    battleBonusPercent: Number(settings.battleBonus) || 0,
-    round: { existingDamage: 0, phases: [{ health, food: foodCount, multiplier: pill.multiplier }] },
-    lockedEquipment: JSON.parse(JSON.stringify(gear)),
-    lockedFood: settings.food === 'any' ? undefined : settings.food,
-  };
-  const input = buildInput(market, setup);
-  const r = (await getEngine().optimize({ mode: 'damage', input, target: 1e12, maxBudget: Infinity, graph: false })).result;
-  if (!r) return { ...base, damage: 0, perAttempt: 0, attempts: 0, error: 'Their gear can’t fight (e.g. a gun without ammo).' };
+  // Their worn gear, their current bars as one fight, at their pill state; food chosen unless fixed.
+  const worn = { ...gear, ammo: typeof gear.ammo === 'string' ? gear.ammo : gear.ammo?.code ?? null };
+  const prep = prepare(market, { locked: lockedGear(market, worn), lockedFood: settings.food === 'any' ? undefined : settings.food });
+  const player = { level: user.leveling?.level ?? 1, militaryRankPercent: user.skills?.attack?.militaryRankPercent ?? 0, prestige };
+  const opts = { battleBonusPercent: Number(settings.battleBonus) || 0, supply: { health, foodMax: foodCount }, multiplier: pill.multiplier };
+  const r = strongest(prep, levels, player, opts);
+  if (!r && worn.weapon?.code && worn.weapon.code !== 'knife' && !worn.ammo) return { ...base, damage: 0, perAttempt: 0, attempts: 0, error: 'Their gun has no ammo.' };
+  if (!r) return { ...base, damage: 0, perAttempt: 0, attempts: 0, error: 'Their gear can’t fight.' };
 
-  const damage = r.selectedDamageCostPoint.damagePerDay;
-  const multiplier = pill.multiplier * (1 + setup.battleBonusPercent / 100);
-  const perAttempt = r.optimizedDamage;
-  // Luck inputs: precision, crits and dodge from skills plus gear, as the optimizer counts them.
+  const multiplier = pill.multiplier * (1 + opts.battleBonusPercent / 100);
+  // r.perSwing is per swing before the pill (its phase applies it); the simulation wants it before the bonus too.
+  const perAttempt = r.perSwing / (1 + opts.battleBonusPercent / 100);
   const value = (s) => skillValue(market.gameConfigSkills[s], levels[s], prestige[s]);
   const statSum = (stat) => Object.values(gear).reduce((sum, g) => sum + (g && typeof g === 'object' ? g.skills?.[stat] ?? 0 : 0), 0);
   return {
     ...base,
-    food: r.build.foodCode,
-    damage,
+    food: r.food ?? 'none',
+    damage: r.damage,
     perAttempt,
     multiplier,
-    attempts: perAttempt > 0 ? damage / (perAttempt * multiplier) : 0,
+    attempts: r.swings,
     precision: Math.min(100, value('precision') + statSum('precision')) / 100,
     critChance: Math.min(100, value('criticalChance') + statSum('criticalChance')) / 100,
     critDamage: value('criticalDamages') + statSum('criticalDamages'),
-    dodge: Math.round(Math.min(100, Math.max(0, value('dodge') + statSum('dodge')))) / 100,
+    // Dodge as the game applies it: a whole percent from value / (value + soft cap).
+    dodge: r.dodge / 100,
+    armor: r.armor / 100,
   };
 }
 

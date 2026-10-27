@@ -4,14 +4,59 @@
    * pictures) and its stat rolls (slider within the tier's range).
    */
   import { planner } from '../lib/planner.svelte.js';
+  import { settings } from '../lib/settings.svelte.js';
+  import { splitActive, suggestDebuff } from '../lib/compute.js';
+  import { setDebuff } from '../lib/planner.svelte.js';
   import { GEAR_SLOTS, SLOT_NAMES, itemLabel } from '../lib/market.js';
   import { STATS, RARITY_COLORS, statText, itemImage, rarityOf } from '../lib/visual.js';
   import { mdiClose } from '@mdi/js';
   import ItemTile from './ItemTile.svelte';
   import Icon from './Icon.svelte';
 
-  let { data } = $props();
+  let { data, current = null } = $props();
+
+  // How many of each a fight uses: weapons last 100 hits, armor 200; one ammo per hit.
+  const uses = $derived.by(() => {
+    const all = current?.details;
+    if (!all) return {};
+    const debuff = all.debuff;
+    const d = !debuff ? all : editing === 'debuff' ? debuff : { swings: all.swings - debuff.swings, foodEaten: all.foodEaten - debuff.foodEaten };
+    const out = { weapon: d.swings / 100, ammo: d.swings, food: d.foodEaten };
+    for (const s of ['helmet', 'chest', 'pants', 'boots', 'gloves']) out[s] = d.swings / 200;
+    return out;
+  });
   const { catalog, priceOf, itemPrice } = $derived(data);
+
+  // With a debuff build, either build can be edited; the debuff one starts as a copy of the pill one.
+  const split = $derived(splitActive(data.market, settings));
+  let editing = $state('pill');
+  const target = $derived(split && editing === 'debuff' && planner.debuff ? planner.debuff : planner);
+  const debuffHours = $derived(settings.pill && settings.windowHours > 8);
+  let suggesting = $state(false);
+  let suggestNote = $state('');
+  /** Fills the debuff build with the cheapest gear doing the pill gear's damage in the debuff. */
+  async function suggest() {
+    suggesting = true;
+    try {
+      const s = await suggestDebuff(data.market, planner, settings);
+      if (s) { setDebuff(s); suggestNote = `Same damage in the debuff as your pill gear, ${s.saving.toFixed(1)} G cheaper.`; }
+      else { planner.debuff = { gear: structuredClone($state.snapshot(planner.gear)), food: planner.food }; suggestNote = 'Your pill gear is already the cheapest for its damage in the debuff.'; }
+    } finally {
+      suggesting = false;
+    }
+  }
+  async function editDebuff() {
+    if (!planner.debuff) await suggest();
+    editing = 'debuff';
+    open = null;
+  }
+  function sameAsPill() {
+    planner.debuff = null;
+    editing = 'pill';
+    suggestNote = '';
+  }
+  // Turning the switch on with no debuff build yet fills in the suggested one.
+  $effect(() => { if (split && !planner.debuff && !suggesting) suggest(); });
   const items = $derived(data.market.gameConfigItems);
 
   let open = $state(null); // slot being edited
@@ -20,20 +65,20 @@
   const LABELS = { ...SLOT_NAMES, food: 'Food' };
 
   function tileFor(slot) {
-    if (slot === 'food') return { code: planner.food === 'none' ? null : planner.food, stats: {}, price: planner.food !== 'none' ? itemPrice(planner.food) : null };
-    if (slot === 'ammo') return { code: planner.gear.ammo, stats: {}, price: planner.gear.ammo ? itemPrice(planner.gear.ammo) : null };
-    const g = planner.gear[slot];
+    if (slot === 'food') return { code: target.food === 'none' ? null : target.food, stats: {}, price: target.food !== 'none' ? itemPrice(target.food) : null };
+    if (slot === 'ammo') return { code: target.gear.ammo, stats: {}, price: target.gear.ammo ? itemPrice(target.gear.ammo) : null };
+    const g = target.gear[slot];
     return { code: g?.code ?? null, stats: g?.skills ?? {}, price: g ? priceOf(g.code, g.skills) : null };
   }
 
   /** Choosing another item keeps each stat where it can, clamped to the new item's range. */
   function choose(slot, code) {
-    if (slot === 'food') { planner.food = code ?? 'none'; return; }
-    if (slot === 'ammo') { planner.gear.ammo = code; return; }
-    if (!code) { planner.gear[slot] = null; return; }
+    if (slot === 'food') { target.food = code ?? 'none'; return; }
+    if (slot === 'ammo') { target.gear.ammo = code; return; }
+    if (!code) { target.gear[slot] = null; return; }
     const item = catalog.bySlot[slot].find((i) => i.code === code);
-    const old = planner.gear[slot]?.skills ?? {};
-    planner.gear[slot] = {
+    const old = target.gear[slot]?.skills ?? {};
+    target.gear[slot] = {
       code,
       skills: Object.fromEntries(Object.entries(item.stats).map(([stat, [lo, hi]]) => [stat, Math.min(hi, Math.max(lo, old[stat] ?? hi))])),
     };
@@ -41,23 +86,40 @@
 
   function setStat(slot, stat, raw, [lo, hi]) {
     const v = Math.round(Number(raw));
-    if (Number.isFinite(v)) planner.gear[slot].skills[stat] = Math.min(hi, Math.max(lo, v));
+    if (Number.isFinite(v)) target.gear[slot].skills[stat] = Math.min(hi, Math.max(lo, v));
   }
 
   const choices = (slot) => (slot === 'food' ? catalog.foods : slot === 'ammo' ? catalog.ammo : catalog.bySlot[slot]);
-  const rangeOf = (slot) => catalog.bySlot[slot]?.find((i) => i.code === planner.gear[slot]?.code)?.stats ?? {};
-  const isChosen = (slot, code) => (slot === 'food' ? planner.food === code : slot === 'ammo' ? planner.gear.ammo === code : planner.gear[slot]?.code === code);
+  const rangeOf = (slot) => catalog.bySlot[slot]?.find((i) => i.code === target.gear[slot]?.code)?.stats ?? {};
+  const isChosen = (slot, code) => (slot === 'food' ? target.food === code : slot === 'ammo' ? target.gear.ammo === code : target.gear[slot]?.code === code);
   const choicePrice = (slot, c) => (slot === 'food' || slot === 'ammo' ? itemPrice(c.code) : null);
   const extra = (slot, c) => (slot === 'ammo' ? `+${c.percent}% attack` : slot === 'food' ? `+${c.percent}% health` : Object.entries(c.stats).map(([s, [lo, hi]]) => `${STATS[s]?.label ?? s} ${lo}–${hi}`).join(', '));
 </script>
 
 <section class="card" aria-labelledby="gear-title">
   <h2 id="gear-title">Gear</h2>
+  {#if debuffHours}
+    <div class="builds" role="group" aria-label="Which build">
+      <label class="switch"><input type="checkbox" role="switch" bind:checked={settings.splitDebuff} /> Separate debuff build</label>
+      {#if split}
+        <button type="button" aria-pressed={editing === 'pill' || !planner.debuff} onclick={() => { editing = 'pill'; open = null; }}>Pill build <small>first 8 h</small></button>
+        <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>after the pill</small></button>
+        <button type="button" class="link" onclick={suggest} disabled={suggesting}>{suggesting ? 'Finding…' : 'Suggest the cheapest'}</button>
+        {#if planner.debuff}<button type="button" class="link" onclick={sameAsPill}>Use the pill build for both</button>{/if}
+      {/if}
+    </div>
+    {#if !split}<p class="hint muted">The {settings.windowHours - 8} hours after the pill are fought in this gear. Turn on a separate debuff build to fight them in cheaper gear.</p>
+    {:else if editing === 'debuff' && planner.debuff}<p class="hint muted">Editing the debuff build (worn after the pill). {suggestNote}</p>
+    {:else if suggestNote}<p class="hint muted">{suggestNote} See it under Debuff build.</p>{/if}
+  {/if}
   <div class="tiles">
     {#each ALL as slot (slot)}
       {@const t = tileFor(slot)}
-      <ItemTile code={t.code} stats={t.stats} price={t.price} label={LABELS[slot]} {items} selected={open === slot}
-        onclick={() => (open = open === slot ? null : slot)} />
+      <span class="slot-tile">
+        <ItemTile code={t.code} stats={t.stats} price={t.price} label={LABELS[slot]} {items} selected={open === slot}
+          onclick={() => (open = open === slot ? null : slot)} />
+        {#if t.code && uses[slot] > 0}<span class="uses" title="Used up per fight">×{uses[slot] >= 10 ? Math.round(uses[slot]) : uses[slot].toFixed(1)}</span>{/if}
+      </span>
     {/each}
   </div>
   <p class="hint muted">Click a piece to change it. Prices are what each roll sells for on the market.</p>
@@ -81,19 +143,19 @@
           </button>
         {/each}
       </div>
-      {#if GEAR_SLOTS.includes(open) && planner.gear[open]}
+      {#if GEAR_SLOTS.includes(open) && target.gear[open]}
         <div class="sliders">
           {#each Object.entries(rangeOf(open)) as [stat, range] (stat)}
             <label class="slider">
               <span class="name" style:color={STATS[stat]?.color}><Icon path={STATS[stat]?.icon} size={16} /> {STATS[stat]?.label ?? stat}</span>
-              <input type="range" min={range[0]} max={range[1]} value={planner.gear[open].skills[stat]}
+              <input type="range" min={range[0]} max={range[1]} value={target.gear[open].skills[stat]}
                 oninput={(e) => setStat(open, stat, e.currentTarget.value, range)} />
-              <input class="num-in" type="number" min={range[0]} max={range[1]} value={planner.gear[open].skills[stat]}
+              <input class="num-in" type="number" min={range[0]} max={range[1]} value={target.gear[open].skills[stat]}
                 onchange={(e) => setStat(open, stat, e.currentTarget.value, range)} aria-label="{STATS[stat]?.label} value" />
               <span class="muted small">{statText(stat, range[0])}–{statText(stat, range[1])}</span>
             </label>
           {/each}
-          <p class="muted small">This roll sells for about <strong>{Number.isFinite(priceOf(planner.gear[open].code, planner.gear[open].skills)) ? priceOf(planner.gear[open].code, planner.gear[open].skills).toFixed(2) : 'an unknown price'}</strong> on the market.</p>
+          <p class="muted small">This roll sells for about <strong>{Number.isFinite(priceOf(target.gear[open].code, target.gear[open].skills)) ? priceOf(target.gear[open].code, target.gear[open].skills).toFixed(2) : 'an unknown price'}</strong> on the market.</p>
         </div>
       {/if}
     </div>
@@ -101,6 +163,12 @@
 </section>
 
 <style>
+  .builds { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }
+  .builds button { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 12px; color: var(--muted); cursor: pointer; font: inherit; font-size: 13px; }
+  .builds button[aria-pressed='true'] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
+  .builds button small { color: var(--muted); margin-left: 4px; }
+  .builds .link { background: none; border: 0; color: var(--info); padding: 4px; }
+  .builds .switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin-right: 6px; }
   .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
   .hint { font-size: 12px; margin: 10px 0 0; }
   .editor { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
@@ -127,4 +195,6 @@
     .slider input[type='range'] { grid-column: 1 / -1; grid-row: 2; }
     .slider .muted { display: none; }
   }
+  .slot-tile { position: relative; display: inline-flex; }
+  .uses { position: absolute; top: 4px; right: 4px; font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--text); pointer-events: none; font-variant-numeric: tabular-nums; }
 </style>

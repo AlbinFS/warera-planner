@@ -17,6 +17,9 @@ export const WINDOW_MS = 7 * DAY_MS;
 export const MAX_SAMPLES = 15;
 export const MIN_SAMPLES = 5;
 export const HISTORY_MS = 60 * DAY_MS;
+// Battle loot: a day whose median is this many times above or below the usual
+// is taken as a manipulated market.
+export const LOOT_OFF = 1.3;
 
 export function rollKey(skills) {
   return Object.entries(skills ?? {})
@@ -143,4 +146,44 @@ export function priceItem(code, dynamicStats, trades, now) {
     makeNonDecreasing(entries);
   }
   return entries;
+}
+
+/**
+ * Every trade of the last 7 days as [minute, price], for loot prices (the
+ * stored trades keep only 15 per roll). `fresh` are new trades in stored form.
+ */
+export function keepRecent(recent, fresh, now) {
+  const added = fresh.map((t) => [Math.floor(t[1] / 60000), t[2]]);
+  return [...added, ...recent].filter(([minute]) => now - minute * 60000 <= WINDOW_MS);
+}
+
+/**
+ * What a dropped piece of each rarity is worth: the median of every trade of
+ * that rarity's weapons and armour in the last 24 hours. When that day has
+ * fewer than 5 trades, or its median is more than 1.3× above or below the
+ * usual (the median of the daily medians over 7 days), the median of the last
+ * 7 days' trades instead, leaving out every day that far off.
+ * byRarity: { rarity: [[minute, price], ...] }.
+ */
+export function lootPrices(byRarity, now) {
+  const out = {};
+  for (const [rarity, trades] of Object.entries(byRarity)) {
+    const days = Array.from({ length: WINDOW_MS / DAY_MS }, () => []);
+    for (const [minute, price] of trades) {
+      const day = Math.floor((now - minute * 60000) / DAY_MS);
+      if (day >= 0 && day < days.length) days[day].push(price);
+    }
+    const medians = days.map((d) => (d.length >= MIN_SAMPLES ? median(d) : null));
+    const known = medians.filter((m) => m != null);
+    if (!known.length) continue;
+    const usual = median(known);
+    const off = (m) => m != null && (m > usual * LOOT_OFF || m < usual / LOOT_OFF);
+    if (medians[0] != null && !off(medians[0])) {
+      out[rarity] = { price: medians[0], basis: 'day', trades: days[0].length, usual, excluded: 0 };
+      continue;
+    }
+    const kept = days.filter((d, i) => !off(medians[i]));
+    out[rarity] = { price: median(kept.flat()), basis: 'week', trades: kept.flat().length, usual, day: medians[0], excluded: days.length - kept.length };
+  }
+  return out;
 }

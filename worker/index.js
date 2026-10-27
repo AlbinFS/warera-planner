@@ -6,10 +6,12 @@
  * is down the job keeps the last good copy, and `stale` tells the site so.
  */
 import { runJob, ensureSchema, readDataset } from './job.js';
+import { lootPrices } from './prices.js';
+import { WareraApi } from './warera.js';
 import { handleAuthRoute, currentSession, signInRequired } from './auth.js';
 
 // How old data may get before it is flagged stale (the job refreshes far more often).
-const STALE_AFTER_MS = { 'game-config': 3 * 60 * 60 * 1000, 'item-prices': 30 * 60 * 1000, equipment: 60 * 60 * 1000 };
+const STALE_AFTER_MS = { 'game-config': 3 * 60 * 60 * 1000, 'item-prices': 30 * 60 * 1000, equipment: 60 * 60 * 1000, 'battle-loot': 6 * 60 * 60 * 1000 };
 // Responses are kept in memory this long per Worker instance (the Cache API doesn't run on workers.dev).
 const MEMO_MS = 60 * 1000;
 
@@ -60,6 +62,42 @@ async function equipmentPrices(env) {
     : json({ error: 'No equipment prices yet. They are built from the official trade history, which is collected while the official API is up (about an hour for a full set).' }, 503);
 }
 
+/** What a dropped piece of each rarity is worth (prices.js lootPrices), from the last 7 days of trades. */
+async function lootPriceRoute(env) {
+  const body = await remembered('loot', async () => {
+    await ensureSchema(env.DB);
+    const config = await readDataset(env.DB, 'game-config');
+    const { results } = await env.DB.prepare('SELECT code, recent FROM equipment WHERE recent IS NOT NULL').all();
+    if (!config || !results.length) return null;
+    const items = JSON.parse(config.body).items ?? {};
+    const byRarity = {};
+    for (const r of results) {
+      const rarity = items[r.code]?.rarity;
+      if (!rarity) continue;
+      const list = (byRarity[rarity] ??= []);
+      for (const t of JSON.parse(r.recent)) list.push(t);
+    }
+    return JSON.stringify({ at: iso(Date.now()), rarities: lootPrices(byRarity, Date.now()) });
+  });
+  return body ? json(body, 200, 60) : json({ error: 'No trades stored yet for loot prices.' }, 503);
+}
+
+/**
+ * Employees of up to 20 companies (?ids=a,b,…), from the official API with the
+ * site's key: the procedure needs one, and visitors shouldn't have to add theirs.
+ */
+async function companyEmployees(env, request) {
+  const ids = (new URL(request.url).searchParams.get('ids') ?? '').split(',').filter((id) => /^[a-f0-9]{24}$/.test(id));
+  if (!ids.length || ids.length > 20) return json({ error: 'Give ?ids= with 1 to 20 company ids.' }, 400);
+  const api = new WareraApi(env);
+  if (!api.key) return json({ error: 'No API key on the server.' }, 503);
+  const body = await remembered(`employees:${ids.join(',')}`, async () => {
+    const pages = await api.batch('employee.getCompanyEmployees', ids.map((companyId) => ({ companyId })));
+    return JSON.stringify({ companies: Object.fromEntries(ids.map((id, i) => [id, pages[i]])) });
+  });
+  return json(body, 200, 60);
+}
+
 /** A unit's recent contracts (won or currently led), newest first. */
 async function unitContracts(env, request) {
   const mu = new URL(request.url).searchParams.get('mu');
@@ -96,9 +134,11 @@ const routes = {
   '/api/game-config': (env) => dataset(env, 'game-config'),
   '/api/item-prices': (env) => dataset(env, 'item-prices'),
   '/api/equipment-prices': (env) => equipmentPrices(env),
+  '/api/loot-prices': (env) => lootPriceRoute(env),
   '/api/contracts': (env, request) => unitContracts(env, request),
   '/api/point-value': (env) => pointValue(env),
-};
+  '/api/battle-loot': (env) => dataset(env, 'battle-loot'),
+  '/api/company-employees': (env, request) => companyEmployees(env, request),};
 
 export default {
   async fetch(request, env) {

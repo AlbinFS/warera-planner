@@ -14,6 +14,7 @@
   import { shareLink } from '../lib/share.js';
   import { saveBuild } from '../lib/saved.svelte.js';
   import { itemLabel } from '../lib/market.js';
+  import { statText } from '../lib/visual.js';
   import { navigate } from '../lib/route.svelte.js';
   import Dialog from './Dialog.svelte';
 
@@ -26,7 +27,7 @@
 
   // Recalculate shortly after the last edit; answers to older edits are dropped.
   $effect(() => {
-    JSON.stringify([planner.skills, planner.gear, planner.food, planner.player?.id, settings]);
+    JSON.stringify([planner.skills, planner.gear, planner.food, planner.debuff, planner.player?.id, settings]);
     const id = ++seq;
     busy = true;
     const timer = setTimeout(() => run(id), 200);
@@ -51,6 +52,23 @@
       busy = false;
       hints = { cheaper: null, stronger: null, loading: false };
     }
+  }
+
+  // What a hint changes against the planned build, so applying it is never a surprise.
+  const SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
+  const rollText = (r, slot) => (r?.code ? `${itemLabel(r.code)} ${Object.entries(r.skills ?? {}).map(([k, v]) => statText(k, v)).join('/')}` : `no ${slot}`);
+  function changesOf(hint) {
+    const out = [];
+    for (const slot of SLOTS) {
+      const a = planner.gear[slot], b = hint.equipment[slot];
+      if ((a?.code ?? null) === (b?.code ?? null) && JSON.stringify(a?.skills ?? {}) === JSON.stringify(b?.skills ?? {})) continue;
+      out.push(`${rollText(a, slot)} → ${rollText(b, slot)}`);
+    }
+    if ((planner.gear.ammo ?? null) !== (hint.equipment.ammo ?? null)) out.push(`${planner.gear.ammo ? itemLabel(planner.gear.ammo) : 'no ammo'} → ${hint.equipment.ammo ? itemLabel(hint.equipment.ammo) : 'no ammo'}`);
+    if ((planner.food ?? 'none') !== (hint.food ?? 'none')) out.push(`Food ${hint.food && hint.food !== 'none' ? itemLabel(hint.food) : 'none'}`);
+    const d = hint.details, r = result?.details;
+    if (d && r) out.push(`ARM ${r.armor}% → ${d.armor}%, DDG ${r.dodge}% → ${d.dodge}%, ${Math.round(r.swings)} → ${Math.round(d.swings)} hits`);
+    return out;
   }
 
   // Saving: a name suggested from the weapon, damage and cost.
@@ -94,6 +112,14 @@
       <div class="big"><span class="label">Damage {periodLabel(settings)}</span><span class="value num">{fmtDamage(result.damage)}</span></div>
       <div class="big"><span class="label">Cost</span><span class="value num">{fmt(result.cost, 1)} <small>G</small></span></div>
       <div class="big"><span class="label">Per 1k damage</span><span class="value num">{fmt(per1k, 3)} <small>G</small></span></div>
+      {#if result.details}
+        <div class="chips" aria-label="Fight details">
+          <span title="Hits in the fight">{fmt(result.details.swings, 0)} hits</span>
+          <span title="Armor: less health lost per hit (breakpoints in whole percents)">ARM {result.details.armor}%</span>
+          <span title="Dodge: chance a hit costs no health">DDG {result.details.dodge}%</span>
+          <span title="Average damage per hit">{fmt(result.details.perSwing, 0)} / hit</span>
+        </div>
+      {/if}
     {/if}
   </div>
 
@@ -105,13 +131,13 @@
         <span class="chip good"><Icon path={mdiCheckCircle} size={16} /> Best gear for this damage and cost</span>
       {:else}
         {#if hints.stronger}
-          <button class="chip up" onclick={() => applyBuild(hints.stronger.equipment, hints.stronger.food)}
+          <button class="chip up" onclick={() => applyBuild(hints.stronger.equipment, hints.stronger.food, hints.stronger.debuff)}
             title="Apply: {fmtDamage(hints.stronger.damage)} for {fmt(hints.stronger.cost, 1)} G">
             <Icon path={mdiArrowUpBold} size={16} /> {fmtDamage(hints.stronger.damage - result.damage)} more damage, same cost
           </button>
         {/if}
         {#if hints.cheaper}
-          <button class="chip down" onclick={() => applyBuild(hints.cheaper.equipment, hints.cheaper.food)}
+          <button class="chip down" onclick={() => applyBuild(hints.cheaper.equipment, hints.cheaper.food, hints.cheaper.debuff)}
             title="Apply: {fmtDamage(hints.cheaper.damage)} for {fmt(hints.cheaper.cost, 1)} G">
             <Icon path={mdiArrowDownBold} size={16} /> {fmt(result.cost - hints.cheaper.cost, 1)} G cheaper, same damage
           </button>
@@ -119,6 +145,13 @@
       {/if}
     {/if}
   </div>
+  {#if result && !result.error && !hints.loading && (hints.stronger || hints.cheaper)}
+    <div class="changes muted small">
+      {#each [['More damage', hints.stronger], ['Cheaper', hints.cheaper]].filter(([, h]) => h) as [label, h] (label)}
+        <p><strong>{label}:</strong> {changesOf(h).join(' · ')}</p>
+      {/each}
+    </div>
+  {/if}
 
   <div class="actions">
     <button class="action" onclick={() => onoptimize?.('gear')}><Icon path={mdiTshirtCrew} size={18} /> Optimize gear</button>
@@ -164,6 +197,8 @@
   .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
   .value { font-size: 26px; font-weight: 700; line-height: 1.15; }
   .value small { font-size: 14px; color: var(--muted); font-weight: 500; }
+  .changes { grid-column: 1 / -1; margin-top: -4px; }
+  .changes p { margin: 2px 0; line-height: 1.4; }
   .hints { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; min-height: 30px; }
   .chip {
     display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
@@ -191,4 +226,6 @@
     .action { flex: 1; justify-content: center; }
     .value { font-size: 22px; }
   }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-self: center; }
+  .chips span { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; }
 </style>

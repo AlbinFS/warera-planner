@@ -1,18 +1,20 @@
 <script>
   /**
    * Eco mode (game update v0.27): the eco skill optimizer, what to produce and
-   * which upgrades pay back, and employees (typed in; the API has none).
+   * which upgrades pay back, and employees (from the game).
    */
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies } from '../lib/eco.svelte.js';
-  import { estimatePointValue, goodsProfit, ecoValue } from '../lib/eco.js';
+  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, goodsProfit, ecoValue } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import EcoSkills from './EcoSkills.svelte';
   import EcoProduction from './EcoProduction.svelte';
   import EcoEmployees from './EcoEmployees.svelte';
   import EcoPlayground from './EcoPlayground.svelte';
+  import EcoHiring from './EcoHiring.svelte';
+  import EcoTraining from './EcoTraining.svelte';
   import Icon from './Icon.svelte';
-  import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant } from '@mdi/js';
+  import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant, mdiAccountPlus, mdiHammerWrench } from '@mdi/js';
 
   let { data } = $props();
   const items = $derived(data.market.gameConfigItems);
@@ -30,13 +32,9 @@
     loadCompanies(id).then((c) => { companies = c; error = ''; }).catch((err) => (error = err.message)).finally(() => (loading = false));
   });
 
-  // The point value: from collected raw-material trades once there are a few
-  // days of them (the game averages 7 days), else from today's prices.
-  let fromTrades = $state.raw(null);
-  fetch('/api/point-value').then((r) => (r.ok ? r.json() : null)).then((v) => (fromTrades = v)).catch(() => {});
-  const useTrades = $derived(fromTrades?.days >= 3);
-  const estimate = $derived(useTrades ? fromTrades.value : estimatePointValue(items, data.market.itemPrices));
-  const estimateNote = $derived(useTrades ? `from ${fromTrades.days} days of raw-material trades` : "from today's raw-material prices");
+  // The point value: the game's own number unless a newer one is typed in.
+  const estimate = GAME_POINT_VALUE;
+  const estimateNote = GAME_POINT_VALUE_NOTE;
   const pointValue = $derived(ecoSettings.pointValue > 0 ? ecoSettings.pointValue : estimate);
   const goods = $derived(goodsProfit(items, data.market.itemPrices));
   const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0));
@@ -69,7 +67,9 @@
     { id: 'skills', label: 'Eco skills', icon: mdiSchool },
     { id: 'playground', label: 'Skill playground', icon: mdiTuneVariant },
     { id: 'production', label: 'Production & upgrades', icon: mdiFactory },
-    { id: 'employees', label: 'Employees', icon: mdiAccountHardHat, wip: true },
+    { id: 'employees', label: 'Employees', icon: mdiAccountHardHat },
+    { id: 'hiring', label: 'Next employee', icon: mdiAccountPlus },
+    { id: 'training', label: 'Training & tools', icon: mdiHammerWrench },
   ];
 </script>
 
@@ -84,7 +84,7 @@
   <div class="tabs" role="tablist" aria-label="Eco tools">
     {#each TABS as t (t.id)}
       <button role="tab" aria-selected={tab === t.id} onclick={() => (tab = t.id)}>
-        <Icon path={t.icon} size={18} /> {t.label}{#if t.wip}<span class="wip">WIP</span>{/if}
+        <Icon path={t.icon} size={18} /> {t.label}
       </button>
     {/each}
   </div>
@@ -98,8 +98,12 @@
       <EcoPlayground {plan} {config} market={data.market} />
     {:else if tab === 'production'}
       <EcoProduction {companies} {goods} {perPoint} {config} prices={data.market.itemPrices} />
-    {:else}
+    {:else if tab === 'employees'}
       <EcoEmployees {companies} {perPoint} {pointValue} {items} {estimateNote} />
+    {:else if tab === 'hiring'}
+      <EcoHiring {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} />
+    {:else}
+      <EcoTraining {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} />
     {/if}
   {/if}
 </div>
@@ -115,6 +119,4 @@
     display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: none; border: 0;
     color: var(--muted); cursor: pointer; font: inherit; border-bottom: 2px solid transparent; margin-bottom: -1px;
   }
-  .tabs button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
-  .wip { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); }
-</style>
+  .tabs button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }</style>

@@ -8,6 +8,7 @@
   import { itemLabel } from '../lib/market.js';
   import PlayerCard from './PlayerCard.svelte';
   import { cached } from '../lib/warera.js';
+  import { lootPrices, lootBasis, RARITIES } from '../lib/fightIncome.svelte.js';
   import { loadContracts } from '../lib/unit.js';
   import GearStrip from './GearStrip.svelte';
 
@@ -47,23 +48,14 @@
   };
 
   // Contract terms, remembered in this browser.
-  const KEY = 'contract.terms.v1';
-  const saved = (() => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}'); } catch { return {}; } })();
-  let terms = $state({ mode: 'skills', bounty: 0.08, poolLoot: 0.13, lootMode: 'perK', lootItems: 3, lootRarity: 'epic', lose: '1', income: 0, sort: 'damage', show: 'frontier', ...saved });
+  const KEY = 'contract.terms.v2';
+  const read = (key) => { try { return JSON.parse(localStorage.getItem(key) ?? 'null'); } catch { return null; } };
+  // v1 kept a typed-in income and the old default mode (economy skills kept); both are dropped.
+  const saved = read(KEY) ?? (({ income, mode, ...rest }) => rest)(read('contract.terms.v1') ?? {});
+  let terms = $state({ mode: 'economy', bounty: 0.08, poolLoot: 0.13, lootMode: 'perK', lootItems: 3, lootRarity: 'epic', lose: '1', ownIncome: '', sort: 'damage', show: 'frontier', ...saved });
 
-  // Battle loot: equipment pieces dropped per fight, each worth the median market
-  // price of that rarity's weapons and armour (every roll, from the trade history).
-  const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
-  const lootPrice = $derived.by(() => {
-    const items = data.market.gameConfigItems;
-    const byRarity = {};
-    for (const r of data.market.equipmentMarketRolls) {
-      const item = items[r.code];
-      if (!item || (item.type !== 'equipment' && item.type !== 'weapon') || !(r.averagePrice > 0)) continue;
-      (byRarity[item.rarity] ??= []).push(r.averagePrice);
-    }
-    return Object.fromEntries(Object.entries(byRarity).map(([k, v]) => [k, v.sort((a, b) => a - b)[v.length >> 1]]));
-  });
+  // Battle loot: equipment pieces dropped per fight, each at the site's loot price for its rarity.
+  const lootPrice = $derived(lootPrices(data.market));
   // Loot is counted one way: G per 1k damage, or a number of items per fight.
   const byItems = $derived(terms.lootMode === 'items');
   const loot = $derived(byItems ? Math.max(0, Number(terms.lootItems) || 0) * (lootPrice[terms.lootRarity] ?? 0) : 0);
@@ -84,6 +76,10 @@
   let points = $state.raw([]);
   let search = $state.raw(null);
   let start = $state.raw(null);
+  // Economy income per day for the skills the run ended on: modelled from the
+  // player's companies for that layout, or the figure typed in plus the
+  // modelled change when the search moves economy skills.
+  let income = $state.raw(null);
   let controller = null;
 
   const maxLoss = $derived(String(terms.lose).trim() === '' ? Infinity : Math.max(0, Number(terms.lose) || 0));
@@ -91,8 +87,9 @@
     bounty: Number(terms.bounty) || 0,
     poolLoot: byItems ? 0 : Number(terms.poolLoot) || 0,
     loot,
-    economy: (Number(terms.income) || 0) + (search?.incomeChange ?? 0),
+    economy: income?.total ?? 0,
   });
+  const ownIncome = $derived(String(terms.ownIncome ?? '').trim() === '' ? null : Math.max(0, Number(terms.ownIncome) || 0));
 
   async function run() {
     error = '';
@@ -104,19 +101,30 @@
     elapsed = 0;
     points = [];
     search = null;
+    income = null;
     start = { ...planner.skills };
     controller = new AbortController();
     const began = Date.now();
     const secs = () => `${Math.round((Date.now() - began) / 1000)} s`;
+    // The economy search needs the player's companies; without a player, economy skills are kept.
+    const economySearch = terms.mode === 'economy' && !!planner.player;
     const tick = setInterval(() => (elapsed = Math.round((Date.now() - began) / 1000)), 1000);
     const title = document.title;
     try {
       let levels = { ...planner.skills };
+      // Income of the starting layout; the search adds the change of each layout it tries.
+      let model = null;
+      if (planner.player && ownIncome == null) {
+        phase = 'income';
+        status = 'Loading your companies for the income model…';
+        model = await incomeModel(data.market, planner);
+      }
+      const startIncome = ownIncome ?? (model ? model(start) : 0);
       if (terms.mode !== 'gear') {
-        phase = terms.mode === 'economy' ? 'income' : 'skills';
-        status = terms.mode === 'economy' ? 'Loading your companies for the income model…' : 'Searching skill layouts…';
+        phase = economySearch ? 'income' : 'skills';
+        status = economySearch ? 'Loading your companies for the income model…' : 'Searching skill layouts…';
         search = await searchSkills(data.market, planner, settings, {
-          terms: contract, maxLoss, economySearch: terms.mode === 'economy', upgrades: data.upgrades, signal: controller.signal,
+          terms: { ...contract, economy: startIncome }, maxLoss, economySearch, signal: controller.signal,
           onStep: (s) => {
             search = s;
             phase = 'skills';
@@ -128,6 +136,7 @@
         if (!search.best) throw new Error('No skill layout keeps the loss within the limit. Raise the bounty or the amount you are willing to lose.');
         levels = search.levels;
       }
+      income = { total: startIncome + (search?.incomeChange ?? 0), modelled: ownIncome == null && !!model, change: search?.incomeChange ?? 0, searched: economySearch };
       phase = 'builds';
       document.title = 'Listing builds · optimizing…';
       status = 'Listing builds for these skills…';
@@ -146,20 +155,6 @@
     }
   }
 
-  // Income model for the planned economy skills, offered as the income to enter.
-  let modelled = $state(null);
-  let modelBusy = $state(false);
-  async function estimateIncome() {
-    modelBusy = true;
-    try {
-      modelled = (await incomeModel(data.market, data.upgrades, planner))(planner.skills);
-    } catch (err) {
-      error = err.message;
-    } finally {
-      modelBusy = false;
-    }
-  }
-
   const visible = $derived.by(() => {
     const list = terms.show === 'food'
       ? Object.values(Object.groupBy(points, (p) => p.food)).flatMap(frontier)
@@ -174,7 +169,7 @@
 
   function useInPlanner(build) {
     if (search?.levels) for (const s of ALL_SKILLS) planner.skills[s] = search.levels[s];
-    applyBuild(build.equipment, build.food);
+    applyBuild(build.equipment, build.food, build.debuff);
     navigate('/');
   }
 
@@ -212,10 +207,11 @@
       <label class="wide">
         <span>Optimize</span>
         <select bind:value={terms.mode}>
-          <option value="skills">Skills + gear (keep economy skills)</option>
           <option value="economy">Skills + gear (search economy skills too)</option>
+          <option value="skills">Skills + gear (keep economy skills)</option>
           <option value="gear">Gear only (planned skills)</option>
         </select>
+        {#if terms.mode === 'economy' && !planner.player}<small class="muted">Load your player to search economy skills; until then they are kept.</small>{/if}
       </label>
       <label><span>Bounty (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={terms.bounty} /></label>
       <label>
@@ -231,7 +227,7 @@
               {#each RARITIES as r (r)}<option value={r} disabled={!lootPrice[r]}>{r}</option>{/each}
             </select>
           </span>
-          <small class="muted">{fmt(lootPrice[terms.lootRarity] ?? 0, 1)} G each · {fmt(loot, 1)} G in all, whatever the damage.</small>
+          <small class="muted">{fmt(lootPrice[terms.lootRarity] ?? 0, 1)} G each ({lootBasis(terms.lootRarity)}) · {fmt(loot, 1)} G in all, whatever the damage.</small>
         {:else}
           <input type="number" step="0.001" min="0" bind:value={terms.poolLoot} aria-label="Loot, G per 1k damage" />
           <small class="muted">Measured from battle data: about 0.12–0.16.</small>
@@ -240,14 +236,12 @@
       <label><span>Willing to lose (G)</span><input type="number" step="1" min="0" bind:value={terms.lose} placeholder="No limit" /></label>
       <label>
         <span>Economy income (G per day)</span>
-        <input type="number" step="1" min="0" bind:value={terms.income} />
-        {#if planner.player}
-          {#if modelled != null}
-            <button type="button" class="link" onclick={() => (terms.income = Math.round(modelled))}>Use modelled {fmt(modelled, 1)}</button>
-          {:else}
-            <button type="button" class="link" onclick={estimateIncome} disabled={modelBusy}>{modelBusy ? 'Estimating…' : 'Estimate from your companies'}</button>
-          {/if}
-        {/if}
+        <input type="number" step="1" min="0" bind:value={terms.ownIncome} placeholder={planner.player ? 'From your companies' : 'None'} />
+        <small class="muted">
+          {#if ownIncome != null}Your figure{terms.mode === 'economy' ? ', plus the change from the economy skills the search picks' : ''}.
+          {:else if planner.player}Worked out from your companies for each skill layout the search tries.
+          {:else}Load your player to count company income.{/if}
+        </small>
       </label>
       <div class="actions">
         {#if running}
@@ -281,7 +275,7 @@
           </div>
         {/if}
         <div class="bar" class:indeterminate={phase !== 'builds'}><div style:width={phase === 'builds' ? `${Math.round(progress * 100)}%` : null}></div></div>
-        <p class="muted small">Still working: it first tries the original skill optimizer's layouts for a few damage ranges, then improves the best one step by step until no one-level change helps. "Stop after this step" keeps the best so far.</p>
+        <p class="muted small">Still working: each step tries every one-level change (raise one skill, lower one or two to pay for it) with the best gear for each, and keeps the best, until no change helps. "Stop after this step" keeps the best so far.</p>
       </div>
     {:else if finished}
       <p class="done" role="status">✓ {finished}</p>
@@ -295,8 +289,9 @@
       <dl class="summary">
         <div><dt>Most damage within the limit</dt><dd class="num">{search.best ? fmtDamage(search.best.damage) : '–'}</dd>{#if Number.isFinite(maxLoss)}<small class="muted">losing at most {fmt(maxLoss, 0)} G {periodLabel(settings)}</small>{/if}</div>
         <div><dt>Its net</dt><dd class="num" class:pos={search.best?.net >= 0} class:neg={search.best?.net < 0}>{search.best ? signed(search.best.net) : '–'}</dd></div>
-        {#if terms.mode === 'economy'}<div><dt>Income change per day</dt><dd class="num">{signed(search.incomeChange)}</dd></div>{/if}
+        {#if income}<div><dt>Economy income per day</dt><dd class="num">{fmt(income.total, 1)}</dd><small class="muted">{income.modelled ? 'from your companies, with these skills' : 'your figure'}{income.searched ? ` · ${signed(income.change)} from the economy skills` : ''}</small></div>{/if}
         <div><dt>Skill points searched</dt><dd class="num">{search.used} / {search.budget}</dd>{#if totalPoints > search.budget}<small class="muted">{totalPoints - search.budget} more of your {totalPoints} are in kept economy skills</small>{/if}</div>
+        {#if search.best?.armor != null}<div><dt>Armor · dodge</dt><dd class="num">{search.best.armor}% · {search.best.dodge}%</dd><small class="muted">on breakpoints</small></div>{/if}
         <div><dt>Layouts checked</dt><dd class="num">{search.checked}</dd></div>
       </dl>
       <table class="skills">
@@ -305,7 +300,7 @@
           {#each skillRows as s (s)}
             {@const d = (search.levels[s] ?? 0) - (start[s] ?? 0)}
             <tr class:changed={d !== 0} class:eco-first={s === ECONOMY_SKILLS[0]}>
-              <td>{NAMES[s]}{#if ECONOMY_SKILLS.includes(s) && terms.mode !== 'economy'} <small class="muted">kept</small>{/if}</td><td class="num">{start[s] ?? 0}</td>
+              <td>{NAMES[s]}{#if ECONOMY_SKILLS.includes(s) && !income?.searched} <small class="muted">kept</small>{/if}</td><td class="num">{start[s] ?? 0}</td>
               <td class="num"><strong>{search.levels[s] ?? 0}</strong>{#if d} <span class={d > 0 ? 'pos' : 'neg'}>({d > 0 ? '+' : ''}{d})</span>{/if}</td>
             </tr>
           {/each}
