@@ -94,6 +94,14 @@
       <div class="big"><span class="label">Damage {periodLabel(settings)}</span><span class="value num">{fmtDamage(result.damage)}</span></div>
       <div class="big"><span class="label">Cost</span><span class="value num">{fmt(result.cost, 1)} <small>G</small></span></div>
       <div class="big"><span class="label">Per 1k damage</span><span class="value num">{fmt(per1k, 3)} <small>G</small></span></div>
+      {#if result.details}
+        <div class="chips" aria-label="Fight details">
+          <span title="Hits in the fight">{fmt(result.details.swings, 0)} hits</span>
+          <span title="Armor: less health lost per hit (breakpoints in whole percents)">ARM {result.details.armor}%</span>
+          <span title="Dodge: chance a hit costs no health">DDG {result.details.dodge}%</span>
+          <span title="Average damage per hit">{fmt(result.details.perSwing, 0)} / hit</span>
+        </div>
+      {/if}
     {/if}
   </div>
 
@@ -191,4 +199,6 @@
     .action { flex: 1; justify-content: center; }
     .value { font-size: 22px; }
   }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-self: center; }
+  .chips span { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; }
 </style>

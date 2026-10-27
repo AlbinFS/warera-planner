@@ -113,7 +113,7 @@
   <main>
     <div class="col">
       <PlayerCard />
-      <GearPanel {data} />
+      <GearPanel {data} {current} />
       <BreakdownPanel {data} {current} />
     </div>
     <div class="col">

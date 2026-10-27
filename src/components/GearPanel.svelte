@@ -10,7 +10,16 @@
   import ItemTile from './ItemTile.svelte';
   import Icon from './Icon.svelte';
 
-  let { data } = $props();
+  let { data, current = null } = $props();
+
+  // How many of each a fight uses: weapons last 100 hits, armor 200; one ammo per hit.
+  const uses = $derived.by(() => {
+    const d = current?.details;
+    if (!d) return {};
+    const out = { weapon: d.swings / 100, ammo: d.swings, food: d.foodEaten };
+    for (const s of ['helmet', 'chest', 'pants', 'boots', 'gloves']) out[s] = d.swings / 200;
+    return out;
+  });
   const { catalog, priceOf, itemPrice } = $derived(data);
   const items = $derived(data.market.gameConfigItems);
 
@@ -56,8 +65,11 @@
   <div class="tiles">
     {#each ALL as slot (slot)}
       {@const t = tileFor(slot)}
-      <ItemTile code={t.code} stats={t.stats} price={t.price} label={LABELS[slot]} {items} selected={open === slot}
-        onclick={() => (open = open === slot ? null : slot)} />
+      <span class="slot-tile">
+        <ItemTile code={t.code} stats={t.stats} price={t.price} label={LABELS[slot]} {items} selected={open === slot}
+          onclick={() => (open = open === slot ? null : slot)} />
+        {#if t.code && uses[slot] > 0}<span class="uses" title="Used up per fight">×{uses[slot] >= 10 ? Math.round(uses[slot]) : uses[slot].toFixed(1)}</span>{/if}
+      </span>
     {/each}
   </div>
   <p class="hint muted">Click a piece to change it. Prices are what each roll sells for on the market.</p>
@@ -127,4 +139,6 @@
     .slider input[type='range'] { grid-column: 1 / -1; grid-row: 2; }
     .slider .muted { display: none; }
   }
+  .slot-tile { position: relative; display: inline-flex; }
+  .uses { position: absolute; top: 4px; right: 4px; font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--text); pointer-events: none; font-variant-numeric: tabular-nums; }
 </style>
