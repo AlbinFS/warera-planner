@@ -63,6 +63,21 @@ damage (1.19M vs 1.2M), wear, food, cases and scrap as the combat simulator.
   quicker, coarser offense list; the best few are scored in full.
 - Searches run in a worker (`src/combat/worker.js`), so the page stays responsive.
 
+## Results against the old optimizer
+
+Same terms on both (contract page, skills + gear searching economy skills too,
+8 h window, pill, +70 % bonus, 0.13 G loot per 1k, willing to lose 50 G):
+
+| Player | Old | New |
+|---|---|---|
+| Level 32, all points in eco | 600k in 36 s | 782k in 17 s |
+| Level 46, fighter | 1.48M in 43 s | 1.64M in 7 s |
+
+The two models give the same damage and hits for the same build, so the gain
+is the search: gear bought exactly to breakpoints, and swings solved exactly.
+Six random starting layouts end on the same best layout as the normal search
+in every case tried, so the climb isn't getting stuck.
+
 ## What changed on the site
 
 - Every page uses the new engine (planner, hints, cost breakdown, gear and
