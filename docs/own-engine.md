@@ -70,8 +70,11 @@ Same terms on both (contract page, skills + gear searching economy skills too,
 
 | Player | Old | New |
 |---|---|---|
-| Level 32, all points in eco | 600k in 36 s | 782k in 17 s |
-| Level 46, fighter | 1.48M in 43 s | 1.64M in 7 s |
+| Level 32, all points in eco | 600k in 36 s | 741k in 25 s |
+| Level 46, fighter | 1.48M in 43 s | 1.63M in 12 s |
+
+(Re-measured after guns were made to require ammo: the first run let the
+optimizer drop ammo from a gun, which the game doesn't allow.)
 
 The two models give the same damage and hits for the same build, so the gain
 is the search: gear bought exactly to breakpoints, and swings solved exactly.
