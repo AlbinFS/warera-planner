@@ -312,8 +312,9 @@ export async function optimizeSkills(market, planner, settings, { min, max, keep
   const debuffBuild = plain({ equipment: debuffEquipment(p?.currentGear), foodCode: 'none' });
   const economy = p ? await loadEconomy(p.id, market.itemPrices).catch(() => null) : null;
   const level = p?.level ?? 1;
-  // Leadership stays as planned (the optimizer doesn't know it): its points aren't available.
-  const leadership = planner.skills.leadership ?? 0;
+  // The optimizer doesn't know Leadership. Kept economy skills keep it, so its points
+  // aren't available; searching economy skills too sets it to 0 (it earns nothing), freeing them.
+  const leadership = keepEconomy ? planner.skills.leadership ?? 0 : 0;
   const leadershipCost = market.gameConfigSkills.leadership?.levels?.[String(leadership)]?.totalCost ?? (leadership * (leadership + 1)) / 2;
   const request = {
     market: skillsMarket(market, debuffBuild),

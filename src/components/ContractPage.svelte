@@ -3,7 +3,6 @@
   import { settings } from '../lib/settings.svelte.js';
   import { navigate } from '../lib/route.svelte.js';
   import { collectBuilds, searchSkills, evaluate, frontier, incomeModel } from '../lib/contract.js';
-  import { loadEconomy } from '../lib/compute.js';
   import { FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import { itemLabel } from '../lib/market.js';
@@ -99,7 +98,7 @@
         phase = terms.mode === 'economy' ? 'income' : 'skills';
         status = terms.mode === 'economy' ? 'Loading your companies for the income model…' : 'Searching skill layouts…';
         search = await searchSkills(data.market, planner, settings, {
-          terms: contract, maxLoss, economySearch: terms.mode === 'economy', signal: controller.signal,
+          terms: contract, maxLoss, economySearch: terms.mode === 'economy', upgrades: data.upgrades, signal: controller.signal,
           onStep: (s) => {
             search = s;
             phase = 'skills';
@@ -135,8 +134,7 @@
   async function estimateIncome() {
     modelBusy = true;
     try {
-      const income = incomeModel(data.market, planner, settings, await loadEconomy(planner.player.id, data.market.itemPrices));
-      modelled = await income(planner.skills);
+      modelled = (await incomeModel(data.market, data.upgrades, planner))(planner.skills);
     } catch (err) {
       error = err.message;
     } finally {

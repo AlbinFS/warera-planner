@@ -8,16 +8,22 @@
  * - Skills + gear: a hill climb over skill layouts for the one whose best
  *   build reaches the most damage while net stays at or above −willing to lose.
  *   Optionally the economy skills are searched too, with the income change
- *   from the original's income model.
+ *   from the Eco page's income model (companies and employees).
  */
 import { getEngine } from '../engine/browser.js';
-import { buildInput, skillsMarket, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
-import { setupFor, costOf, loadEconomy } from './compute.js';
+import { buildInput, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
+import { setupFor, costOf } from './compute.js';
+import { loadCompanies, ecoEmployees, ecoSettings } from './eco.svelte.js';
+import { dailyIncome, goodsProfit, ecoValue } from './eco.js';
 
 // Damage steps between targets when listing builds (each run returns about ±6% around its target).
 const TARGET_STEP = 1.1;
-// Bisection on the damage target stops when the bracket is this tight.
+// Bisection on the damage target stops when the bracket is this tight: coarse
+// while comparing layouts in the climb, fine for the layout it ends on.
 const BISECT_PRECISION = 1.004;
+const BISECT_COARSE = 1.03;
+// Neighbours fully scored per step, after a one-run screen of all of them.
+const SCREEN_KEEP = 4;
 
 /** A build's result under the contract terms; break-even is the bounty rate where net is 0. */
 export function evaluate(p, { bounty, poolLoot, economy }) {
@@ -81,38 +87,24 @@ export async function collectBuilds(market, planner, settings, skills, onProgres
 }
 
 /**
- * Income per day for economy-skill layouts, from the original skill optimizer
- * run with every skill locked (fight skills at 0, which don't change income).
- * Job income isn't counted.
+ * Income per day for economy-skill layouts, from the Eco page's v0.27 model:
+ * the player's companies with their engines and the employees entered on the
+ * Eco page, at today's prices, and the Eco page's training and self-work settings.
+ * (No job income: wages aren't part of the eco update's model.)
  */
-export function incomeModel(market, planner, settings, economy) {
-  // Company income only: the original's job income (wage per production point)
-  // predates the eco update and would hold Production and Energy up.
-  economy = { ...economy, netJobSalary: 0 };
-  const cache = new Map();
-  const level = planner.player?.level ?? 1;
-  return (levels) => {
-    const key = ECONOMY_SKILLS.map((s) => levels[s]).join(',');
-    if (!cache.has(key)) {
-      const skills = { ...Object.fromEntries(FIGHT_SKILLS.map((s) => [s, 0])), ...Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, levels[s]])) };
-      const setup = setupFor(planner, settings, { locked: false });
-      const request = {
-        market: skillsMarket(market, setup.dailyContext.debuffBuild),
-        player: { level, totalSkillPoints: level * 4, militaryRankPercent: setup.militaryRankPercent, skills },
-        combat: { pillEnabled: settings.pill, battleBonusPercent: setup.battleBonusPercent, scraps: true, debuffBuild: setup.dailyContext.debuffBuild },
-        economy,
-        range: { min: 1e6, max: 1e6, steps: 1 },
-        locks: skills,
-        resetCostPerPoint: null,
-      };
-      cache.set(key, getEngine().optimizeSkills(request, { timeLimitMs: 20000 }).then((r) => {
-        const income = r?.result?.best?.income;
-        if (!Number.isFinite(income)) throw new Error('The income model gave no result.');
-        return income;
-      }));
-    }
-    return cache.get(key);
+export async function incomeModel(market, upgrades, planner) {
+  const companies = await loadCompanies(planner.player.id);
+  const config = { skills: market.gameConfigSkills, upgrades, items: market.gameConfigItems };
+  const perPoint = Object.fromEntries(goodsProfit(config.items, market.itemPrices).map((g) => [g.code, g.perPoint]));
+  const plan = {
+    companies: companies.map((c) => ({ ...c, employees: ecoEmployees[c.id] ?? [] })),
+    perPoint,
+    // The employees' shown bonus includes the owner's Management as it is in the game.
+    currentManagementValue: ecoValue(config.skills, 'management', planner.player.ecoLevels?.management ?? 0),
+    selfWork: ecoSettings.selfWork,
+    trainingsPerDay: Number(ecoSettings.trainingsPerDay) || 0,
   };
+  return (levels) => dailyIncome(Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, levels[s] ?? 0])), plan, config).total;
 }
 
 /** Point cost of each skill level and the highest level unlocked, from the game config. */
@@ -138,28 +130,41 @@ const fightKey = (levels) => FIGHT_SKILLS.map((s) => levels[s]).join(',');
  * far), a layout that can't beat it is dropped after one run; the floor only
  * rises, so a cached null stays correct.
  */
-async function scoreLayout(levels, ctx, floor) {
+function curveOf(levels, ctx) {
   const key = fightKey(levels);
   let curve = ctx.curves.get(key);
   if (!curve) {
     curve = { input: buildInput(ctx.market, setupFor(ctx.planner, ctx.settings, { locked: false, skills: levels })), runs: new Map(), done: [] };
     ctx.curves.set(key, curve);
   }
+  return curve;
+}
+
+/** The cheapest build of a layout reaching `target` damage, under the contract terms (one optimizer run, cached). */
+async function probe(levels, ctx, target) {
+  const terms = { ...ctx.terms, economy: ctx.terms.economy + await ctx.incomeChange(levels) };
+  return runAt(curveOf(levels, ctx), ctx, terms, target);
+}
+
+async function runAt(curve, ctx, terms, target) {
+  target = Math.round(target);
+  if (!curve.runs.has(target)) {
+    curve.runs.set(target, ctx.engine.optimize({ mode: 'damage', input: curve.input, target, maxBudget: Infinity, graph: false }).then(({ result: r }) => {
+      const p = r && pointOf(r.selectedDamageCostPoint, r.build, ctx.market, ctx.settings);
+      const point = p && Number.isFinite(p.cost) ? p : null;
+      curve.done.push({ target, point });
+      return point;
+    }));
+  }
+  const p = await curve.runs.get(target);
+  return p && evaluate(p, terms);
+}
+
+async function scoreLayout(levels, ctx, floor, precision = BISECT_PRECISION) {
+  const curve = curveOf(levels, ctx);
   const terms = { ...ctx.terms, economy: ctx.terms.economy + await ctx.incomeChange(levels) };
   const ok = (p) => p && p.net >= -ctx.maxLoss - 1e-9;
-  const at = async (target) => {
-    target = Math.round(target);
-    if (!curve.runs.has(target)) {
-      curve.runs.set(target, ctx.engine.optimize({ mode: 'damage', input: curve.input, target, maxBudget: Infinity, graph: false }).then(({ result: r }) => {
-        const p = r && pointOf(r.selectedDamageCostPoint, r.build, ctx.market, ctx.settings);
-        const point = p && Number.isFinite(p.cost) ? p : null;
-        curve.done.push({ target, point });
-        return point;
-      }));
-    }
-    const p = await curve.runs.get(target);
-    return p && evaluate(p, terms);
-  };
+  const at = (target) => runAt(curve, ctx, terms, target);
   let lo = null;
   if (floor) {
     lo = await at(floor);
@@ -170,12 +175,15 @@ async function scoreLayout(levels, ctx, floor) {
   if (ok(strongest)) return strongest;
   lo ??= await at(0);
   if (!ok(lo)) {
+    const tried = [lo, strongest];
     lo = null;
     for (const share of [0.2, 0.4, 0.6]) {
       const p = await at(strongest.damage * share);
+      tried.push(p);
       if (ok(p)) lo = p;
     }
-    if (!lo) return null;
+    // Nothing within the limit: report the smallest loss, so a climb can head towards the limit.
+    if (!lo) return { ...tried.filter(Boolean).reduce((a, b) => (b.net > a.net ? b : a)), outside: true };
   }
   let hi = strongest.damage;
   for (const { point } of curve.done) {
@@ -185,7 +193,7 @@ async function scoreLayout(levels, ctx, floor) {
   for (const { target, point } of curve.done) {
     if (target > lo.damage && target < hi && !ok(point && evaluate(point, terms))) hi = target;
   }
-  while (hi / Math.max(1, lo.damage) > BISECT_PRECISION) {
+  while (hi / Math.max(1, lo.damage) > precision) {
     const mid = Math.sqrt(Math.max(1, lo.damage) * hi);
     const p = await at(mid);
     if (ok(p) && p.damage > lo.damage) lo = p;
@@ -220,12 +228,22 @@ function neighbours(levels, rules, budget, searched) {
   return out;
 }
 
-/** More damage within the loss limit wins; ties go to the better net. */
-const better = (a, b) => !!a && (!b || a.damage > b.damage * (1 + 1e-6) || (Math.abs(a.damage - b.damage) <= b.damage * 1e-6 && a.net > b.net + 1e-6));
+/**
+ * More damage within the loss limit wins; ties go to the better net. A layout
+ * outside the limit loses to any inside it; between two outside, the smaller loss wins.
+ */
+const better = (a, b) => {
+  if (!a) return false;
+  if (!b) return true;
+  if (a.outside || b.outside) return !a.outside ? true : !b.outside ? false : a.net > b.net + 1e-6;
+  return a.damage > b.damage * (1 + 1e-6) || (Math.abs(a.damage - b.damage) <= b.damage * 1e-6 && a.net > b.net + 1e-6);
+};
+// The pruning floor only applies once a layout inside the limit is known.
+const floorOf = (best) => (best && !best.outside ? best.damage : undefined);
 
 /**
- * Hill climb over skill layouts from the planned one, scoring neighbours in
- * parallel. options: { terms, maxLoss, economySearch, onStep, signal }.
+ * Hill climb over skill layouts from the planned one, scoring neighbours in parallel.
+ * options: { terms, maxLoss, economySearch, upgrades, onStep, signal }.
  */
 export async function searchSkills(market, planner, settings, options) {
   const { terms, maxLoss, economySearch, onStep, signal } = options;
@@ -233,9 +251,9 @@ export async function searchSkills(market, planner, settings, options) {
   const ctx = { market, planner, settings, terms, maxLoss, engine: getEngine(), curves: new Map(), incomeChange: async () => 0 };
   if (economySearch) {
     if (!planner.player) throw new Error('Load a player first: the economy search needs their companies.');
-    const income = incomeModel(market, planner, settings, await loadEconomy(planner.player.id, market.itemPrices));
-    const base = await income(start);
-    ctx.incomeChange = async (l) => (await income(l)) - base;
+    const income = await incomeModel(market, options.upgrades, planner);
+    const base = income(start);
+    ctx.incomeChange = async (l) => income(l) - base;
     ctx.baseIncome = base;
   }
   const rules = skillRules(market, planner.player?.level ?? 1);
@@ -247,13 +265,13 @@ export async function searchSkills(market, planner, settings, options) {
   const scored = new Map();
   const score = (levels, floor) => {
     const key = layoutKey(levels);
-    if (!scored.has(key)) scored.set(key, scoreLayout(levels, ctx, floor).catch(() => null));
+    if (!scored.has(key)) scored.set(key, scoreLayout(levels, ctx, floor, BISECT_COARSE).catch(() => null));
     return scored.get(key);
   };
 
   const fits = (l) => used(l) <= budget && searched.every((s) => l[s] >= 0 && l[s] <= rules[s].max);
   const step = { n: 0 };
-  const report = async (levels, best) => ({ step: step.n, levels, best, checked: scored.size, budget, used: used(levels), incomeChange: await ctx.incomeChange(levels), baseIncome: ctx.baseIncome });
+  const report = async (levels, best) => ({ step: step.n, levels, best: best?.outside ? null : best, checked: scored.size, budget, used: used(levels), incomeChange: await ctx.incomeChange(levels), baseIncome: ctx.baseIncome });
 
   /** Hill climb from one layout; a winning move is repeated while it keeps helping. */
   async function climb(levels) {
@@ -261,20 +279,28 @@ export async function searchSkills(market, planner, settings, options) {
     onStep?.(await report(levels, best));
     for (;;) {
       if (signal?.aborted) break;
-      const results = await Promise.all(neighbours(levels, rules, budget, searched).map(async (l) => ({ levels: l, result: await score(l, best?.damage) })));
-      const winner = results.reduce((a, b) => (better(b.result, a?.result) ? b : a), null);
+      const options = neighbours(levels, rules, budget, searched);
+      const pick = async (list) => (await Promise.all(list.map(async (l) => ({ levels: l, result: await score(l, floorOf(best)) }))))
+        .reduce((a, b) => (better(b.result, a?.result) ? b : a), null);
+      let winner = null;
+      if (best && !best.outside) {
+        // Screen with one run each at the current best damage: the layouts with the
+        // most money to spare there have the most room for more. Only the top few get scored.
+        const screened = await Promise.all(options.map(async (l) => ({ l, p: await probe(l, ctx, best.damage) })));
+        winner = await pick(screened.filter(({ p }) => p && p.net >= -maxLoss - 1e-9).sort((a, b) => b.p.net - a.p.net).slice(0, SCREEN_KEEP).map(({ l }) => l));
+      }
+      // Nothing from the screen (or no layout inside the limit yet): score every neighbour before giving up.
+      if (!better(winner?.result, best)) winner = await pick(options);
       if (!winner || !better(winner.result, best)) break;
       const move = Object.fromEntries(searched.map((s) => [s, winner.levels[s] - levels[s]]));
       levels = winner.levels;
       best = winner.result;
-      for (;;) {
+      // Repeat the move while it helps, doubling each time (1, 2, 4… more), halving back on a miss.
+      for (let times = 1; times >= 1;) {
         const again = { ...levels };
-        for (const s of searched) again[s] += move[s];
-        if (signal?.aborted || !fits(again)) break;
-        const r = await score(again, best.damage);
-        if (!better(r, best)) break;
-        levels = again;
-        best = r;
+        for (const s of searched) again[s] += move[s] * times;
+        const r = !signal?.aborted && fits(again) ? await score(again, floorOf(best)) : null;
+        if (better(r, best)) { levels = again; best = r; times *= 2; } else times = Math.floor(times / 2);
       }
       step.n++;
       onStep?.(await report(levels, best));
@@ -282,19 +308,15 @@ export async function searchSkills(market, planner, settings, options) {
     return { levels, best };
   }
 
-  // Start from the planned layout; trim the highest fight skills if it's over budget.
+  // Start from the planned layout, trimming the highest fight skills if it's over budget.
   const planned = { ...start };
   while (used(planned) > budget) {
     const top = FIGHT_SKILLS.reduce((a, b) => (planned[b] > planned[a] ? b : a));
     planned[top] -= 1;
   }
-  let result = await climb(planned);
-  // With economy skills searched, also climb from a fight-first start (no economy
-  // skills): a climb from an eco-heavy layout can stall before it trades enough over.
-  if (economySearch && !signal?.aborted && ECONOMY_SKILLS.some((s) => planned[s] > 0)) {
-    const fightFirst = { ...planned, ...Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, 0])) };
-    const other = await climb(fightFirst);
-    if (better(other.best, result.best)) result = other;
-  }
+  // (A climb from all zeros was tried too: it ends on lopsided layouts with much less damage.)
+  const result = await climb(planned);
+  // The climb compared layouts roughly; pin down the one it ended on.
+  if (result.best && !result.best.outside) result.best = (await scoreLayout(result.levels, ctx)) ?? result.best;
   return report(result.levels, result.best);
 }
