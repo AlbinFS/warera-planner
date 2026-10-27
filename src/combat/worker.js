@@ -5,6 +5,7 @@
  *   { id, op: 'score', ctx, layouts } → { id, result: [score per layout] }
  * args: { market?, locked, lockedFood, start, player, opts,
  *         objective: { kind: 'damage', terms, limit } | { kind: 'range', targets },
+ *           terms.lootCurve: [damage, G] points of battle loot by damage (counted per build),
  *         income?: { plan, config } (economy skills searched: their income counts) }
  */
 import { prepare, strongest, cheapestMany, FIGHT } from './optimize.js';
@@ -17,6 +18,18 @@ let prepKey = '';
 const contexts = new Map();
 
 /** The scoring function for a search. */
+/** Battle loot (G) at a damage, from sampled [damage, G] points (straight lines on log damage). */
+function lootFrom(curve) {
+  return (damage) => {
+    if (!(damage > curve[0][0])) return damage > 0 ? curve[0][1] * (damage / curve[0][0]) : 0;
+    const i = curve.findIndex(([d]) => d >= damage);
+    if (i < 0) return curve.at(-1)[1];
+    const [d0, v0] = curve[i - 1];
+    const [d1, v1] = curve[i];
+    return v0 + ((Math.log(damage) - Math.log(d0)) / (Math.log(d1) - Math.log(d0))) * (v1 - v0);
+  };
+}
+
 function contextFor(args) {
   if (args.market) { market = args.market; prep = null; }
   const key = JSON.stringify([args.locked ?? {}, args.lockedFood ?? null]);
@@ -57,10 +70,27 @@ function contextFor(args) {
       return { cost: cost - income, income };
     };
   }
+  const lootAt = objective.terms.lootCurve ? lootFrom(objective.terms.lootCurve) : null;
   return (l) => {
     const income = incomeChange(l);
-    const terms = { ...objective.terms, economy: (objective.terms.economy ?? 0) + income };
-    const r = strongest(p, l, player, opts, terms, objective.limit ?? Infinity);
+    const terms = { ...objective.terms, lootCurve: undefined, economy: (objective.terms.economy ?? 0) + income };
+    const limit = objective.limit ?? Infinity;
+    let r = strongest(p, l, player, opts, terms, limit);
+    if (r && lootAt) {
+      // Battle loot grows with damage: count what this damage earns and go again while that
+      // buys more damage. More damage only earns more loot, so each step stays within the limit.
+      let counted = 0;
+      for (let step = 0; step < 4; step++) {
+        const earned = lootAt(r.damage);
+        if (earned <= counted + 0.5) break;
+        const next = strongest(p, l, player, opts, { ...terms, flat: (terms.flat ?? 0) + earned }, limit);
+        if (!next || next.damage <= r.damage * (1 + 1e-6)) break;
+        counted = earned;
+        r = next;
+      }
+      const loot = lootAt(r.damage);
+      r = { ...r, income: r.income - counted + loot, net: r.net - counted + loot, loot };
+    }
     return r && { ...r, incomeChange: income };
   };
 }

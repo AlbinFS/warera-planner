@@ -16,16 +16,8 @@ import { searchLayout } from '../combat/client.js';
 import { fightOptions, playerOf, toEquipment, keptPoints } from './compute.js';
 import { incomePlan, incomeOf } from './income.js';
 
-/**
- * A build's result under the contract terms; break-even is the bounty rate where net is 0.
- * `loot` is battle loot as a fixed amount per fight (items dropped, valued at market prices).
- */
-export function evaluate(p, { bounty, poolLoot, economy, loot = 0 }) {
-  const income = ((bounty + poolLoot) * p.damage) / 1000 + loot;
-  const net = income + economy - p.cost;
-  const breakEven = p.damage > 0 ? ((p.cost - economy - loot) / p.damage) * 1000 - poolLoot : Infinity;
-  return { ...p, income, net, breakEven };
-}
+export { evaluate, lootCurve } from './contractMath.js';
+import { evaluate } from './contractMath.js';
 
 /** Builds no other build beats on both damage and cost. */
 export function frontier(points) {
@@ -77,7 +69,10 @@ export async function searchSkills(market, planner, settings, options) {
   const start = { ...planner.skills, ...(economySearch ? { leadership: 0 } : {}) };
   const income = economySearch ? await incomePlan(market, planner) : null;
   const budget = (planner.player?.level ?? 1) * 4 - keptPoints(market, start, searched);
-  const engineTerms = { bounty: terms.bounty, perK: terms.poolLoot, flat: terms.loot ?? 0, economy: terms.economy ?? 0 };
+  const engineTerms = {
+    bounty: terms.bounty, perK: terms.poolLoot ?? 0, flat: typeof terms.loot === 'number' ? terms.loot : 0, economy: terms.economy ?? 0,
+    lootCurve: terms.lootCurve ?? null,
+  };
   const report = (s) => ({
     step: s.steps ?? s.step ?? 0, levels: { ...start, ...s.levels }, checked: s.checked, budget: s.budget, used: s.used,
     best: s.best && { ...evaluate({ damage: s.best.damage, cost: s.best.cost }, { ...terms, economy: (terms.economy ?? 0) + (s.best.incomeChange ?? 0) }), armor: s.best.armor, dodge: s.best.dodge },

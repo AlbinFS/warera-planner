@@ -47,3 +47,16 @@ test('more damage expects more and better loot; split over the rounds', () => {
   assert.ok(high.epicPlus > low.epicPlus && high.value > low.value);
   assert.equal(expectedLoot(null, 1e6, prices), null);
 });
+
+test('a contract build counts the loot its own damage earns', async () => {
+  const { evaluate, lootCurve } = await import('../src/lib/contractMath.js');
+  const lootAt = (d) => (d >= 1e6 ? 150 : 40);
+  const low = evaluate({ damage: 500e3, cost: 100 }, { bounty: 0.08, economy: 0, loot: lootAt });
+  const high = evaluate({ damage: 1.2e6, cost: 200 }, { bounty: 0.08, economy: 0, loot: lootAt });
+  assert.equal(low.loot, 40);
+  assert.equal(high.loot, 150);
+  // More damage pays for itself here once it reaches the better loot.
+  assert.ok(high.net > low.net);
+  const curve = lootCurve(lootAt);
+  assert.ok(curve.length > 50 && curve[0][0] <= 20e3 && curve.at(-1)[0] >= 100e6);
+});
