@@ -14,7 +14,7 @@
   const NAMES = {
     attack: 'Attack', precision: 'Precision', criticalChance: 'Crit chance', criticalDamages: 'Crit damage', armor: 'Armor',
     dodge: 'Dodge', health: 'Health', lootChance: 'Loot chance', hunger: 'Hunger',
-    production: 'Production', energy: 'Energy', entrepreneurship: 'Entrepreneurship', companies: 'Companies', management: 'Management',
+    production: 'Production', energy: 'Energy', entrepreneurship: 'Entrepreneurship', companies: 'Companies', management: 'Management', leadership: 'Leadership',
   };
 
   /** "1.8m", "1800k" or "1800000" → 1800000. */

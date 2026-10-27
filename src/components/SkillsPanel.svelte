@@ -27,14 +27,22 @@
     planner.skills[s] = n;
   }
 
-  let showEconomy = $state(false);
+  // The character's own levels (from loading the player), to go back to.
+  const own = $derived(planner.player?.skills);
+  const changed = $derived(own && ALL_SKILLS.some((s) => (planner.skills[s] ?? 0) !== (own[s] ?? 0)));
+  function reset() { planner.skills = { ...own }; }
+
+  let showEconomy = $state(true);
 </script>
 
 <section class="card" aria-labelledby="skills-title">
   <div class="head">
     <h2 id="skills-title">Skills</h2>
-    <span class="points" class:over={used > budget}>
-      <strong class="num">{used}</strong> / {budget} points
+    <span class="right">
+      {#if changed}<button class="reset" onclick={reset} title="Set every skill back to what {planner.player.username} has in the game">Reset to my skills</button>{/if}
+      <span class="points" class:over={used > budget}>
+        <strong class="num">{used}</strong> / {budget} points
+      </span>
     </span>
   </div>
   {#if used > budget}<p class="warn" role="status">This layout uses {used - budget} more points than level {level} has.</p>{/if}
@@ -46,6 +54,7 @@
       {showEconomy ? 'Hide' : 'Show'} economy skills
     </button>
     {#if showEconomy}
+      <p class="note">The optimizers keep these as set here (unless told to search them), and their points come off the budget.</p>
       <ul class="skills">
         {#each economy as s (s)}{@render row(s)}{/each}
       </ul>
@@ -74,7 +83,10 @@
 {/snippet}
 
 <style>
-  .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .right { display: inline-flex; align-items: baseline; gap: 10px; }
+  .reset { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 3px 9px; font-size: 12px; cursor: pointer; }
+  .note { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
   .head h2 { margin-bottom: 8px; }
   .points { color: var(--muted); font-size: 13px; }
   .points strong { color: var(--text); font-size: 15px; }

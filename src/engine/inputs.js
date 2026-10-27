@@ -4,7 +4,11 @@
  * workers were verified against.
  */
 export const FIGHT_SKILLS = ['attack', 'precision', 'criticalChance', 'criticalDamages', 'armor', 'dodge', 'health', 'lootChance', 'hunger'];
-export const ECONOMY_SKILLS = ['production', 'energy', 'entrepreneurship', 'companies', 'management'];
+// Economy skills since the eco update (v0.27): Entrepreneurship is gone, Leadership is new.
+export const ECONOMY_SKILLS = ['production', 'energy', 'companies', 'management', 'leadership'];
+// The vendored optimizers predate the update: they know these and not Leadership,
+// so Leadership's points are taken off the budget they get.
+export const VENDOR_ECONOMY_SKILLS = ['production', 'energy', 'companies', 'management'];
 export const ALL_SKILLS = [...FIGHT_SKILLS, ...ECONOMY_SKILLS];
 export const SLOTS = ['weapon', 'ammo', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 

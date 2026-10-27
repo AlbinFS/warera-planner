@@ -3,7 +3,7 @@
  * find cheaper/stronger alternatives, optimize gear and skills.
  */
 import { getEngine } from '../engine/browser.js';
-import { buildInput, debuffEquipment, skillsMarket, priceKey, SLOTS, ALL_SKILLS, ECONOMY_SKILLS } from '../engine/inputs.js';
+import { buildInput, debuffEquipment, skillsMarket, priceKey, SLOTS, ALL_SKILLS, VENDOR_ECONOMY_SKILLS } from '../engine/inputs.js';
 import { cached, getApiKey } from './warera.js';
 
 // The original page's default net job salary, used by its income model.
@@ -312,19 +312,22 @@ export async function optimizeSkills(market, planner, settings, { min, max, keep
   const debuffBuild = plain({ equipment: debuffEquipment(p?.currentGear), foodCode: 'none' });
   const economy = p ? await loadEconomy(p.id, market.itemPrices).catch(() => null) : null;
   const level = p?.level ?? 1;
+  // Leadership stays as planned (the optimizer doesn't know it): its points aren't available.
+  const leadership = planner.skills.leadership ?? 0;
+  const leadershipCost = market.gameConfigSkills.leadership?.levels?.[String(leadership)]?.totalCost ?? (leadership * (leadership + 1)) / 2;
   const request = {
     market: skillsMarket(market, debuffBuild),
-    player: { level, totalSkillPoints: level * 4, militaryRankPercent: p?.militaryRankPercent ?? 0, skills: plain(planner.skills) },
+    player: { level, totalSkillPoints: level * 4 - leadershipCost, militaryRankPercent: p?.militaryRankPercent ?? 0, skills: plain(planner.skills) },
     combat: { pillEnabled: settings.pill, battleBonusPercent: Number(settings.battleBonus) || 0, scraps: true, debuffBuild },
     economy: economy ?? { netJobSalary: 0, companies: [], itemPrices: market.itemPrices },
     range: { min: Math.round(min), max: Math.round(max), steps: 4 },
-    locks: keepEconomy ? plain(Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, planner.skills[s]]))) : {},
+    locks: keepEconomy ? plain(Object.fromEntries(VENDOR_ECONOMY_SKILLS.map((s) => [s, planner.skills[s] ?? 0]))) : {},
     resetCostPerPoint: null,
   };
   const response = await getEngine().optimizeSkills(request, { onProgress, signal });
   if (!response?.result) return { error: reasonText(response?.reason) };
   const { best, elapsedMs } = response.result;
-  return { skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, best.skills[s] ?? 0])), income: best.income, cost: best.meanDailyNetCost, steps: best.steps, elapsedMs, hadEconomy: !!economy };
+  return { skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, s === 'leadership' ? leadership : best.skills[s] ?? 0])), income: best.income, cost: best.meanDailyNetCost, steps: best.steps, elapsedMs, hadEconomy: !!economy };
 }
 
 function reasonText(reason) {

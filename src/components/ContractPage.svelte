@@ -44,7 +44,7 @@
   const NAMES = {
     attack: 'Attack', precision: 'Precision', criticalChance: 'Crit chance', criticalDamages: 'Crit damage', armor: 'Armor',
     dodge: 'Dodge', health: 'Health', lootChance: 'Loot chance', hunger: 'Hunger',
-    production: 'Production', energy: 'Energy', entrepreneurship: 'Entrepreneurship', companies: 'Companies', management: 'Management',
+    production: 'Production', energy: 'Energy', entrepreneurship: 'Entrepreneurship', companies: 'Companies', management: 'Management', leadership: 'Leadership',
   };
 
   // Contract terms, remembered in this browser.
@@ -143,14 +143,15 @@
   }
 
   const signed = (n) => `${n >= 0 ? '+' : ''}${fmt(n, 1)}`;
-  const skillRows = $derived(search && start ? [...FIGHT_SKILLS, ...(terms.mode === 'economy' ? ECONOMY_SKILLS : [])] : []);
+  // Every skill, economy too: kept ones still use points and count for income.
+  const skillRows = $derived(search && start ? ALL_SKILLS : []);
 </script>
 
 <div class="contract">
   <section class="card guide" aria-label="How it works">
     <h2>Find the best build for a contract</h2>
     <ol>
-      <li><strong>Load your player</strong> below, so the search starts from your skills.</li>
+      <li><strong>Load your player</strong> below. The search starts from the skills set on the Planner page, economy skills included.</li>
       <li><strong>Enter the contract:</strong> what it pays per 1k damage, the pool loot you expect, and how much you're willing to lose.</li>
       <li><strong>Press Optimize.</strong> You get the skills and gear with the most damage that stays within your loss.</li>
       <li><strong>Pick a build</strong> from the list and press "Use in planner" to fine-tune it.</li>
@@ -228,10 +229,10 @@
         <thead><tr><th>Skill</th><th>Planned</th><th>Suggested</th></tr></thead>
         <tbody>
           {#each skillRows as s (s)}
-            {@const d = search.levels[s] - start[s]}
-            <tr class:changed={d !== 0}>
-              <td>{NAMES[s]}</td><td class="num">{start[s]}</td>
-              <td class="num"><strong>{search.levels[s]}</strong>{#if d} <span class={d > 0 ? 'pos' : 'neg'}>({d > 0 ? '+' : ''}{d})</span>{/if}</td>
+            {@const d = (search.levels[s] ?? 0) - (start[s] ?? 0)}
+            <tr class:changed={d !== 0} class:eco-first={s === ECONOMY_SKILLS[0]}>
+              <td>{NAMES[s]}{#if ECONOMY_SKILLS.includes(s) && terms.mode !== 'economy'} <small class="muted">kept</small>{/if}</td><td class="num">{start[s] ?? 0}</td>
+              <td class="num"><strong>{search.levels[s] ?? 0}</strong>{#if d} <span class={d > 0 ? 'pos' : 'neg'}>({d > 0 ? '+' : ''}{d})</span>{/if}</td>
             </tr>
           {/each}
         </tbody>
@@ -330,4 +331,5 @@
   .toolbar h2 { margin: 0 auto 0 0; }
   .scroll { overflow: auto; max-height: 70vh; }
   @media (max-width: 520px) { .terms .wide { grid-column: auto; } }
+  tr.eco-first td { border-top: 2px solid var(--line); }
 </style>

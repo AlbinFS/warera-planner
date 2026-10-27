@@ -4,7 +4,7 @@
  */
 import {
   mdiSword, mdiTarget, mdiFlash, mdiBullseyeArrow, mdiShield, mdiRunFast, mdiHeart, mdiTreasureChest,
-  mdiSilverwareForkKnife, mdiFactory, mdiLightningBolt, mdiBriefcase, mdiAccountGroup, mdiCrown,
+  mdiSilverwareForkKnife, mdiFactory, mdiLightningBolt, mdiBriefcase, mdiAccountGroup, mdiCrown, mdiAccountStar,
 } from '@mdi/js';
 
 const MEDIA = 'https://media.warera.io/images';
@@ -25,6 +25,7 @@ export const SKILLS = {
   entrepreneurship: { label: 'Entrepreneurship', icon: mdiBriefcase, color: 'var(--c-economy)' },
   companies: { label: 'Companies', icon: mdiAccountGroup, color: 'var(--c-economy)' },
   management: { label: 'Management', icon: mdiCrown, color: 'var(--c-economy)' },
+  leadership: { label: 'Leadership', icon: mdiAccountStar, color: 'var(--c-economy)' },
 };
 
 /** Gear stats share the skill icons; precision on gloves and crit chance on weapons show as %. */

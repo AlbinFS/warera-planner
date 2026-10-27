@@ -75,8 +75,10 @@ export async function loadPlayer(user) {
     currentGear: equipment,
     // Economy skills as the game has them now (v0.27 added Leadership).
     ecoLevels: Object.fromEntries(['companies', 'management', 'energy', 'production', 'leadership'].map((k) => [k, user.skills?.[k]?.level ?? 0])),
+    // The character's own levels, for "Reset to my skills".
+    skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.level ?? 0])),
   };
-  planner.skills = Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.level ?? 0]));
+  planner.skills = { ...planner.player.skills };
   planner.gear = gearFrom(equipment);
   // A loaded player replaces a shared build; drop it from the address so a refresh keeps this player.
   if (location.search.includes('b=')) history.replaceState(null, '', location.pathname);

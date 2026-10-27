@@ -5,7 +5,10 @@
  *
  * Share links: ?b=<base64url of the packed JSON array>, version first.
  */
-import { ALL_SKILLS, SLOTS } from '../engine/inputs.js';
+import { FIGHT_SKILLS, SLOTS } from '../engine/inputs.js';
+
+// Positions in the packed arrays: never reorder, only append (old links must keep reading right).
+const ALL_SKILLS = [...FIGHT_SKILLS, 'production', 'energy', 'entrepreneurship', 'companies', 'management', 'leadership'];
 
 const VERSION = 1;
 

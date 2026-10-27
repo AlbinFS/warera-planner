@@ -12,14 +12,14 @@
   import { SKILLS } from '../lib/visual.js';
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import Icon from './Icon.svelte';
-  import { mdiAccountStar, mdiRestore } from '@mdi/js';
+  import { mdiRestore } from '@mdi/js';
 
   let { plan, config, market } = $props();
 
   const skills = $derived(config.skills);
   const level = $derived(planner.player?.level ?? 1);
   const budget = $derived(level * 4);
-  const META = { ...SKILLS, leadership: { label: 'Leadership', icon: mdiAccountStar, color: 'var(--c-economy)' } };
+  const META = SKILLS;
 
   const startEco = () => ({ ...(planner.player?.ecoLevels ?? Object.fromEntries(ECO_SKILLS.map((s) => [s, 0]))) });
   const startFight = () => Object.fromEntries(FIGHT_SKILLS.map((s) => [s, planner.skills[s] ?? 0]));

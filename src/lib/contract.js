@@ -117,7 +117,6 @@ function skillRules(market, playerLevel) {
   for (const s of ALL_SKILLS) {
     const levels = market.gameConfigSkills[s]?.levels ?? {};
     const total = (n) => levels[String(n)]?.totalCost ?? (n * (n + 1)) / 2;
-    // A skill the game config doesn't list (entrepreneurship was removed) stays where it is.
     const max = Math.max(0, ...Object.keys(levels).map(Number).filter((n) => (levels[String(n)]?.unlockAtLevel ?? 0) <= playerLevel));
     rules[s] = { total, max };
   }
@@ -236,7 +235,7 @@ export async function searchSkills(market, planner, settings, options) {
     ctx.baseIncome = base;
   }
   const rules = skillRules(market, planner.player?.level ?? 1);
-  const searched = economySearch ? ALL_SKILLS : FIGHT_SKILLS;
+  const searched = economySearch ? ALL_SKILLS.filter((s) => s !== 'leadership') : FIGHT_SKILLS;
   const keptPoints = ALL_SKILLS.filter((s) => !searched.includes(s)).reduce((sum, s) => sum + rules[s].total(start[s]), 0);
   const budget = (planner.player?.level ?? 1) * 4 - keptPoints;
   const used = (l) => searched.reduce((sum, s) => sum + rules[s].total(l[s]), 0);
