@@ -13,6 +13,7 @@
   import ApiKeyDialog from './components/ApiKeyDialog.svelte';
   import EcoPage from './components/EcoPage.svelte';
   import SimulatePage from './components/SimulatePage.svelte';
+  import BreakpointPanel from './components/BreakpointPanel.svelte';
   import { getApiKey } from './lib/warera.js';
   import Dialog from './components/Dialog.svelte';
   import Icon from './components/Icon.svelte';
@@ -116,6 +117,7 @@
       <BreakdownPanel {data} {current} />
     </div>
     <div class="col">
+      <BreakpointPanel {data} />
       <SkillsPanel market={data.market} />
     </div>
   </main>
