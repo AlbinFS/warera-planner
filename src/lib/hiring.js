@@ -175,6 +175,24 @@ function pointsOf(e, fx) {
   return (prod / OUTPUT_DIVISOR) * HOURS * (1 + (e.bonusBase + fx.percent + happiness - 50) / 100);
 }
 
+/** Where a company works, for traits that care: raw or manufactured good, storage, country, home country, tax. */
+export function placeOf(company, { regions = {}, countries = {}, items = {} } = {}) {
+  const region = regions[company.region];
+  return {
+    raw: items[company.good]?.type === 'raw',
+    storage: company.storage ?? 1,
+    country: region?.country ?? null,
+    homeCountry: region?.initialCountry ?? null,
+    tax: countries[region?.country]?.taxes?.income ?? 0,
+  };
+}
+
+/** Fair wage per Production point per day, from what employees are paid (median). */
+export function fairWageOf(employees) {
+  const per = employees.filter((e) => e.wageExpectation > 0 && e.ownProduction > 0).map((e) => e.payroll / (e.wageExpectation * e.ownProduction)).sort((a, b) => a - b);
+  return per.length ? per[per.length >> 1] : 0.6;
+}
+
 /**
  * The company as the model needs it. employees: from the game (eco.svelte.js),
  * place: { raw, storage, country, homeCountry, tax }, value per point, and

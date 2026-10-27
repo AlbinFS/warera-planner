@@ -23,11 +23,15 @@ export const ecoSettings = $state(load(SETTINGS_KEY, {
 }));
 
 export const ecoEmployees = $state({}); // companyId → [employee]
+// Tools in the inventory, typed in (the API keeps inventories from API keys): [{ id, code, percent }].
+const SPARE_TOOLS_KEY = 'eco.spareTools.v1';
+export const spareTools = $state(load(SPARE_TOOLS_KEY, { list: [] }));
 // Why the employees couldn't be loaded, if they couldn't ('' when they were).
 export const employeesStatus = $state({ error: '' });
 
 $effect.root(() => {
   $effect(() => { const s = JSON.stringify(ecoSettings); try { localStorage.setItem(SETTINGS_KEY, s); } catch {} });
+  $effect(() => { const s = JSON.stringify(spareTools); try { localStorage.setItem(SPARE_TOOLS_KEY, s); } catch {} });
 });
 
 /** The player's companies: good, upgrade levels, region, whether switched off. */
@@ -92,6 +96,7 @@ function fromGame(e) {
     gender: e.gender ?? null,
     nationality: e.nationality ?? null,
     hasTool: !!e.toolItem,
+    tool: e.toolItem ? { id: e.toolItem._id, code: e.toolItem.code, percent: e.toolStatus?.bonusPercent ?? e.toolItem.skills?.production ?? 0, state: e.toolItem.state } : null,
     // Wage = fair wage × (base + trained Production) × this.
     wageExpectation: e.wageExpectation ?? null,
     ownProduction: (e.base?.production ?? 0) + (e.trained?.production ?? 0),

@@ -6,7 +6,7 @@
    * the current employees (src/lib/hiring.js).
    */
   import { ecoEmployees } from '../lib/eco.svelte.js';
-  import { companyModel, bestHires, hireValue, rankTraits, trainingCards, traitChance, TRAITS, TIERS } from '../lib/hiring.js';
+  import { companyModel, bestHires, hireValue, rankTraits, trainingCards, traitChance, placeOf, fairWageOf, TRAITS, TIERS } from '../lib/hiring.js';
   import { cached } from '../lib/warera.js';
   import { fmt } from '../lib/format.js';
   import { itemImage, flagImage } from '../lib/visual.js';
@@ -25,11 +25,7 @@
   const countryName = (id) => (id === OTHER ? 'Any other country' : countries[id]?.name ?? 'Unknown country');
   const EVENT_ONLY = ['oldFriends', 'sweethearts', 'nemesis'];
 
-  // Fair wage per Production point per day, from what the employees are paid.
-  const fairWage = $derived.by(() => {
-    const per = Object.values(ecoEmployees).flat().filter((e) => e.wageExpectation > 0 && e.ownProduction > 0).map((e) => e.payroll / (e.wageExpectation * e.ownProduction)).sort((a, b) => a - b);
-    return per.length ? per[per.length >> 1] : 0.6;
-  });
+  const fairWage = $derived(fairWageOf(Object.values(ecoEmployees).flat()));
 
   /**
    * Per nationality and gender: the best plain hire (and who they'd replace),
@@ -38,14 +34,7 @@
    */
   function plan(c) {
     const team = ecoEmployees[c.id] ?? [];
-    const region = regions[c.region];
-    const place = {
-      raw: items[c.good]?.type === 'raw',
-      storage: c.storage ?? 1,
-      country: region?.country ?? null,
-      homeCountry: region?.initialCountry ?? null,
-      tax: countries[region?.country]?.taxes?.income ?? 0,
-    };
+    const place = placeOf(c, { regions, countries, items });
     const model = companyModel(team, place, { perPoint: perPoint[c.good] ?? 0, fairWage, management: managementPercent });
     const full = team.length >= (c.breakRoom ?? 1);
     const all = bestHires(model, { otherNationality: OTHER, full });
