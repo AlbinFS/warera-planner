@@ -83,8 +83,12 @@ export async function collectBuilds(market, planner, settings, skills, onProgres
 /**
  * Income per day for economy-skill layouts, from the original skill optimizer
  * run with every skill locked (fight skills at 0, which don't change income).
+ * Job income isn't counted.
  */
 export function incomeModel(market, planner, settings, economy) {
+  // Company income only: the original's job income (wage per production point)
+  // predates the eco update and would hold Production and Energy up.
+  economy = { ...economy, netJobSalary: 0 };
   const cache = new Map();
   const level = planner.player?.level ?? 1;
   return (levels) => {
