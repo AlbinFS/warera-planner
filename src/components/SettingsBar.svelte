@@ -20,11 +20,12 @@
     <span class="unit">%</span>
   </label>
 
-  <div class="field" role="group" aria-label="Fight window" title="8 h: you start with full health and hunger and fight for 8 hours (one pill). Full day: the whole day, including the pill's debuff.">
+  <div class="field" role="group" aria-label="Fight window" title="8 h: full health and hunger, fighting through one pill's 8 hours. 16 h: a play session (8 h asleep): the pill's 8 hours, then 8 hours in its −60% debuff on regen. Full day: 24 hours, the debuff included.">
     <Icon path={mdiClockOutline} size={18} color="var(--c-defense)" />
     <span>Fight for</span>
     <span class="seg">
       <button type="button" aria-pressed={settings.windowHours === 8} onclick={() => (settings.windowHours = 8)}>8 hours</button>
+      <button type="button" aria-pressed={settings.windowHours === 16} onclick={() => (settings.windowHours = 16)}>16 hours</button>
       <button type="button" aria-pressed={settings.windowHours === 24} onclick={() => (settings.windowHours = 24)}>A full day</button>
     </span>
   </div>

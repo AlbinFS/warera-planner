@@ -10,4 +10,4 @@ export const fmtDamage = (n) => {
 };
 
 /** "per 8 h window" or "per day", for the current settings. */
-export const periodLabel = (settings) => (settings.windowHours === 24 ? 'per day' : `per ${settings.windowHours} h window`);
+export const periodLabel = (settings) => (settings.windowHours === 24 ? 'per day' : settings.windowHours === 16 ? 'per 16 h session' : `per ${settings.windowHours} h window`);

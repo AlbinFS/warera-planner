@@ -12,12 +12,13 @@
   import UnitPage from './components/UnitPage.svelte';
   import ApiKeyDialog from './components/ApiKeyDialog.svelte';
   import EcoPage from './components/EcoPage.svelte';
+  import SimulatePage from './components/SimulatePage.svelte';
   import { getApiKey } from './lib/warera.js';
   import Dialog from './components/Dialog.svelte';
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
   import { route, navigate } from './lib/route.svelte.js';
-  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout, mdiWeatherNight, mdiWeatherSunny } from '@mdi/js';
+  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout, mdiWeatherNight, mdiWeatherSunny, mdiDice5 } from '@mdi/js';
   import { saved } from './lib/saved.svelte.js';
   import { restoreLastPlayer } from './lib/planner.svelte.js';
 
@@ -44,6 +45,7 @@
   const PAGES = [
     { path: '/', label: 'Planner', icon: mdiShieldSword, hint: 'Your build: damage, cost, and how to improve it' },
     { path: '/contract', label: 'Contract', icon: mdiFileDocumentOutline, hint: 'The best build for a bounty contract' },
+    { path: '/simulate', label: 'Simulate', icon: mdiDice5, hint: 'Play the planned build hit by hit: the spread of damage and profit' },
     { path: '/eco', label: 'Eco', icon: mdiCashMultiple, hint: 'Eco mode: skills, production, upgrades and employees' },
     { path: '/unit', label: 'Unit', icon: mdiAccountGroup, hint: "Your military unit's damage right now, and its contracts" },
     { path: '/builds', label: 'Saved builds', icon: mdiBookmarkMultiple, hint: 'Your saved builds, and side-by-side comparison' },
@@ -92,6 +94,9 @@
   </main>
 {:else if page === '/contract'}
   <ContractPage {data} />
+  <footer><DataStatus /></footer>
+{:else if page === '/simulate'}
+  <SimulatePage {data} />
   <footer><DataStatus /></footer>
 {:else if page === '/eco'}
   <EcoPage {data} />
