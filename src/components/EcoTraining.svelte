@@ -77,7 +77,7 @@
 
 <section class="card">
   <h2>What to spend your next energy on</h2>
-  <p class="muted small">Training, hiring and rerolling candidates each take 10 energy. Ranked by what each adds per day.</p>
+  <p class="muted small">Training, hiring and rerolling a company's candidates ("Reroll all") each take a flat 10 energy. Ranked by what each adds per day.</p>
   {#if actions.length}
     <ol class="actions">
       {#each actions.slice(0, 10) as a, i (i)}

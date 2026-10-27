@@ -13,6 +13,7 @@
   import EcoPlayground from './EcoPlayground.svelte';
   import EcoHiring from './EcoHiring.svelte';
   import EcoTraining from './EcoTraining.svelte';
+  import EcoAlerts from './EcoAlerts.svelte';
   import Icon from './Icon.svelte';
   import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant, mdiAccountPlus, mdiHammerWrench } from '@mdi/js';
 
@@ -80,6 +81,8 @@
     {#if !planner.player}<p class="warn">Load your player on the planner first: the eco tools use your level, skills and companies.</p>{/if}
     {#if error}<p class="error">{error}</p>{/if}
   </section>
+
+  {#if planner.player && companies.length}<EcoAlerts {companies} {perPoint} upgrades={data.upgrades} {items} />{/if}
 
   <div class="tabs" role="tablist" aria-label="Eco tools">
     {#each TABS as t (t.id)}

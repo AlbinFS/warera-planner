@@ -55,6 +55,9 @@ export async function loadCompanies(playerId) {
     storage: c.activeUpgradeLevels?.storage ?? 1,
     stock: c.production ?? 0,
     disabled: c.disabledAt != null,
+    // Storage full (production stopped) and moves that cost nothing, as the game has them.
+    isFull: !!c.isFull,
+    freeMoves: c.freeMoves ?? 0,
   }));
 }
 

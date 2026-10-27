@@ -1,0 +1,88 @@
+<script>
+  /**
+   * Company check: what needs doing in each company now, from the live data.
+   * Full storage stops production and costs employees 10 happiness; a free
+   * move into a core region of the owner's country gives every employee +5%.
+   */
+  import { ecoEmployees } from '../lib/eco.svelte.js';
+  import { employeeDay, engineDaily } from '../lib/eco.js';
+  import { planner } from '../lib/planner.svelte.js';
+  import { cached } from '../lib/warera.js';
+  import { fmt } from '../lib/format.js';
+  import { itemImage } from '../lib/visual.js';
+  import Icon from './Icon.svelte';
+  import { mdiAlertCircle, mdiAlert, mdiMapMarkerRadius, mdiCheckCircle } from '@mdi/js';
+
+  let { companies, perPoint, upgrades, items } = $props();
+
+  let countries = $state.raw({});
+  let regions = $state.raw({});
+  cached('country.getAllCountries', {}, 60 * 60 * 1000).then((list) => (countries = Object.fromEntries((list ?? []).map((c) => [c._id, c])))).catch(() => {});
+  cached('region.getRegionsObject', {}, 60 * 60 * 1000).then((r) => (regions = r ?? {})).catch(() => {});
+
+  const CORE_REGION_PERCENT = 5;
+  const FILL_WARNING_HOURS = 12;
+
+  const alerts = $derived(companies.filter((c) => !c.disabled).flatMap((c) => {
+    const team = ecoEmployees[c.id] ?? [];
+    const pp = perPoint[c.good] ?? 0;
+    const staff = team.map((e) => ({ e, d: employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: pp }) }));
+    const points = engineDaily(upgrades, c.engine) + staff.reduce((s, x) => s + x.d.points, 0);
+    const storageMax = upgrades.storage?.levels?.[String(c.storage)]?.stats?.maxProduction ?? 0;
+    const hoursToFull = points > 0 && storageMax ? Math.max(0, (storageMax - c.stock) / (points / 24)) : Infinity;
+    const out = [];
+    if (c.isFull || (storageMax && c.stock >= storageMax)) {
+      out.push({ level: 'bad', icon: mdiAlertCircle, text: 'Storage is full: production has stopped and every employee loses 10 happiness. Collect or sell, or upgrade the storage.' });
+    } else if (hoursToFull < FILL_WARNING_HOURS) {
+      out.push({ level: 'warn', icon: mdiAlert, text: `Storage is full in about ${fmt(hoursToFull, 0)} h (${fmt(c.stock, 0)} of ${fmt(storageMax, 0)}): collect or sell before then.` });
+    }
+    // In a core region? The employees' live bonus says so; without employees, the region's home country.
+    const region = regions[c.region];
+    const home = planner.player?.countryId;
+    const inCore = team.length ? team.some((e) => (e.bonus ?? []).some((b) => b.source === 'coreRegion')) : region && home ? region.initialCountry === home : null;
+    if (c.freeMoves > 0 && inCore === false && home) {
+      // +5% on each employee's output (their bonus is additive, so on top of what it is now).
+      const gain = staff.reduce((s, { e, d }) => s + (d.points / (1 + (e.bonusPercent ?? 0) / 100)) * (CORE_REGION_PERCENT / 100), 0) * pp;
+      out.push({
+        level: 'move', icon: mdiMapMarkerRadius,
+        text: `${c.freeMoves === 1 ? 'A free move is' : `${c.freeMoves} free moves are`} available and the company is outside ${countries[home]?.name ?? 'your country'}'s core regions: moving into one gives every employee +${CORE_REGION_PERCENT}%${gain > 0 ? ` (about +${fmt(gain, 2)} G a day)` : ''}. A move costs the employees 10 happiness for 7 days.`,
+      });
+    }
+    return out.map((a) => ({ ...a, company: c }));
+  }));
+  const ORDER = { bad: 0, warn: 1, move: 2 };
+  const sorted = $derived([...alerts].sort((a, b) => ORDER[a.level] - ORDER[b.level]));
+</script>
+
+<section class="card" aria-labelledby="alerts-title">
+  <h2 id="alerts-title">Company check</h2>
+  {#if sorted.length}
+    <ul class="alerts">
+      {#each sorted as a, i (i)}
+        <li data-level={a.level}>
+          <Icon path={a.icon} size={18} />
+          <img src={itemImage(a.company.good, items)} alt="" width="18" height="18" class="mini" />
+          <strong>{a.company.name}</strong>
+          <span>{a.text}</span>
+        </li>
+      {/each}
+    </ul>
+  {:else if companies.length}
+    <p class="ok"><Icon path={mdiCheckCircle} size={18} /> Nothing needs doing: no storage is full or close to it, and no company has a free move it should use.</p>
+  {/if}
+</section>
+
+<style>
+  .alerts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .alerts li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line); font-size: 14px; flex-wrap: wrap; }
+  .alerts li strong { white-space: nowrap; }
+  .alerts li span { flex: 1; min-width: 220px; }
+  [data-level='bad'] { border-color: var(--bad); color: var(--bad); }
+  [data-level='bad'] span { color: var(--text); }
+  [data-level='warn'] { border-color: var(--accent); color: var(--accent); }
+  [data-level='warn'] span { color: var(--text); }
+  [data-level='move'] { border-color: var(--info); color: var(--info); }
+  [data-level='move'] span { color: var(--text); }
+  .mini { border-radius: 4px; }
+  .ok { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--good); }
+</style>
