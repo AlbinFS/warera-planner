@@ -6,6 +6,7 @@
  * is down the job keeps the last good copy, and `stale` tells the site so.
  */
 import { runJob, ensureSchema, readDataset } from './job.js';
+import { lootPrices } from './prices.js';
 import { handleAuthRoute, currentSession, signInRequired } from './auth.js';
 
 // How old data may get before it is flagged stale (the job refreshes far more often).
@@ -60,6 +61,26 @@ async function equipmentPrices(env) {
     : json({ error: 'No equipment prices yet. They are built from the official trade history, which is collected while the official API is up (about an hour for a full set).' }, 503);
 }
 
+/** What a dropped piece of each rarity is worth (prices.js lootPrices), from the last 7 days of trades. */
+async function lootPriceRoute(env) {
+  const body = await remembered('loot', async () => {
+    await ensureSchema(env.DB);
+    const config = await readDataset(env.DB, 'game-config');
+    const { results } = await env.DB.prepare('SELECT code, recent FROM equipment WHERE recent IS NOT NULL').all();
+    if (!config || !results.length) return null;
+    const items = JSON.parse(config.body).items ?? {};
+    const byRarity = {};
+    for (const r of results) {
+      const rarity = items[r.code]?.rarity;
+      if (!rarity) continue;
+      const list = (byRarity[rarity] ??= []);
+      for (const t of JSON.parse(r.recent)) list.push(t);
+    }
+    return JSON.stringify({ at: iso(Date.now()), rarities: lootPrices(byRarity, Date.now()) });
+  });
+  return body ? json(body, 200, 60) : json({ error: 'No trades stored yet for loot prices.' }, 503);
+}
+
 /** A unit's recent contracts (won or currently led), newest first. */
 async function unitContracts(env, request) {
   const mu = new URL(request.url).searchParams.get('mu');
@@ -96,6 +117,7 @@ const routes = {
   '/api/game-config': (env) => dataset(env, 'game-config'),
   '/api/item-prices': (env) => dataset(env, 'item-prices'),
   '/api/equipment-prices': (env) => equipmentPrices(env),
+  '/api/loot-prices': (env) => lootPriceRoute(env),
   '/api/contracts': (env, request) => unitContracts(env, request),
   '/api/point-value': (env) => pointValue(env),
 };
