@@ -182,7 +182,9 @@ function offenseOptions(prep, stats, opts) {
     const wCost = prep.wearOf(w, 'weapon');
     const pairs = pairsFor(v(w, 'criticalChance'));
     // A knife (or no weapon) fires no ammo: any ammo set is simply not used.
-    const usable = [...new Set(ammos.map((a) => (a && w && w.code !== 'knife' ? a : null)))];
+    // Every other weapon needs ammo to shoot at all.
+    const shoots = w && w.code !== 'knife';
+    const usable = shoots ? ammos.filter(Boolean) : [null];
     for (const ammo of usable) {
       const aCost = ammo ? itemPrice(market, ammo) : 0;
       const aPct = pct(ammo);

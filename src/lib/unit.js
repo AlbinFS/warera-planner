@@ -82,6 +82,7 @@ export async function memberDamage(market, member, settings) {
   const player = { level: user.leveling?.level ?? 1, militaryRankPercent: user.skills?.attack?.militaryRankPercent ?? 0, prestige };
   const opts = { battleBonusPercent: Number(settings.battleBonus) || 0, supply: { health, foodMax: foodCount }, multiplier: pill.multiplier };
   const r = strongest(prep, levels, player, opts);
+  if (!r && worn.weapon?.code && worn.weapon.code !== 'knife' && !worn.ammo) return { ...base, damage: 0, perAttempt: 0, attempts: 0, error: 'Their gun has no ammo.' };
   if (!r) return { ...base, damage: 0, perAttempt: 0, attempts: 0, error: 'Their gear can’t fight.' };
 
   const multiplier = pill.multiplier * (1 + opts.battleBonusPercent / 100);

@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { softCapPercent, breakpoint, playerStats, swingDamage, fight } from '../src/combat/model.js';
+import { softCapPercent, breakpoint, playerStats, swingDamage, fight, needsAmmo } from '../src/combat/model.js';
 import { prepare, strongest, cheapest } from '../src/combat/optimize.js';
 import { buildMarket } from '../src/engine/inputs.js';
 
@@ -106,4 +106,16 @@ test('cheapest reaches its target, and more damage costs more', () => {
   assert.ok(low.reachedTarget && high.reachedTarget);
   assert.ok(Math.abs(low.damage - 200e3) < 1 && Math.abs(high.damage - 500e3) < 1);
   assert.ok(high.cost > low.cost);
+});
+
+test('a gun always comes with ammo; without it the gun can’t fight', () => {
+  const prep = prepare(smallMarket());
+  const player = { level: 32, militaryRankPercent: 20, prestige: {} };
+  const opts = { pill: true, battleBonusPercent: 70, hours: 8 };
+  for (const target of [100e3, 300e3, 600e3]) {
+    const b = cheapest(prep, layout, player, opts, target);
+    if (needsAmmo(b.gear)) assert.ok(b.gear.ammo, `${b.gear.weapon.code} without ammo at ${target}`);
+  }
+  const noAmmo = fight({ market: smallMarket(), config: { items: smallMarket().gameConfigItems }, stats: playerStats({ skills: config.skills }, layout), gear: { ...gear, ammo: null }, food: null, opts });
+  assert.equal(noAmmo, null);
 });

@@ -65,8 +65,13 @@ export function playerStats(config, levels, prestige = {}) {
   };
 }
 
+/** Every weapon but the knife shoots, and can't fire without ammo. */
+export const needsAmmo = (gear) => !!gear.weapon?.code && gear.weapon.code !== 'knife';
+/** A gun with no ammo can't fight. */
+export const canFight = (gear) => !needsAmmo(gear) || !!gear.ammo;
+
 /** The ammo a build actually fires: none with a knife or no weapon. */
-export const usableAmmo = (gear) => (gear.ammo && gear.weapon?.code && gear.weapon.code !== 'knife' ? gear.ammo : null);
+export const usableAmmo = (gear) => (gear.ammo && needsAmmo(gear) ? gear.ammo : null);
 
 /** Expected damage per swing and its parts. gear: { weapon, helmet, gloves } rolls ({ skills }), ammo code. */
 export function swingDamage(stats, gear, opts, config) {
@@ -121,6 +126,7 @@ export function wearPerSwing(market, config, slot, roll) {
  * terms: { bounty, perK, flat } (G per 1k damage, and G per fight); economy (G).
  */
 export function fight({ market, config, stats, gear, food, opts, terms = {}, limit = null }) {
+  if (!canFight(gear)) return null;
   const dmg = swingDamage(stats, gear, opts, config);
   const hp = healthPerSwing(stats, gear);
   const supply = fightSupply(stats, food, opts.hours ?? 8, config);

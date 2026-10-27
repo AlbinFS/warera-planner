@@ -5,7 +5,7 @@
  */
 import { priceKey, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
 import { prepare, strongest, cheapest, buildFrontier, rollPrice, levelCost } from '../combat/optimize.js';
-import { WEAR_PER_HIT, SCRAP_BASE, itemPrice } from '../combat/model.js';
+import { WEAR_PER_HIT, SCRAP_BASE, itemPrice, canFight } from '../combat/model.js';
 import { searchLayout } from '../combat/client.js';
 import { incomePlan } from './income.js';
 
@@ -65,6 +65,7 @@ const shape = (market, b) => b && { damage: b.damage, cost: b.cost, equipment: t
 
 /** Damage and cost of the planned build, or { error }. */
 export async function evaluateBuild(market, planner, settings) {
+  if (!canFight(planner.gear)) return { error: 'A gun can’t shoot without ammo: pick ammo, or a knife.' };
   const prep = prepFor(market, { locked: lockedGear(market, planner.gear), lockedFood: plannedFood(planner) });
   const b = strongest(prep, planner.skills, playerOf(planner), fightOptions(settings));
   if (!b) return { error: 'This build can’t fight.' };

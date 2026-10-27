@@ -8,7 +8,7 @@
  * a swing, food is eaten (if any is left in that phase) or the phase ends.
  * Case drops are rolled per swing; wear, ammo and scraps follow the swings.
  */
-import { playerStats, swingDamage, wearPerSwing, itemPrice, softCapPercent, usableAmmo, HEALTH_COST, ARMOR_SLOTS } from './model.js';
+import { playerStats, swingDamage, wearPerSwing, itemPrice, softCapPercent, usableAmmo, canFight, HEALTH_COST, ARMOR_SLOTS } from './model.js';
 import { phasesFor, configOf } from './optimize.js';
 
 /** Small fast seeded random numbers (mulberry32), so a run can be repeated. */
@@ -29,6 +29,7 @@ function random(seed) {
  * terms: { bounty, perK, flat } · runs: how many fights.
  */
 export function simulate(market, build, session, { battleBonusPercent = 0, terms = {}, runs = 5000, seed = 1 } = {}) {
+  if (!canFight(build.gear)) throw new Error(`A ${build.gear.weapon.code} can’t shoot without ammo: pick ammo or a knife.`);
   const config = configOf(market);
   const stats = playerStats(config, build.levels, build.prestige);
   const opts = { battleBonusPercent, militaryRankPercent: build.militaryRankPercent };
