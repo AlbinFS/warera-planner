@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { companyModel, hireValue, bestHires, trainingCards, traitChance } from '../src/lib/hiring.js';
+import { companyModel, hireValue, bestHires, trainingCards, traitChance, rankTraits, tierOf } from '../src/lib/hiring.js';
 
 const place = { raw: false, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
 const opts = { perPoint: 0.1, fairWage: 0.6 };
@@ -51,4 +51,27 @@ test('rehab of a hurting trait is worth something', () => {
   const team = [emp('X', 'se', 'male', ['xenophobe'], { production: 2, happiness: 45 }), emp('F', 'fi', 'male', [])];
   const cards = trainingCards(companyModel(team, place, opts), 0);
   assert.ok(cards.find((c) => c.card === 'Rehab' && c.trait === 'xenophobe').value > 0);
+});
+
+test('a trait that matches the team comes before the tier list', () => {
+  const model = companyModel([emp('A', 'se', 'female', []), emp('B', 'se', 'female', [])], place, opts);
+  const r = rankTraits(model, { nationality: 'se', gender: 'female' });
+  assert.equal(r.matches[0].trait, 'girlPower');
+  assert.ok(!r.lookFor.some((t) => t.trait === 'girlPower'));
+});
+
+test('a foreigner next to a Xenophobe clashes; otherwise traits follow the tiers', () => {
+  const model = companyModel([emp('X', 'se', 'male', ['xenophobe']), emp('B', 'se', 'male', [])], place, opts);
+  const r = rankTraits(model, { nationality: 'se', gender: 'male' });
+  assert.ok(r.clashes.length === 0);
+  const tiers = r.lookFor.map((t) => tierOf(t.trait));
+  assert.deepEqual(tiers, [...tiers].sort((a, b) => 'SABCDEF'.indexOf(a) - 'SABCDEF'.indexOf(b)));
+  // Cosmopolitan matches a team of mixed nationalities, not one where everyone is from one country.
+  const mixed = rankTraits(companyModel([emp('C', 'se', 'male', []), emp('D', 'fi', 'male', [])], place, opts), { nationality: 'de', gender: 'male' });
+  assert.ok(mixed.matches.some((t) => t.trait === 'cosmopolitan'));
+  const swedes = rankTraits(companyModel([emp('C', 'se', 'male', []), emp('D', 'se', 'male', [])], place, opts), { nationality: 'de', gender: 'male' });
+  assert.ok(!swedes.matches.some((t) => t.trait === 'cosmopolitan'));
+  // A Misogynist next to women clashes.
+  const women = rankTraits(companyModel([emp('A', 'se', 'female', []), emp('B', 'se', 'female', [])], place, opts), { nationality: 'se', gender: 'male' });
+  assert.ok(women.clashes.some((t) => t.trait === 'misogynist'));
 });

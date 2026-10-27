@@ -18,7 +18,27 @@
  * a Comic lifting everyone's mood, …), at the good's value per point, minus
  * the newcomer's wage. Traits that only pay off over weeks are counted at a
  * typical value; ones that don't change output (luck, retention) at none.
+ *
+ * Which trait to look for: first the ones that match the team (their value
+ * here beyond what they'd give next to plain coworkers: Girl Power next to
+ * women, Cosmopolitan next to foreigners, …), then the community tier list
+ * (TIERS), which rates a trait on its own, for a hire who matches nobody.
  */
+
+// Community tier list (S best … F worst), for a hire who doesn't need to match anyone.
+// Flight Risk isn't on it; it is placed by its effect.
+export const TIERS = {
+  S: ['sociable', 'primaDonna', 'oldFriends', 'sweethearts', 'girlPower', 'bandOfBrothers', 'handy', 'improviser', 'veteran', 'modest', 'loyal', 'luckyCharm'],
+  A: ['foreman', 'rival', 'comic', 'craftsman', 'laborer', 'lateBloomer', 'anchor', 'trainer'],
+  B: ['mentor', 'quickStudy', 'stockpiler', 'sprinter', 'gambler', 'bully'],
+  C: ['loner', 'nationalist', 'cosmopolitan', 'specialist', 'recruiter'],
+  D: ['patriot', 'expat', 'statist', 'salvager'],
+  E: ['diamondInTheRough', 'scavenger'],
+  F: ['xenophobe', 'envious', 'nemesis', 'manHater', 'misogynist', 'claustrophobe', 'creatureOfHabit', 'burnout', 'wornOut', 'homesick', 'taxShy', 'greedy', 'climber', 'jinx', 'flightRisk'],
+};
+const TIER_OF = Object.fromEntries(Object.entries(TIERS).flatMap(([tier, codes]) => codes.map((c) => [c, tier])));
+export const tierOf = (code) => TIER_OF[code] ?? null;
+const TIER_RANK = { S: 0, A: 1, B: 2, C: 3, D: 4, E: 5, F: 6 };
 
 export const TRAITS = {
   handy: { weight: 5, note: '+40 % while holding a tool' },
@@ -39,7 +59,7 @@ export const TRAITS = {
   bandOfBrothers: { weight: 5, gender: 'male', note: '+15 % per male coworker (up to +30 %)' },
   manHater: { weight: 5, gender: 'female', bad: true, note: '−15 % per male coworker (up to −30 %)' },
   misogynist: { weight: 5, gender: 'male', bad: true, note: '−15 % per female coworker (up to −30 %)' },
-  specialist: { weight: 10, note: '+3 Production, +5 happiness making their own good (counted as this company\'s)' },
+  specialist: { weight: 10, note: '+3 Production, +5 happiness making their own good, which is random: about 1 in 20 matches yours (counted so)' },
   craftsman: { weight: 10, note: '+3 Production on manufactured goods, −1 on raw' },
   laborer: { weight: 10, note: '+3 Production on raw resources, −1 on manufactured' },
   quickStudy: { weight: 10, note: 'specializes twice as fast (20 % in 10 days, not 20)' },
@@ -48,7 +68,7 @@ export const TRAITS = {
   sprinter: { weight: 5, note: '+50 % in their first day only' },
   veteran: { weight: 5, note: '+20 % after 30 days in the company; counted as +10 % (about a month in, they may ask to retire)' },
   creatureOfHabit: { weight: 10, bad: true, note: '−30 % for 3 days after a move' },
-  diamondInTheRough: { weight: 2, note: '+1 to a stat every 10 days (up to +4); counted as +2 Production' },
+  diamondInTheRough: { weight: 2, note: '+1 to a stat (named on them) every 10 days, up to +4; counted as +2 to a random stat' },
   burnout: { weight: 2, bad: true, note: '−1 to every stat every 20 days (up to −3); counted as −1 Production' },
   lateBloomer: { weight: 5, note: '+2 Production per 10 years past 40 (they age a year a day); counted as +2 over a month' },
   wornOut: { weight: 10, bad: true, note: '−2 Production per 10 years past 50 (they age a year a day); counted as −1 over a month' },
@@ -81,6 +101,8 @@ const EVENT_ONLY = new Set(['oldFriends', 'nemesis', 'sweethearts']);
 const HOURS = 24;
 const OUTPUT_DIVISOR = 4;
 const AVERAGE_STAT = 2.5; // candidates roll 1–4
+// Production a newcomer typically gains from training in their first weeks (drills add 1–4).
+const TRAINED = 2;
 
 /** How likely a candidate is to have this trait (half have none). */
 export function traitChance(code, gender) {
@@ -116,12 +138,13 @@ function effects(e, coworkers, place) {
   if (has('bandOfBrothers')) out.percent += Math.min(30, 15 * of('male'));
   if (has('manHater')) out.percent -= Math.min(30, 15 * of('male'));
   if (has('misogynist')) out.percent -= Math.min(30, 15 * of('female'));
-  if (has('specialist')) { out.prod += 3; happy(5); }
+  // Their good is one of about 20: it matches this company's about 1 time in 20.
+  if (has('specialist')) { out.prod += 3 / 20; happy(5 / 20); }
   if (has('craftsman')) out.prod += place.raw ? -1 : 3;
   if (has('laborer')) out.prod += place.raw ? 3 : -1;
   if (has('claustrophobe') && place.storage <= 2) out.percent -= 20;
   if (has('veteran')) out.percent += 10;
-  if (has('diamondInTheRough')) out.prod += 2;
+  if (has('diamondInTheRough')) out.prod += 2 / 3;
   if (has('burnout')) out.prod -= 1;
   if (has('lateBloomer')) out.prod += 2;
   if (has('wornOut')) out.prod -= 1;
@@ -174,8 +197,54 @@ export function companyModel(employees, place, { perPoint, fairWage, management 
   });
   // What a newcomer starts with: the company-wide bonuses (Management, core region), today's tax mood.
   const shared = employees[0]?.bonus?.filter((b) => b.source === 'management' || b.source === 'coreRegion').reduce((s, b) => s + b.percent, 0) ?? management;
-  return { team, place, perPoint, fairWage, shared };
+  // A company whose employees hold tools gives the newcomer one too.
+  return { team, place: { ...place, tools: place.tools ?? employees.some((e) => e.hasTool) }, perPoint, fairWage, shared };
 }
+
+// Traits whose effect depends on who the coworkers are: only these can match or clash with a team.
+const TEAM_TRAITS = new Set(['nationalist', 'xenophobe', 'cosmopolitan', 'loner', 'sociable', 'comic', 'mentor', 'foreman', 'rival', 'primaDonna', 'bully', 'envious', 'girlPower', 'bandOfBrothers', 'manHater', 'misogynist', 'luckyCharm', 'jinx', 'trainer']);
+
+/**
+ * How much more a trait is worth here than next to plain coworkers (no
+ * traits, no gender, all of one other nationality): what it gains or loses by
+ * matching this team. G per day; 0 for traits that don't depend on coworkers.
+ */
+export function teamMatch(model, profile, options = {}) {
+  if (!TEAM_TRAITS.has(profile.trait)) return 0;
+  const plain = { ...model, team: model.team.map((e) => ({ ...e, traits: [], nationality: '(plain)', gender: null })) };
+  const gain = (m) => hireValue(m, profile, options).value - hireValue(m, { ...profile, trait: null }, options).value;
+  return gain(model) - gain(plain);
+}
+
+/**
+ * The traits to look for and to avoid in this company, for a newcomer of
+ * this nationality and gender: team matches first (by what they add), then
+ * the tier list (S first), leaving out what this company can't use (Craftsman
+ * on raw goods, …). Each: { trait, tier, gain (G/day vs no trait), match }.
+ */
+export function rankTraits(model, profile, options = {}) {
+  const none = hireValue(model, { ...profile, trait: null }, options).value;
+  const rows = Object.keys(TRAITS)
+    .filter((t) => !EVENT_ONLY.has(t) && (!TRAITS[t].gender || TRAITS[t].gender === profile.gender))
+    .map((t) => ({ trait: t, tier: tierOf(t), gain: hireValue(model, { ...profile, trait: t }, options).value - none, match: teamMatch(model, { ...profile, trait: t }, options) }));
+  const byTier = (a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || b.gain - a.gain;
+  // A match must be worth having (a Xenophobe among compatriots avoids a loss, but adds nothing), and come
+  // mostly from the team: at least a quarter of its value (not just a happy team making every trait worth a bit more).
+  const isMatch = (r) => r.match >= Math.max(MATCH, r.gain / 4) && r.gain >= MATCH;
+  const isClash = (r) => r.match <= Math.min(-MATCH, r.gain / 4) && r.gain <= -MATCH;
+  const matches = rows.filter(isMatch).sort((a, b) => b.gain - a.gain);
+  const clashes = rows.filter(isClash).sort((a, b) => a.gain - b.gain);
+  const rest = rows.filter((r) => !isMatch(r) && !isClash(r));
+  return {
+    matches,
+    clashes,
+    // Good tiers that work here (no loss in this company), then the bad tiers.
+    lookFor: rest.filter((r) => TIER_RANK[r.tier] <= TIER_RANK.B && r.gain >= -0.005).sort(byTier),
+    avoid: rest.filter((r) => TIER_RANK[r.tier] >= TIER_RANK.E || r.gain < -0.2).sort((a, b) => TIER_RANK[b.tier] - TIER_RANK[a.tier] || a.gain - b.gain),
+  };
+}
+// A team match worth naming, G per day.
+const MATCH = 0.2;
 
 function asCoworker(e) {
   return { nationality: e.nationality, gender: e.gender, traits: (e.traits ?? []).filter(Boolean), prod: e.prod ?? e.production, wage: e.wage ?? e.payroll };
@@ -189,11 +258,12 @@ function teamPoints(team, place) {
 /** A typical candidate with this nationality, gender and trait. */
 function candidate(model, { nationality, gender, trait }) {
   const markup = trait === 'greedy' ? 1.2 : trait === 'modest' ? 0.85 : 1;
+  const production = AVERAGE_STAT + TRAINED;
   return {
-    id: 'new', name: 'New hire', nationality, gender, traits: trait ? [trait] : [], tool: false,
-    prodBase: AVERAGE_STAT, prod: AVERAGE_STAT, resp: AVERAGE_STAT,
+    id: 'new', name: 'New hire', nationality, gender, traits: trait ? [trait] : [], tool: !!model.place.tools,
+    prodBase: production, prod: production, resp: AVERAGE_STAT,
     bonusBase: model.shared, happinessBase: 50 - model.place.tax,
-    wage: model.fairWage * AVERAGE_STAT * markup,
+    wage: model.fairWage * production * markup,
   };
 }
 

@@ -10,6 +10,7 @@
   import { itemImage } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
   import Icon from './Icon.svelte';
+  import TraitChip from './TraitChip.svelte';
   import { mdiPickaxe, mdiClover, mdiTie, mdiEmoticonOutline } from '@mdi/js';
 
   let { companies, perPoint, pointValue, items, estimateNote = "from today's prices" } = $props();
@@ -142,7 +143,7 @@
                 </ul>
               </details>
             {/if}
-            {#if e.traits?.length}<div class="traits">{#each e.traits as t, i (i)}<span class="chip">{t ? words(t) : 'Hidden trait'}</span>{/each}</div>{/if}
+            {#if e.traits?.length}<div class="traits">{#each e.traits as t, i (i)}<TraitChip code={t} hidden={!t} />{/each}</div>{/if}
             <p class="facts muted small">
               {[
                 e.potential != null && `Potential ${e.potential} of ${e.potentialMax}`,
@@ -198,6 +199,5 @@
   .parts li { display: flex; justify-content: space-between; gap: 8px; }
   .parts li.bad { color: var(--bad); }
   .traits { display: flex; gap: 6px; flex-wrap: wrap; }
-  .chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
   .facts { margin: 0; }
 </style>
