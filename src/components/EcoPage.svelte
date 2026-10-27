@@ -11,8 +11,9 @@
   import EcoProduction from './EcoProduction.svelte';
   import EcoEmployees from './EcoEmployees.svelte';
   import EcoPlayground from './EcoPlayground.svelte';
+  import EcoHiring from './EcoHiring.svelte';
   import Icon from './Icon.svelte';
-  import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant } from '@mdi/js';
+  import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant, mdiAccountPlus } from '@mdi/js';
 
   let { data } = $props();
   const items = $derived(data.market.gameConfigItems);
@@ -66,6 +67,7 @@
     { id: 'playground', label: 'Skill playground', icon: mdiTuneVariant },
     { id: 'production', label: 'Production & upgrades', icon: mdiFactory },
     { id: 'employees', label: 'Employees', icon: mdiAccountHardHat },
+    { id: 'hiring', label: 'Next employee', icon: mdiAccountPlus },
   ];
 </script>
 
@@ -94,8 +96,10 @@
       <EcoPlayground {plan} {config} market={data.market} />
     {:else if tab === 'production'}
       <EcoProduction {companies} {goods} {perPoint} {config} prices={data.market.itemPrices} />
-    {:else}
+    {:else if tab === 'employees'}
       <EcoEmployees {companies} {perPoint} {pointValue} {items} {estimateNote} />
+    {:else}
+      <EcoHiring {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} />
     {/if}
   {/if}
 </div>

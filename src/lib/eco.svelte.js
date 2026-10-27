@@ -89,6 +89,12 @@ function fromGame(e) {
     bonusPercent: Math.round((e.productionBonus?.total ?? 0) * 100) / 100,
     payroll: Math.round((e.wage ?? 0) * 24 * 1000) / 1000,
     age: e.age,
+    gender: e.gender ?? null,
+    nationality: e.nationality ?? null,
+    hasTool: !!e.toolItem,
+    // Wage = fair wage × (base + trained Production) × this.
+    wageExpectation: e.wageExpectation ?? null,
+    ownProduction: (e.base?.production ?? 0) + (e.trained?.production ?? 0),
     stats: { production: stat(e, 'production'), luck: stat(e, 'luck'), responsibility: stat(e, 'responsibility') },
     bonus: (e.productionBonus?.contributions ?? []).map((c) => ({ source: c.source, percent: c.percent })),
     happiness: {

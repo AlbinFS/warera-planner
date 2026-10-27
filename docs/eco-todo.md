@@ -38,6 +38,10 @@ payroll per day match exactly.
   the key owner; `getCompanyEmployees` for everyone else.
 
 ### Decisions the page can help with
+- [x] **Next employee** tab: per company, the nationality, gender and trait that
+  add the most per day given who works there (replacing someone when the
+  company is full), traits to look for and avoid, and the training cards worth
+  picking per employee. Trait rules come from the game's web app config.
 - [ ] **Hiring:** rank `employee.getCandidates` by profit per day at your
   company (their production × your bonus − their wage), and against your
   weakest employee (6 of 14 cost more than they make today).
