@@ -40,13 +40,14 @@ function run(id, args) {
       return memo.get(key);
     };
   }
-  let score;
+  // Each objective scores a layout in full, or quickly (a thinner option list) to rank neighbours.
+  let scoreWith;
   let isBetter;
   if (objective.kind === 'range') {
     // Lowest mean cost of the cheapest build at each damage target (minus any income gained).
-    score = (l) => {
+    scoreWith = (o) => (l) => {
       let total = 0;
-      for (const b of cheapestMany(prep, l, player, opts, objective.targets)) {
+      for (const b of cheapestMany(prep, l, player, o, objective.targets)) {
         if (!b?.reachedTarget) return { cost: Infinity, unreachable: true };
         total += b.cost;
       }
@@ -54,14 +55,19 @@ function run(id, args) {
     };
     isBetter = (a, b) => !!a && (!b || a.cost < b.cost - 1e-6);
   } else {
-    score = (l) => {
+    scoreWith = (o) => (l) => {
       const terms = { ...objective.terms, economy: (objective.terms.economy ?? 0) + incomeChange(l) };
-      const r = strongest(prep, l, player, opts, terms, objective.limit ?? Infinity);
+      const r = strongest(prep, l, player, o, terms, objective.limit ?? Infinity);
       return r && { ...r, incomeChange: incomeChange(l) };
     };
   }
+  const score = scoreWith(opts);
+  // A quick (thinner) ranking of neighbours is available in bestLayout, but it
+  // led the climb to slightly worse layouts (−0.5 to −2% damage), so every
+  // neighbour is scored in full.
+  const quickScore = null;
   const result = bestLayout(prep, {
-    start: args.start, searched: args.searched, budget: args.budget, playerLevel: player.level, score, isBetter,
+    start: args.start, searched: args.searched, budget: args.budget, playerLevel: player.level, score, quickScore, isBetter,
     onStep: (s) => postMessage({ id, progress: strip(s) }),
     shouldStop: () => stopped.has(id),
   });

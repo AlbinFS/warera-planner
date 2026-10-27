@@ -17,9 +17,10 @@
 import { playerStats, wearPerSwing, itemPrice, softCapPercent, FOODS, AMMOS, HEALTH_COST } from './model.js';
 
 // Offense options closer than this in cost per swing (G) count as one: the strongest is kept.
-// The coarse size is for quick comparisons between neighbouring skill layouts.
 const COST_BUCKET = 0.0005;
-const COARSE_BUCKET = 0.004;
+// The quick view keeps this many options, evenly spread along each frontier.
+const QUICK_OFFENSE = 150;
+const QUICK_DEFENSE = 40;
 // Neighbours scored in full per climb step, after the quick comparison of all of them.
 const FULL_SCORES_PER_STEP = 3;
 const SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
@@ -94,6 +95,12 @@ export function prepare(market, { locked = {}, lockedFood } = {}) {
   return { market, config, slots, ammos, foods, armorPairs: [...pairs.values()], wearOf, pairCache: new Map(), cache: new Map() };
 }
 
+/** At most n items of a frontier, evenly spread (both ends kept). */
+function thin(list, n) {
+  if (list.length <= n) return list;
+  return Array.from({ length: n }, (_, i) => list[Math.round((i * (list.length - 1)) / (n - 1))]);
+}
+
 /** Defense options for the armor/dodge skill values: the cheapest gear per breakpoint, then the frontier. */
 function defenseOptions(prep, stats) {
   const byArmor = new Map();
@@ -124,7 +131,7 @@ function defenseOptions(prep, stats) {
  * so their best pairs are found once per crit value; each weapon is tried
  * with those only.
  */
-function offenseOptions(prep, stats, opts, bucket = COST_BUCKET) {
+function offenseOptions(prep, stats, opts) {
   const { market, config, slots, ammos } = prep;
   const pct = (code) => (code ? (config.items[code]?.flatStats?.percentAttack ?? 0) / 100 : 0);
   const mult = (1 + (opts.militaryRankPercent ?? 0) / 100) * (opts.multiplier ?? 1) * (1 + (opts.battleBonusPercent ?? 0) / 100);
@@ -163,7 +170,7 @@ function offenseOptions(prep, stats, opts, bucket = COST_BUCKET) {
       for (const pair of pairs) {
         const cost = wCost + aCost + pair.cost;
         const d = damage(v(w, 'attack'), v(w, 'criticalChance'), v(pair.h, 'criticalDamages'), v(pair.g, 'precision'), aPct);
-        const key = Math.round(cost / bucket);
+        const key = Math.round(cost / COST_BUCKET);
         const prev = buckets.get(key);
         if (!prev || d > prev.dmg) buckets.set(key, { weapon: w, ammo, helmet: pair.h, gloves: pair.g, dmg: d, cost });
       }
@@ -199,15 +206,20 @@ function layout(prep, levels, prestige, opts) {
   const stats = playerStats(config, levels, prestige);
   // Offense is scored at ×1; each phase scales it by its multiplier.
   const fightOpts = { ...opts, multiplier: 1 };
-  const bucket = opts.coarse ? COARSE_BUCKET : COST_BUCKET;
-  const offKey = `o${bucket}|${stats.attack}|${stats.precision}|${stats.criticalChance}|${stats.criticalDamages}|${opts.militaryRankPercent}|${opts.battleBonusPercent}`;
+  const offKey = `o${stats.attack}|${stats.precision}|${stats.criticalChance}|${stats.criticalDamages}|${opts.militaryRankPercent}|${opts.battleBonusPercent}`;
   const defKey = `d${stats.armor}|${stats.dodge}`;
-  if (!prep.cache.has(offKey)) prep.cache.set(offKey, offenseOptions(prep, stats, fightOpts, bucket));
+  if (!prep.cache.has(offKey)) prep.cache.set(offKey, offenseOptions(prep, stats, fightOpts));
   if (!prep.cache.has(defKey)) prep.cache.set(defKey, defenseOptions(prep, stats));
+  if (opts.quick) {
+    // A thinner view for ranking neighbouring layouts quickly.
+    if (!prep.cache.has(`q${offKey}`)) prep.cache.set(`q${offKey}`, thin(prep.cache.get(offKey), QUICK_OFFENSE));
+    if (!prep.cache.has(`q${defKey}`)) prep.cache.set(`q${defKey}`, thin(prep.cache.get(defKey), QUICK_DEFENSE));
+  }
   const foods = prep.foods.map((food) => ({ food, price: food ? itemPrice(market, food) : 0, phases: phasesFor(config, stats, food, opts) }));
   const cases = (stats.lootChance / 100) * ((itemPrice(market, 'case1') ?? 0) + 0.01 * (itemPrice(market, 'case2') ?? 0));
   const pill = opts.pill && !opts.supply ? itemPrice(market, 'cocain') ?? 0 : 0;
-  return { stats, offs: prep.cache.get(offKey), defs: prep.cache.get(defKey), foods, cases, pill };
+  const q = opts.quick ? 'q' : '';
+  return { stats, offs: prep.cache.get(q + offKey), defs: prep.cache.get(q + defKey), foods, cases, pill };
 }
 
 /**
@@ -474,16 +486,23 @@ export function bestLayout(prep, { start, searched = FIGHT, budget, playerLevel,
       if (shouldStop?.()) break;
       let winner = null;
       let winnerLevels = null;
-      let candidates = neighbours(levels);
+      const all = neighbours(levels);
+      const pick = (list) => {
+        for (const l of list) {
+          const r = scoreOf(l);
+          if (isBetter(r, winner)) { winner = r; winnerLevels = l; }
+        }
+      };
       if (quickScore) {
-        // Rank every neighbour quickly; score the most promising few in full.
-        const ranked = candidates.map((l) => ({ l, r: quickOf(l) })).filter((x) => x.r);
+        // Rank every neighbour quickly and score the most promising few in full;
+        // only when none of those helps are all of them scored in full, so the
+        // climb never stops where a full score would still find a better move.
+        const ranked = all.map((l) => ({ l, r: quickOf(l) })).filter((x) => x.r);
         ranked.sort((a, b) => (isBetter(a.r, b.r) ? -1 : isBetter(b.r, a.r) ? 1 : 0));
-        candidates = ranked.slice(0, FULL_SCORES_PER_STEP).map((x) => x.l);
-      }
-      for (const l of candidates) {
-        const r = scoreOf(l);
-        if (isBetter(r, winner)) { winner = r; winnerLevels = l; }
+        pick(ranked.slice(0, FULL_SCORES_PER_STEP).map((x) => x.l));
+        if (!isBetter(winner, best)) pick(all);
+      } else {
+        pick(all);
       }
       if (!isBetter(winner, best)) break;
       levels = winnerLevels;

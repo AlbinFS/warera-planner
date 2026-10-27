@@ -297,6 +297,7 @@
         <div><dt>Its net</dt><dd class="num" class:pos={search.best?.net >= 0} class:neg={search.best?.net < 0}>{search.best ? signed(search.best.net) : '–'}</dd></div>
         {#if terms.mode === 'economy'}<div><dt>Income change per day</dt><dd class="num">{signed(search.incomeChange)}</dd></div>{/if}
         <div><dt>Skill points searched</dt><dd class="num">{search.used} / {search.budget}</dd>{#if totalPoints > search.budget}<small class="muted">{totalPoints - search.budget} more of your {totalPoints} are in kept economy skills</small>{/if}</div>
+        {#if search.best?.armor != null}<div><dt>Armor · dodge</dt><dd class="num">{search.best.armor}% · {search.best.dodge}%</dd><small class="muted">on breakpoints</small></div>{/if}
         <div><dt>Layouts checked</dt><dd class="num">{search.checked}</dd></div>
       </dl>
       <table class="skills">
