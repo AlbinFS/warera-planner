@@ -36,9 +36,14 @@ Health per swing = 10 × (1 − armor %) × (1 − dodge %).
   heals its % of the health bar (cooked fish 20 %).
 - With the pill, its 8 hours are at ×1.6. A longer session (16 h, a full day)
   goes on in the debuff at ×0.4, on regen only.
-- Wear: durability 100; a weapon loses 1 per swing (100 swings), armor 0.5
-  (200 swings). A broken piece gives a third of its rarity's scrap base
-  (common 6 … mythic 1458). Ammo: one per swing.
+- Wear: durability 100; a weapon loses 1 per swing (100 swings), armor 1 per
+  hit taken, so a dodged hit spares all five armor pieces (helmet and gloves
+  too). A broken piece gives a third of its rarity's scrap base (common 6 …
+  mythic 1458). Ammo: one per swing. (Checked against the combat simulator:
+  526 swings at 57 % dodge wore 2.3 armor sets, 5.3 weapons, 628 scraps.)
+  Because of this, an offense option's cost depends on the dodge %: the
+  optimizer keeps the options that are best at any of five dodge %s across
+  the range and prices them exactly for each.
 - Drops: case 1 at the loot chance per swing, case 2 at 1 % of that.
 
 Checked: the same build and prices give the same hits (473 vs 460 simulated),

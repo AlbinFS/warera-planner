@@ -6,7 +6,8 @@
  * with the crit chance for + crit damage; a dodge costs no health, otherwise
  * the swing costs 10 × (1 − armor) health. When the health left can't pay for
  * a swing, food is eaten (if any is left in that phase) or the phase ends.
- * Case drops are rolled per swing; wear, ammo and scraps follow the swings.
+ * Case drops are rolled per swing; weapon wear, ammo and scraps follow the
+ * swings, armor wear the hits taken.
  */
 import { playerStats, swingDamage, wearPerSwing, itemPrice, softCapPercent, usableAmmo, canFight, HEALTH_COST, ARMOR_SLOTS } from './model.js';
 import { phasesFor, configOf } from './optimize.js';
@@ -54,9 +55,9 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
 
   const rnd = random(seed);
   const out = { damage: new Float64Array(runs), net: new Float64Array(runs), swings: new Float64Array(runs) };
-  let misses = 0, crits = 0, landed = 0, dodged = 0, totalSwings = 0, totalFood = 0, totalCase1 = 0, totalCase2 = 0, minHit = Infinity, maxHit = 0;
+  let misses = 0, crits = 0, landed = 0, dodged = 0, totalSwings = 0, totalTaken = 0, totalFood = 0, totalCase1 = 0, totalCase2 = 0, minHit = Infinity, maxHit = 0;
   for (let r = 0; r < runs; r++) {
-    let damage = 0, swings = 0, food = 0, case1 = 0, case2 = 0;
+    let damage = 0, swings = 0, taken = 0, food = 0, case1 = 0, case2 = 0;
     for (const p of phases) {
       let health = p.health;
       let foodLeft = p.foodMax;
@@ -72,15 +73,15 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
         if (d < minHit) minHit = d;
         if (d > maxHit) maxHit = d;
         damage += d;
-        if (rnd() < dodge) dodged++; else health -= hitCost;
+        if (rnd() < dodge) dodged++; else { health -= hitCost; taken++; }
         if (rnd() < lootChance) { case1++; if (rnd() < 0.01) case2++; }
       }
     }
-    const cost = swings * (ammo + wear.weapon + wear.armor) + food * foodPrice + pill - case1 * price('case1') - case2 * price('case2');
+    const cost = swings * (ammo + wear.weapon) + taken * wear.armor + food * foodPrice + pill - case1 * price('case1') - case2 * price('case2');
     out.damage[r] = damage;
     out.swings[r] = swings;
     out.net[r] = rate * damage + (terms.flat ?? 0) - cost;
-    totalSwings += swings; totalFood += food; totalCase1 += case1; totalCase2 += case2;
+    totalSwings += swings; totalTaken += taken; totalFood += food; totalCase1 += case1; totalCase2 += case2;
   }
   const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
   const swingsMean = totalSwings / runs;
@@ -92,7 +93,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
     // Averages per fight, for the cost and income lists.
     avg: {
       damage: mean(out.damage), net: mean(out.net), swings: swingsMean, food: totalFood / runs,
-      costs: { weapon: swingsMean * wear.weapon, armor: swingsMean * wear.armor, ammo: swingsMean * ammo, food: (totalFood / runs) * foodPrice, pill },
+      costs: { weapon: swingsMean * wear.weapon, armor: (totalTaken / runs) * wear.armor, ammo: swingsMean * ammo, food: (totalFood / runs) * foodPrice, pill },
       income: { case1: (totalCase1 / runs) * price('case1'), case2: (totalCase2 / runs) * price('case2'), bounty: rate * mean(out.damage), loot: terms.flat ?? 0 },
       cases: { case1: totalCase1 / runs, case2: totalCase2 / runs },
     },

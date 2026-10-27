@@ -15,13 +15,15 @@
  *   a fight window of H hours has the full bar plus H hours of regen (a tenth
  *   of the bar an hour), and as much food as the hunger bar plus its regen
  *   allows; each food heals its % of the health bar
- * Wear (durability 100): a weapon loses 1 per swing, armor 0.5; a broken
- * piece gives a third of its rarity's scrap base. Ammo: one per swing.
+ * Wear (durability 100): a weapon loses 1 per swing; armor loses 1 per hit
+ * taken, so a dodged hit spares it (per swing: 1 − dodge %). A broken piece
+ * gives a third of its rarity's scrap base. Ammo: one per swing.
  * Drops: case 1 at the loot chance per swing, case 2 at 1% of that.
  */
 
 export const HEALTH_COST = 10;
-export const WEAR_PER_HIT = { weapon: 1, armor: 0.5 };
+/** Durability lost: the weapon per swing, armor per hit taken (not dodged). */
+export const WEAR_PER_HIT = { weapon: 1, armor: 1 };
 export const SCRAP_BASE = { common: 6, uncommon: 18, rare: 54, epic: 162, legendary: 486, mythic: 1458 };
 export const ARMOR_SLOTS = ['helmet', 'chest', 'pants', 'boots', 'gloves'];
 export const FOODS = ['bread', 'steak', 'cookedFish'];
@@ -111,7 +113,10 @@ export function fightSupply(stats, food, hours, config) {
 /** Market price of an item code (ammo, food, pill, cases, scraps). */
 export const itemPrice = (market, code) => market.itemPrices[code] ?? null;
 
-/** Wear cost per swing of one piece, net of the scrap it gives once broken. */
+/**
+ * Wear cost of one piece, net of the scrap it gives once broken: per swing for
+ * the weapon, per hit taken for armor (times 1 − dodge % for a swing).
+ */
 export function wearPerSwing(market, config, slot, roll) {
   if (!roll) return 0;
   const rate = (slot === 'weapon' ? WEAR_PER_HIT.weapon : WEAR_PER_HIT.armor) / 100;
@@ -131,7 +136,7 @@ export function fight({ market, config, stats, gear, food, opts, terms = {}, lim
   const hp = healthPerSwing(stats, gear);
   const supply = fightSupply(stats, food, opts.hours ?? 8, config);
   const ammoPrice = usableAmmo(gear) ? itemPrice(market, gear.ammo) ?? 0 : 0;
-  const wear = wearPerSwing(market, config, 'weapon', gear.weapon) + ARMOR_SLOTS.reduce((t, s) => t + wearPerSwing(market, config, s, gear[s]), 0);
+  const wear = wearPerSwing(market, config, 'weapon', gear.weapon) + (1 - hp.dodge / 100) * ARMOR_SLOTS.reduce((t, s) => t + wearPerSwing(market, config, s, gear[s]), 0);
   const lootChance = stats.lootChance / 100;
   const cases = lootChance * ((itemPrice(market, 'case1') ?? 0) + CASE2_SHARE * (itemPrice(market, 'case2') ?? 0));
   const perSwingCost = ammoPrice + wear - cases;

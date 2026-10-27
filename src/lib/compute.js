@@ -99,7 +99,8 @@ export async function costBreakdown(market, planner, settings, evaluated) {
   for (const slot of GEAR_SLOTS) {
     const r = b.gear[slot];
     if (!r) continue;
-    const share = b.swings * (slot === 'weapon' ? WEAR_PER_HIT.weapon : WEAR_PER_HIT.armor) / 100;
+    // The weapon wears per swing, armor per hit taken (a dodge spares it).
+    const share = b.swings * (slot === 'weapon' ? WEAR_PER_HIT.weapon : WEAR_PER_HIT.armor * (1 - b.dodge / 100)) / 100;
     rows.push({ kind: 'roll', key: priceKey(r.code, r.skills), code: r.code, skills: r.skills, slot, phase: 'planned', amount: share * r.price });
     scrapCredit += share * Math.floor((SCRAP_BASE[config.items[r.code]?.rarity] ?? 0) / 3) * scraps;
   }

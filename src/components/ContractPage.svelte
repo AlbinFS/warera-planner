@@ -149,16 +149,28 @@
   // Income model for the planned economy skills, offered as the income to enter.
   let modelled = $state(null);
   let modelBusy = $state(false);
-  async function estimateIncome() {
+  async function estimateIncome({ quiet = false } = {}) {
     modelBusy = true;
     try {
       modelled = (await incomeModel(data.market, data.upgrades, planner))(planner.skills);
     } catch (err) {
-      error = err.message;
+      if (!quiet) error = err.message;
     } finally {
       modelBusy = false;
     }
   }
+  // A loaded player's companies earn every day whatever the fight: estimate it, and use it
+  // when no income has been typed in (other tools count it in the break-even too).
+  let estimatedFor = null;
+  $effect(() => {
+    const id = planner.player?.id;
+    if (!id || id === estimatedFor) return;
+    estimatedFor = id;
+    modelled = null;
+    estimateIncome({ quiet: true }).then(() => {
+      if (modelled != null && !(Number(terms.income) > 0)) terms.income = Math.round(modelled);
+    });
+  });
 
   const visible = $derived.by(() => {
     const list = terms.show === 'food'
@@ -243,9 +255,13 @@
         <input type="number" step="1" min="0" bind:value={terms.income} />
         {#if planner.player}
           {#if modelled != null}
-            <button type="button" class="link" onclick={() => (terms.income = Math.round(modelled))}>Use modelled {fmt(modelled, 1)}</button>
+            {#if Math.round(modelled) !== Number(terms.income)}
+              <button type="button" class="link" onclick={() => (terms.income = Math.round(modelled))}>Use modelled {fmt(modelled, 1)}</button>
+            {:else}
+              <small class="muted">Modelled from your companies</small>
+            {/if}
           {:else}
-            <button type="button" class="link" onclick={estimateIncome} disabled={modelBusy}>{modelBusy ? 'Estimating…' : 'Estimate from your companies'}</button>
+            <button type="button" class="link" onclick={() => estimateIncome()} disabled={modelBusy}>{modelBusy ? 'Estimating…' : 'Estimate from your companies'}</button>
           {/if}
         {/if}
       </label>

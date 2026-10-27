@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { softCapPercent, breakpoint, playerStats, swingDamage, fight, needsAmmo } from '../src/combat/model.js';
+import { softCapPercent, breakpoint, playerStats, swingDamage, fight, needsAmmo, wearPerSwing } from '../src/combat/model.js';
 import { prepare, strongest, cheapest } from '../src/combat/optimize.js';
 import { buildMarket } from '../src/engine/inputs.js';
 
@@ -118,4 +118,18 @@ test('a gun always comes with ammo; without it the gun can’t fight', () => {
   }
   const noAmmo = fight({ market: smallMarket(), config: { items: smallMarket().gameConfigItems }, stats: playerStats({ skills: config.skills }, layout), gear: { ...gear, ammo: null }, food: null, opts });
   assert.equal(noAmmo, null);
+});
+
+test('armor wears only on hits taken: dodge spares it, the weapon wears every swing', () => {
+  const market = smallMarket();
+  const cfg = { items: market.gameConfigItems };
+  const opts = { pill: true, battleBonusPercent: 70, hours: 8 };
+  const stats = playerStats({ skills: config.skills }, layout);
+  const noArmor = { ...gear, helmet: null, chest: null, pants: null, boots: null, gloves: null };
+  const withArmor = fight({ market, config: cfg, stats, gear, food: null, opts });
+  const bare = fight({ market, config: cfg, stats, gear: noArmor, food: null, opts });
+  // Armor's share of the cost per swing: its wear per hit taken (1 per 100, net of scrap) × the share not dodged.
+  const perSwing = (withArmor.parts.wear - bare.parts.wear * (withArmor.swings / bare.swings)) / withArmor.swings;
+  const armorWear = ['helmet', 'chest', 'pants', 'boots', 'gloves'].reduce((t, s) => t + wearPerSwing(market, cfg, s, gear[s]), 0);
+  assert.ok(Math.abs(perSwing - armorWear * (1 - withArmor.dodge / 100)) < 1e-9, `${perSwing} vs ${armorWear * (1 - withArmor.dodge / 100)}`);
 });

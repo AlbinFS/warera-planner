@@ -19,6 +19,10 @@ import { playerStats, wearPerSwing, itemPrice, softCapPercent, FOODS, AMMOS, HEA
 // Offense options closer than this in cost per swing (G) count as one: the strongest is kept.
 // (0.005 gave the same best builds as 0.0005, to the unit, in every test case, in a third less time.)
 const COST_BUCKET = 0.004;
+// Helmet and gloves wear only on hits taken, so an offense option's cost depends on the dodge %.
+// Options are kept if they're on the frontier at any of this many dodge %s across the range
+// (5: the same best layouts as pricing every dodge % exactly, at under half the time).
+const KEEP_STEPS = 5;
 // The quick view keeps this many options, evenly spread along each frontier.
 const QUICK_OFFENSE = 150;
 const QUICK_DEFENSE = 40;
@@ -109,7 +113,13 @@ export function prepare(market, { locked = {}, lockedFood } = {}) {
     const prev = pairs.get(value);
     if (!prev || cost < prev.cost - 1e-9) pairs.set(value, { chest: c, pants: p, value, cost });
   }
-  return { market, config, slots, ammos, foods, armorPairs: [...pairs.values()], wearOf, pairCache: new Map(), cache: new Map() };
+  // Most a helmet and gloves can wear per hit taken: bounds what a dodge % can save on them.
+  const maxOffArmor = Math.max(0, ...slots.helmet.map((r) => wearOf(r, 'helmet'))) + Math.max(0, ...slots.gloves.map((r) => wearOf(r, 'gloves')));
+  // The least share of hits taken any build can have (the most dodge: skill and boots at their top).
+  const dodgeLevels = config.skills.dodge?.levels ?? {};
+  const topDodge = Math.max(0, ...Object.values(dodgeLevels).map((l) => l.value ?? 0)) + Math.max(0, ...slots.boots.map((b) => b?.skills.dodge ?? 0));
+  const minKeep = 1 - softCapPercent(topDodge, config.skills.dodge?.softCap ?? 40) / 100;
+  return { market, config, slots, ammos, foods, armorPairs: [...pairs.values()], wearOf, maxOffArmor, minKeep, pairCache: new Map(), cache: new Map() };
 }
 
 /** At most n items of a frontier, evenly spread (both ends kept). */
@@ -118,7 +128,14 @@ function thin(list, n) {
   return Array.from({ length: n }, (_, i) => list[Math.round((i * (list.length - 1)) / (n - 1))]);
 }
 
-/** Defense options for the armor/dodge skill values: the cheapest gear per breakpoint, then the frontier. */
+/**
+ * Defense options for the armor/dodge skill values: the cheapest gear per
+ * breakpoint, then the combinations worth keeping. Armor wears only on hits
+ * taken, so a combination's wear per swing is (1 − dodge %) × its armor wear,
+ * and its dodge also spares the helmet and gloves: a combination is dropped
+ * only when another loses no more health and costs no more with any helmet
+ * and gloves (checked at none and at the most they can wear).
+ */
 function defenseOptions(prep, stats) {
   const byArmor = new Map();
   for (const a of prep.armorPairs) {
@@ -139,18 +156,26 @@ function defenseOptions(prep, stats) {
   const dodges = frontier2([...byDodge.values()], (d) => d.pct, (d) => d.cost);
   const combos = [];
   for (const a of armors) for (const d of dodges) {
-    combos.push({ chest: a.chest, pants: a.pants, boots: d.boots, armor: a.pct, dodge: d.pct, hp: HEALTH_COST * (1 - a.pct / 100) * (1 - d.pct / 100), cost: a.cost + d.cost });
+    const keep = 1 - d.pct / 100;
+    combos.push({ chest: a.chest, pants: a.pants, boots: d.boots, armor: a.pct, dodge: d.pct, keep, hp: HEALTH_COST * (1 - a.pct / 100) * keep, cost: keep * (a.cost + d.cost) });
   }
-  return frontier2(combos, (c) => -c.hp, (c) => c.cost);
+  const X = prep.maxOffArmor;
+  combos.sort((a, b) => a.hp - b.hp || a.cost - b.cost);
+  const kept = [];
+  for (const c of combos) {
+    if (!kept.some((k) => k.hp <= c.hp + 1e-12 && k.cost <= c.cost + 1e-12 && k.cost + k.keep * X <= c.cost + c.keep * X + 1e-12)) kept.push(c);
+  }
+  return kept;
 }
 
 /**
- * Offense options for the offense stats: frontier on (damage per swing, cost
- * per swing). Helmet and gloves meet the weapon only through its crit chance,
- * so their best pairs are found once per crit value; each weapon is tried
- * with those only.
+ * Offense options for the offense stats at a dodge %: frontier on (damage per
+ * swing, cost per swing). Helmet and gloves are armor, so they wear only on
+ * hits taken (`keep` = 1 − dodge %). They meet the weapon only through its
+ * crit chance, so their best pairs are found once per crit value; each weapon
+ * is tried with those only.
  */
-function offenseOptions(prep, stats, opts) {
+function offenseCandidates(prep, stats, opts) {
   const { market, config, slots, ammos } = prep;
   const pct = (code) => (code ? (config.items[code]?.flatStats?.percentAttack ?? 0) / 100 : 0);
   const mult = (1 + (opts.militaryRankPercent ?? 0) / 100) * (opts.multiplier ?? 1) * (1 + (opts.battleBonusPercent ?? 0) / 100);
@@ -177,25 +202,45 @@ function offenseOptions(prep, stats, opts) {
     }
     return prep.pairCache.get(key);
   };
-  const buckets = new Map();
+  // Cost per swing is fixed + keep × armor (keep = 1 − dodge %, between minKeep and 1). The options
+  // kept are those on the frontier at any of a few keeps across that range (KEEP_STEPS), bucketed
+  // as COST_BUCKET does; each dodge % then prices them exactly (offenseOptions).
+  // Ammo only scales damage, so each weapon and pair is worked out once for all ammo.
+  const keeps = Array.from({ length: KEEP_STEPS }, (_, i) => prep.minKeep + ((1 - prep.minKeep) * i) / (KEEP_STEPS - 1));
+  const ends = keeps.map(() => new Map());
+  const ammoInfo = new Map([null, ...ammos].map((a) => [a, { ammo: a, cost: a ? itemPrice(market, a) : 0, factor: 1 + pct(a) }]));
   for (const w of slots.weapon) {
     const wCost = prep.wearOf(w, 'weapon');
-    const pairs = pairsFor(v(w, 'criticalChance'));
-    // A knife (or no weapon) fires no ammo: any ammo set is simply not used.
-    // Every other weapon needs ammo to shoot at all.
-    const shoots = w && w.code !== 'knife';
-    const usable = shoots ? ammos.filter(Boolean) : [null];
-    for (const ammo of usable) {
-      const aCost = ammo ? itemPrice(market, ammo) : 0;
-      const aPct = pct(ammo);
-      for (const pair of pairs) {
-        const cost = wCost + aCost + pair.cost;
-        const d = damage(v(w, 'attack'), v(w, 'criticalChance'), v(pair.h, 'criticalDamages'), v(pair.g, 'precision'), aPct);
-        const key = Math.round(cost / COST_BUCKET);
-        const prev = buckets.get(key);
-        if (!prev || d > prev.dmg) buckets.set(key, { weapon: w, ammo, helmet: pair.h, gloves: pair.g, dmg: d, cost });
+    const wAttack = v(w, 'attack'), wCrit = v(w, 'criticalChance');
+    const pairs = pairsFor(wCrit);
+    // A knife (or no weapon) fires no ammo; every other weapon needs ammo to shoot at all.
+    const usable = w && w.code !== 'knife' ? ammos.filter(Boolean).map((a) => ammoInfo.get(a)) : [ammoInfo.get(null)];
+    for (const pair of pairs) {
+      const base = damage(wAttack, wCrit, v(pair.h, 'criticalDamages'), v(pair.g, 'precision'), 0);
+      for (const u of usable) {
+        const fixed = wCost + u.cost;
+        const d = base * u.factor;
+        for (let e = 0; e < keeps.length; e++) {
+          const key = Math.round((fixed + keeps[e] * pair.cost) / COST_BUCKET);
+          const prev = ends[e].get(key);
+          if (!prev || d > prev.dmg) ends[e].set(key, { weapon: w, ammo: u.ammo, helmet: pair.h, gloves: pair.g, dmg: d, fixed, armor: pair.cost });
+        }
       }
     }
+  }
+  const kept = new Set();
+  for (const [e, cells] of ends.entries()) for (const c of frontier2([...cells.values()], (o) => o.dmg, (o) => o.fixed + keeps[e] * o.armor)) kept.add(c);
+  return [...kept];
+}
+
+/** Offense options at a dodge % (`keep` = 1 − dodge %): frontier on (damage, cost per swing). */
+function offenseOptions(candidates, keep) {
+  const buckets = new Map();
+  for (const c of candidates) {
+    const cost = c.fixed + keep * c.armor;
+    const key = Math.round(cost / COST_BUCKET);
+    const prev = buckets.get(key);
+    if (!prev || c.dmg > prev.dmg) buckets.set(key, { weapon: c.weapon, ammo: c.ammo, helmet: c.helmet, gloves: c.gloves, dmg: c.dmg, cost });
   }
   return frontier2([...buckets.values()], (o) => o.dmg, (o) => o.cost);
 }
@@ -229,18 +274,26 @@ function layout(prep, levels, prestige, opts) {
   const fightOpts = { ...opts, multiplier: 1 };
   const offKey = `o${stats.attack}|${stats.precision}|${stats.criticalChance}|${stats.criticalDamages}|${opts.militaryRankPercent}|${opts.battleBonusPercent}`;
   const defKey = `d${stats.armor}|${stats.dodge}`;
-  if (!prep.cache.has(offKey)) prep.cache.set(offKey, offenseOptions(prep, stats, fightOpts));
   if (!prep.cache.has(defKey)) prep.cache.set(defKey, defenseOptions(prep, stats));
-  if (opts.quick) {
-    // A thinner view for ranking neighbouring layouts quickly.
-    if (!prep.cache.has(`q${offKey}`)) prep.cache.set(`q${offKey}`, thin(prep.cache.get(offKey), QUICK_OFFENSE));
-    if (!prep.cache.has(`q${defKey}`)) prep.cache.set(`q${defKey}`, thin(prep.cache.get(defKey), QUICK_DEFENSE));
-  }
+  // Offense depends on the dodge % (it spares the helmet and gloves): one list per dodge %.
+  const q = opts.quick ? 'q' : '';
+  const offsFor = (d) => {
+    const key = `${q}${offKey}|${d.dodge}`;
+    let offs = prep.cache.get(key);
+    if (!offs) {
+      if (!prep.cache.has(offKey)) prep.cache.set(offKey, offenseCandidates(prep, stats, fightOpts));
+      offs = offenseOptions(prep.cache.get(offKey), d.keep);
+      // A thinner view for ranking neighbouring layouts quickly.
+      if (q) offs = thin(offs, QUICK_OFFENSE);
+      prep.cache.set(key, offs);
+    }
+    return offs;
+  };
+  if (opts.quick && !prep.cache.has(`q${defKey}`)) prep.cache.set(`q${defKey}`, thin(prep.cache.get(defKey), QUICK_DEFENSE));
   const foods = prep.foods.map((food) => ({ food, price: food ? itemPrice(market, food) : 0, phases: phasesFor(config, stats, food, opts) }));
   const cases = (stats.lootChance / 100) * ((itemPrice(market, 'case1') ?? 0) + 0.01 * (itemPrice(market, 'case2') ?? 0));
   const pill = opts.pill && !opts.supply ? itemPrice(market, 'cocain') ?? 0 : 0;
-  const q = opts.quick ? 'q' : '';
-  return { stats, offs: prep.cache.get(q + offKey), defs: prep.cache.get(q + defKey), foods, cases, pill };
+  return { stats, offsFor, defs: prep.cache.get(q + defKey), foods, cases, pill };
 }
 
 /**
@@ -342,7 +395,13 @@ export function strongest(prep, levels, player, opts, terms = {}, limit = Infini
       cap[n] = p.health / d.hp; mult[n] = p.multiplier; extra[n] = 0; n++;
       if (p.foodMax > 0 && p.heal > 0) { cap[n] = (p.foodMax * p.heal) / d.hp; mult[n] = p.multiplier; extra[n] = f.price * (d.hp / p.heal); n++; }
     }
-    for (const o of L.offs) {
+    // Strongest offense first: once even every swing at its damage can't beat the best, none after can.
+    let reach = 0;
+    for (let i = 0; i < n; i++) reach += cap[i] * mult[i];
+    const offs = L.offsFor(d);
+    for (let j = offs.length - 1; j >= 0; j--) {
+      const o = offs[j];
+      if (best && o.dmg * reach < best.damage * (1 - 1e-6)) break;
       const base = o.cost + d.cost - L.cases;
       let room = fixed + limit;
       let gains = 0;
@@ -392,7 +451,9 @@ export function cheapestMany(prep, levels, player, opts, targets) {
       cap[n] = p.health / d.hp; mult[n] = p.multiplier; extra[n] = 0; n++;
       if (p.foodMax > 0 && p.heal > 0) { cap[n] = (p.foodMax * p.heal) / d.hp; mult[n] = p.multiplier; extra[n] = f.price * (d.hp / p.heal); n++; }
     }
-    for (const o of L.offs) {
+    let topMult = 0;
+    for (let i = 0; i < n; i++) topMult = Math.max(topMult, mult[i]);
+    for (const o of L.offsFor(d)) {
       const base = o.cost + d.cost - L.cases;
       let maxDamage = 0;
       for (let i = 0; i < n; i++) { dmg[i] = o.dmg * mult[i]; cost[i] = base + extra[i]; order[i] = i; maxDamage += dmg[i] * cap[i]; }
@@ -400,6 +461,8 @@ export function cheapestMany(prep, levels, player, opts, targets) {
       for (let a = 1; a < n; a++) for (let b = a; b > 0 && cost[order[b]] / dmg[order[b]] < cost[order[b - 1]] / dmg[order[b - 1]]; b--) [order[b], order[b - 1]] = [order[b - 1], order[b]];
       for (let t = 0; t < targets.length; t++) {
         if (maxDamage < targets[t]) continue;
+        // At least target / (best damage per swing) swings, each costing at least `base`.
+        if (best[t] && base > 0 && (base * targets[t]) / (o.dmg * topMult) >= best[t].spent - 1e-9) continue;
         let need = targets[t];
         let spent = 0;
         for (let k = 0; k < n; k++) {
@@ -432,7 +495,7 @@ export function cheapest(prep, levels, player, opts, target) {
 export function buildFrontier(prep, levels, player, opts) {
   const L = ctxOf(prep, levels, player, opts);
   const all = [];
-  for (const f of L.foods) for (const d of L.defs) for (const o of L.offs) {
+  for (const f of L.foods) for (const d of L.defs) for (const o of L.offsFor(d)) {
     // Each option filled cheapest-first, with a point at every kind of swing it adds.
     const sorted = segmentsOf(L, o, d, f).sort((a, b) => a.cost / a.dmg - b.cost / b.dmg);
     const fill = [];
