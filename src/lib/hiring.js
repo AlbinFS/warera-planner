@@ -70,8 +70,8 @@ export const TRAITS = {
   creatureOfHabit: { weight: 10, bad: true, note: '−30 % for 3 days after a move' },
   diamondInTheRough: { weight: 2, note: '+1 to a stat (named on them) every 10 days, up to +4; counted as +2 to a random stat' },
   burnout: { weight: 2, bad: true, note: '−1 to every stat every 20 days (up to −3); counted as −1 Production' },
-  lateBloomer: { weight: 5, note: '+2 Production per 10 years past 40 (they age a year a day); counted as +2 over a month' },
-  wornOut: { weight: 10, bad: true, note: '−2 Production per 10 years past 50 (they age a year a day); counted as −1 over a month' },
+  lateBloomer: { weight: 5, note: '+2 Production per 10 years past 40, up to +6 (they age a year a day); counted at their age halfway through the next 20 days' },
+  wornOut: { weight: 10, bad: true, note: '−2 Production per 10 years past 50, up to −6 (they age a year a day); counted at their age halfway through the next 20 days' },
   patriot: { weight: 10, note: '+2 Production, +10 happiness in a core region of their own country' },
   homesick: { weight: 10, bad: true, note: '−2 Production, −10 happiness outside their own country' },
   expat: { weight: 10, note: '+2 Production outside their own country' },
@@ -101,6 +101,8 @@ const EVENT_ONLY = new Set(['oldFriends', 'nemesis', 'sweethearts']);
 const HOURS = 24;
 const OUTPUT_DIVISOR = 4;
 const AVERAGE_STAT = 2.5; // candidates roll 1–4
+// Employees ask to retire at 65; a year passes a day.
+export const RETIRE_AGE = 65;
 // Production a newcomer typically gains from training in their first weeks (drills add 1–4).
 const TRAINED = 2;
 
@@ -146,8 +148,10 @@ function effects(e, coworkers, place) {
   if (has('veteran')) out.percent += 10;
   if (has('diamondInTheRough')) out.prod += 2 / 3;
   if (has('burnout')) out.prod -= 1;
-  if (has('lateBloomer')) out.prod += 2;
-  if (has('wornOut')) out.prod -= 1;
+  // Age-based traits at the age they reach halfway through the next 20 days (a year passes a day); +2 / −1 when the age is unknown.
+  const age = e.age != null ? e.age + Math.min(10, Math.max(0, (RETIRE_AGE - e.age) / 2)) : null;
+  if (has('lateBloomer')) out.prod += age == null ? 2 : Math.min(6, 2 * Math.max(0, Math.floor((age - 40) / 10)));
+  if (has('wornOut')) out.prod -= age == null ? 1 : Math.min(6, 2 * Math.max(0, Math.floor((age - 50) / 10)));
   if (has('patriot') && place.homeCountry === e.nationality) { out.prod += 2; happy(10); }
   if (has('homesick') && place.country !== e.nationality) { out.prod -= 2; happy(-10); }
   if (has('expat') && place.country !== e.nationality) out.prod += 2;
@@ -274,21 +278,41 @@ function teamPoints(team, place) {
 }
 
 /** A typical candidate with this nationality, gender and trait. */
-function candidate(model, { nationality, gender, trait }) {
+/**
+ * A candidate: a typical one (average stats, a little training, a fair wage),
+ * or one from a real card when `production` is given: { production,
+ * responsibility, expectation (0.7–1.3, the card's hint), age }.
+ */
+function candidate(model, { nationality, gender, trait, production, responsibility, expectation = 1, age = null }) {
   const markup = trait === 'greedy' ? 1.2 : trait === 'modest' ? 0.85 : 1;
-  const production = AVERAGE_STAT + TRAINED;
+  const own = production ?? AVERAGE_STAT + TRAINED;
   return {
-    id: 'new', name: 'New hire', nationality, gender, traits: trait ? [trait] : [], tool: !!model.place.tools,
-    prodBase: production, prod: production, resp: AVERAGE_STAT,
+    id: 'new', name: 'New hire', nationality, gender, age, traits: trait ? [trait] : [], tool: !!model.place.tools,
+    prodBase: own, prod: own, resp: responsibility ?? AVERAGE_STAT,
     bonusBase: model.shared, happinessBase: 50 - model.place.tax,
-    wage: model.fairWage * production * markup,
+    wage: model.fairWage * own * expectation * markup,
   };
+}
+
+/**
+ * One real candidate for one company: what hiring them adds per day, or
+ * (a full company) the best of replacing each employee with them.
+ * { value, points, wage, replaces, coworkers }.
+ */
+export function rateCandidate(model, profile, { full = false } = {}) {
+  const slots = full ? model.team.map((_, i) => i) : [null];
+  let best = null;
+  for (const replace of slots) {
+    const r = hireValue(model, profile, { replace });
+    if (!best || r.value > best.value) best = r;
+  }
+  return best;
 }
 
 /**
  * What hiring this profile changes, per day: points (the newcomer's and
  * every coworker's change), G (points × value − the newcomer's wage), and
- * each coworker's change in points. With `replace` (an index), that employee
+ * each coworker's change in points (newWage: the newcomer's own). With `replace` (an index), that employee
  * leaves for the newcomer: their points and wage go with them.
  */
 export function hireValue(model, profile, { replace = null } = {}) {
@@ -301,7 +325,7 @@ export function hireValue(model, profile, { replace = null } = {}) {
   const leaving = replace == null ? null : model.team[replace];
   const points = own + coworkers.reduce((s, c) => s + c.change, 0) - (leaving ? before[replace] : 0);
   const wage = newcomer.wage - (leaving ? leaving.wage : 0);
-  return { points, own, coworkers, wage, replaces: leaving?.name ?? null, value: points * model.perPoint - wage };
+  return { points, own, coworkers, wage, newWage: newcomer.wage, replaces: leaving?.name ?? null, value: points * model.perPoint - wage };
 }
 
 /**

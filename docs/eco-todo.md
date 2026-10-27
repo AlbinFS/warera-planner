@@ -42,6 +42,9 @@ payroll per day match exactly.
   add the most per day given who works there (replacing someone when the
   company is full), traits to look for and avoid, and the training cards worth
   picking per employee. Trait rules come from the game's web app config.
+- [x] **Rate today's candidates** (Next employee): type in the three cards
+  (stats, potential, age, wage hint, trait, gender, nationality) and each is
+  scored in every company, as a hire or a replacement.
 - [ ] **Hiring:** rank `employee.getCandidates` by profit per day at your
   company (their production × your bonus − their wage), and against your
   weakest employee (6 of 14 cost more than they make today).

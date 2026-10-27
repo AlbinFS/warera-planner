@@ -12,6 +12,7 @@
   import { itemImage, flagImage } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
   import TraitChip from './TraitChip.svelte';
+  import EcoCandidates from './EcoCandidates.svelte';
 
   let { companies, perPoint, items, managementPercent = 0 } = $props();
 
@@ -71,6 +72,8 @@
     <span class="num" class:good={t.gain > 0.005} class:bad={t.gain < -0.005}>{signed(t.gain)}</span>
   </li>
 {/snippet}
+
+<EcoCandidates {companies} {perPoint} {items} {managementPercent} />
 
 <section class="card">
   <h2>Trait tier list</h2>

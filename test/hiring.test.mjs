@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { companyModel, hireValue, bestHires, trainingCards, traitChance, rankTraits, tierOf } from '../src/lib/hiring.js';
+import { companyModel, hireValue, bestHires, trainingCards, traitChance, rankTraits, tierOf, rateCandidate } from '../src/lib/hiring.js';
 
 const place = { raw: false, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
 const opts = { perPoint: 0.1, fairWage: 0.6 };
@@ -74,4 +74,23 @@ test('a foreigner next to a Xenophobe clashes; otherwise traits follow the tiers
   // A Misogynist next to women clashes.
   const women = rankTraits(companyModel([emp('A', 'se', 'female', []), emp('B', 'se', 'female', [])], place, opts), { nationality: 'se', gender: 'male' });
   assert.ok(women.clashes.some((t) => t.trait === 'misogynist'));
+});
+
+test('a real candidate: more Production and a lower wage hint score higher; a full company replaces its weakest', () => {
+  const model = companyModel([emp('A', 'se', 'male', [], { production: 4 })], place, opts);
+  const card = (production, expectation, extra = {}) => rateCandidate(model, { nationality: 'se', gender: 'male', trait: null, production, responsibility: 2, expectation, ...extra });
+  assert.ok(card(4, 0.8).value > card(2, 0.8).value);
+  assert.ok(card(3, 0.75).value > card(3, 1.25).value);
+  // Wage follows Production × expectation.
+  assert.ok(Math.abs(card(3, 1.1).wage - 0.6 * 3 * 1.1) < 1e-9);
+  const full = companyModel([emp('Weak', 'se', 'male', [], { production: 1 }), emp('Strong', 'se', 'male', [], { production: 4 })], place, opts);
+  assert.equal(rateCandidate(full, { nationality: 'se', gender: 'male', trait: null, production: 4, responsibility: 2, expectation: 0.8 }, { full: true }).replaces, 'Weak');
+});
+
+test('age-based traits follow the candidate\'s age', () => {
+  const model = companyModel([emp('A', 'se', 'male', [])], place, opts);
+  const at = (age, trait) => rateCandidate(model, { nationality: 'se', gender: 'male', trait, production: 3, responsibility: 2, expectation: 1, age }).value;
+  // A Late Bloomer gains Production once past 40; a young one gets there later.
+  assert.ok(at(44, 'lateBloomer') > at(20, 'lateBloomer'));
+  assert.ok(at(56, 'wornOut') < at(20, 'wornOut'));
 });
