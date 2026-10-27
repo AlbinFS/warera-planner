@@ -250,7 +250,9 @@ const floorOf = (best) => (best && !best.outside ? best.damage : undefined);
  */
 export async function searchSkills(market, planner, settings, options) {
   const { terms, maxLoss, economySearch, onStep, signal } = options;
-  const start = { ...planner.skills };
+  // Leadership gives neither damage nor gold (only better worker traits): searching
+  // economy skills too sets it to 0 and frees its points; it isn't searched either way.
+  const start = { ...planner.skills, ...(economySearch ? { leadership: 0 } : {}) };
   const ctx = { market, planner, settings, terms, maxLoss, engine: getEngine(), curves: new Map(), incomeChange: async () => 0 };
   if (economySearch) {
     if (!planner.player) throw new Error('Load a player first: the economy search needs their companies.');
@@ -260,8 +262,8 @@ export async function searchSkills(market, planner, settings, options) {
     ctx.baseIncome = base;
   }
   const rules = skillRules(market, planner.player?.level ?? 1);
-  // Searching economy skills means every point is in play (Leadership too: it earns nothing here, so it's the first to give up).
-  const searched = economySearch ? ALL_SKILLS : FIGHT_SKILLS;
+  // Searching economy skills means every point is in play.
+  const searched = economySearch ? ALL_SKILLS.filter((s) => s !== 'leadership') : FIGHT_SKILLS;
   const keptPoints = ALL_SKILLS.filter((s) => !searched.includes(s)).reduce((sum, s) => sum + rules[s].total(start[s]), 0);
   const budget = (planner.player?.level ?? 1) * 4 - keptPoints;
   const used = (l) => searched.reduce((sum, s) => sum + rules[s].total(l[s]), 0);
