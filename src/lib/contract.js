@@ -235,7 +235,8 @@ export async function searchSkills(market, planner, settings, options) {
     ctx.baseIncome = base;
   }
   const rules = skillRules(market, planner.player?.level ?? 1);
-  const searched = economySearch ? ALL_SKILLS.filter((s) => s !== 'leadership') : FIGHT_SKILLS;
+  // Searching economy skills means every point is in play (Leadership too: it earns nothing here, so it's the first to give up).
+  const searched = economySearch ? ALL_SKILLS : FIGHT_SKILLS;
   const keptPoints = ALL_SKILLS.filter((s) => !searched.includes(s)).reduce((sum, s) => sum + rules[s].total(start[s]), 0);
   const budget = (planner.player?.level ?? 1) * 4 - keptPoints;
   const used = (l) => searched.reduce((sum, s) => sum + rules[s].total(l[s]), 0);
@@ -246,25 +247,50 @@ export async function searchSkills(market, planner, settings, options) {
     return scored.get(key);
   };
 
+  const fits = (l) => used(l) <= budget && searched.every((s) => l[s] >= 0 && l[s] <= rules[s].max);
+  const step = { n: 0 };
+  const report = async (levels, best) => ({ step: step.n, levels, best, checked: scored.size, budget, used: used(levels), incomeChange: await ctx.incomeChange(levels), baseIncome: ctx.baseIncome });
+
+  /** Hill climb from one layout; a winning move is repeated while it keeps helping. */
+  async function climb(levels) {
+    let best = await score(levels);
+    onStep?.(await report(levels, best));
+    for (;;) {
+      if (signal?.aborted) break;
+      const results = await Promise.all(neighbours(levels, rules, budget, searched).map(async (l) => ({ levels: l, result: await score(l, best?.damage) })));
+      const winner = results.reduce((a, b) => (better(b.result, a?.result) ? b : a), null);
+      if (!winner || !better(winner.result, best)) break;
+      const move = Object.fromEntries(searched.map((s) => [s, winner.levels[s] - levels[s]]));
+      levels = winner.levels;
+      best = winner.result;
+      for (;;) {
+        const again = { ...levels };
+        for (const s of searched) again[s] += move[s];
+        if (signal?.aborted || !fits(again)) break;
+        const r = await score(again, best.damage);
+        if (!better(r, best)) break;
+        levels = again;
+        best = r;
+      }
+      step.n++;
+      onStep?.(await report(levels, best));
+    }
+    return { levels, best };
+  }
+
   // Start from the planned layout; trim the highest fight skills if it's over budget.
-  let levels = { ...start };
-  while (used(levels) > budget) {
-    const top = FIGHT_SKILLS.reduce((a, b) => (levels[b] > levels[a] ? b : a));
-    levels[top] -= 1;
+  const planned = { ...start };
+  while (used(planned) > budget) {
+    const top = FIGHT_SKILLS.reduce((a, b) => (planned[b] > planned[a] ? b : a));
+    planned[top] -= 1;
   }
-  let best = await score(levels);
-  let step = 0;
-  const report = async () => ({ step, levels, best, checked: scored.size, budget, used: used(levels), incomeChange: await ctx.incomeChange(levels), baseIncome: ctx.baseIncome });
-  onStep?.(await report());
-  for (;;) {
-    if (signal?.aborted) break;
-    const results = await Promise.all(neighbours(levels, rules, budget, searched).map(async (l) => ({ levels: l, result: await score(l, best?.damage) })));
-    const winner = results.reduce((a, b) => (better(b.result, a?.result) ? b : a), null);
-    if (!winner || !better(winner.result, best)) break;
-    levels = winner.levels;
-    best = winner.result;
-    step++;
-    onStep?.(await report());
+  let result = await climb(planned);
+  // With economy skills searched, also climb from a fight-first start (no economy
+  // skills): a climb from an eco-heavy layout can stall before it trades enough over.
+  if (economySearch && !signal?.aborted && ECONOMY_SKILLS.some((s) => planned[s] > 0)) {
+    const fightFirst = { ...planned, ...Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, 0])) };
+    const other = await climb(fightFirst);
+    if (better(other.best, result.best)) result = other;
   }
-  return report();
+  return report(result.levels, result.best);
 }
