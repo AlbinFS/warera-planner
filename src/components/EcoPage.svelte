@@ -44,7 +44,14 @@
 
   /** Everything the model needs, from the companies, employees and settings. */
   const plan = $derived({
-    companies: companies.map((c) => ({ ...c, employees: ecoEmployees[c.id] ?? [] })),
+    companies: [
+      ...companies.map((c) => ({ ...c, employees: ecoEmployees[c.id] ?? [] })),
+      // Companies you'd build: a new one has a level 1 engine and makes the best-paying good.
+      ...Array.from({ length: Math.max(0, Math.floor(Number(ecoSettings.extraCompanies) || 0)) }, (_, i) => ({
+        id: `new-${i}`, name: 'New company', good: goods[0]?.code, engine: 1, employees: [], isNew: true,
+      })),
+    ],
+    ownedCount: companies.length,
     perPoint,
     pointValue,
     // The employees' shown bonus includes the owner's Management as it is now.

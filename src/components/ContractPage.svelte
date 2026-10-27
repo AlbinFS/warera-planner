@@ -60,6 +60,11 @@
   let status = $state('');
   let error = $state('');
   let progress = $state(0);
+  // While running: which part, the latest step, and a ticking clock for the banner.
+  let phase = $state('');
+  let stepInfo = $state.raw(null);
+  let elapsed = $state(0);
+  let finished = $state('');
   let points = $state.raw([]);
   let search = $state.raw(null);
   let start = $state.raw(null);
@@ -77,35 +82,50 @@
     if (terms.mode !== 'gear' && !Number.isFinite(maxLoss)) { error = 'Set "Willing to lose" for the skill search: it needs a limit to aim for.'; return; }
     running = true;
     progress = 0;
+    finished = '';
+    stepInfo = null;
+    elapsed = 0;
     points = [];
     search = null;
     start = { ...planner.skills };
     controller = new AbortController();
     const began = Date.now();
     const secs = () => `${Math.round((Date.now() - began) / 1000)} s`;
+    const tick = setInterval(() => (elapsed = Math.round((Date.now() - began) / 1000)), 1000);
+    const title = document.title;
     try {
       let levels = { ...planner.skills };
       if (terms.mode !== 'gear') {
+        phase = terms.mode === 'economy' ? 'income' : 'skills';
         status = terms.mode === 'economy' ? 'Loading your companies for the income model…' : 'Searching skill layouts…';
         search = await searchSkills(data.market, planner, settings, {
           terms: contract, maxLoss, economySearch: terms.mode === 'economy', signal: controller.signal,
           onStep: (s) => {
             search = s;
+            phase = 'skills';
+            stepInfo = s;
+            document.title = `Step ${s.step + 1} · optimizing…`;
             status = `Step ${s.step}: best so far ${s.best ? fmtDamage(s.best.damage) : 'nothing within the limit'} · ${s.checked} layouts checked · ${secs()}`;
           },
         });
         if (!search.best) throw new Error('No skill layout keeps the loss within the limit. Raise the bounty or the amount you are willing to lose.');
         levels = search.levels;
       }
+      phase = 'builds';
+      document.title = 'Listing builds · optimizing…';
       status = 'Listing builds for these skills…';
       points = await collectBuilds(data.market, planner, settings, levels, (share) => { progress = share; });
       status = `Done in ${secs()} · ${points.length} exact builds for ${terms.mode === 'gear' ? 'your planned' : 'the suggested'} skills.`;
+      finished = status;
     } catch (err) {
       error = err.message;
       status = '';
     } finally {
       running = false;
       controller = null;
+      phase = '';
+      clearInterval(tick);
+      document.title = title;
     }
   }
 
@@ -206,12 +226,30 @@
       Net = (bounty + pool loot) × damage / 1000 + economy income − cost, {periodLabel(settings)} (fight window, pill, bonus and food come from the settings bar).
       Pool loot measured from battle data is about 0.12–0.16. The skill search starts from the skills in the planner.
     </p>
-    {#if running && terms.mode === 'gear' || progress > 0 && progress < 1}
-      <div class="progress" role="progressbar" aria-label="Listing builds" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(progress * 100)}>
-        <div style="width: {Math.round(progress * 100)}%"></div>
+    {#if running}
+      <div class="running" role="status" aria-live="polite">
+        <div class="run-head">
+          <span class="spinner" aria-hidden="true"></span>
+          <strong>
+            {#if phase === 'builds'}Listing builds for {terms.mode === 'gear' ? 'your' : 'the suggested'} skills… {Math.round(progress * 100)}%
+            {:else if phase === 'income'}Loading your companies for the income model…
+            {:else}Optimizing skills{#if stepInfo}{' · '}step {stepInfo.step + 1}{/if}…{/if}
+          </strong>
+          <span class="clock num">{elapsed} s</span>
+        </div>
+        {#if phase === 'skills' && stepInfo}
+          <div class="run-facts">
+            <span>Best so far <strong class="num">{stepInfo.best ? fmtDamage(stepInfo.best.damage) : 'nothing within the limit'}</strong></span>
+            <span><strong class="num">{stepInfo.checked}</strong> layouts checked</span>
+            <span>Points <strong class="num">{stepInfo.used} / {stepInfo.budget}</strong></span>
+          </div>
+        {/if}
+        <div class="bar" class:indeterminate={phase !== 'builds'}><div style:width={phase === 'builds' ? `${Math.round(progress * 100)}%` : null}></div></div>
+        <p class="muted small">Still working: each step tries every one-level change and keeps the best. It ends by itself once no change helps; "Stop after this step" keeps the best so far.</p>
       </div>
-    {/if}
-    {#if status}<p class="status muted" aria-live="polite">{status}</p>{/if}
+    {:else if finished}
+      <p class="done" role="status">✓ {finished}</p>
+    {:else if status}<p class="status muted" aria-live="polite">{status}</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </section>
 
@@ -310,8 +348,24 @@
   .hint { font-size: 13px; margin: 10px 0 0; }
   .status { margin: 8px 0 0; }
   .error { color: var(--bad); margin: 8px 0 0; }
-  .progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin-top: 10px; }
-  .progress div { height: 100%; background: var(--accent); transition: width .15s; }
+  .running {
+    margin-top: 14px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface)); animation: glow 2s ease-in-out infinite;
+  }
+  @keyframes glow { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } }
+  .run-head { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+  .run-head strong { flex: 1; }
+  .clock { color: var(--muted); }
+  .spinner { width: 18px; height: 18px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--accent) 30%, transparent); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .run-facts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 8px 0 0 28px; font-size: 13px; }
+  .bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-top: 10px; position: relative; }
+  .bar div { height: 100%; background: var(--accent); transition: width .15s; }
+  .bar.indeterminate div { position: absolute; width: 35%; animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { from { left: -35%; } to { left: 100%; } }
+  .running .small { font-size: 12px; margin: 8px 0 0; }
+  .done { margin: 12px 0 0; color: var(--good); font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) { .running, .spinner, .bar.indeterminate div { animation: none; } }
   .summary { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 0 0 12px; }
   .summary dt { color: var(--muted); font-size: 12px; }
   .summary dd { margin: 2px 0 0; font-size: 20px; font-weight: 600; }

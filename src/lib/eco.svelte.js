@@ -19,6 +19,7 @@ export const ecoSettings = $state(load(SETTINGS_KEY, {
   budgetMode: 'keepFight', // keepFight | all | custom
   customBudget: 0,
   minLeadership: 0,
+  extraCompanies: 0, // companies you'd build, to see what a higher Companies skill would earn
 }));
 
 export const ecoEmployees = $state(load(EMPLOYEES_KEY, {})); // companyId → [employee]

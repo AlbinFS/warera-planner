@@ -32,7 +32,9 @@
   let ran = $state(false);
   let ranWith = $state('');
   const inputsKey = $derived(JSON.stringify([budget, ecoSettings.minLeadership, plan]));
+  let applied = $state(false);
   function optimize() {
+    applied = false;
     best = optimizeEcoSkills(plan, config, {
       budget, playerLevel: level, minimum: { leadership: Math.min(Number(ecoSettings.minLeadership) || 0, ecoMaxLevel(skills, 'leadership', level)) },
     });
@@ -73,6 +75,11 @@
       <input type="number" min="0" max="10" bind:value={ecoSettings.minLeadership} />
       <small class="help">Leadership gives better training cards but no money directly, so the optimizer drops it unless you set a minimum. Training employees now: guides suggest high (e.g. 5–10). Done training: 0.</small>
     </label>
+    <label>
+      <span>Companies I'd build</span>
+      <input type="number" min="0" max="20" bind:value={ecoSettings.extraCompanies} />
+      <small class="help">You own {plan.ownedCount}. Count new ones here to see what a higher Companies skill would earn: each new company gets a level 1 engine making the best-paying good. The cost of building them isn't included.</small>
+    </label>
     <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy <small class="help">(off until confirmed how many points one self-work gives)</small></label>
   </div>
   <div class="go">
@@ -106,10 +113,12 @@
         {/each}
       </tbody>
     </table>
+    <p><button class="primary" onclick={() => { for (const s of ECO_SKILLS) planner.skills[s] = best.levels[s]; applied = true; }}>Put these in the planner</button>
+      {#if applied}<span class="muted small"> Done: the Planner page and the Skill playground now use them.</span>{/if}</p>
 
     <h3>Where the money comes from (best skills)</h3>
     <ul class="parts">
-      <li>Companies running: <strong>{best.result.activeCount}</strong> of {best.result.owned} you own (limit {best.result.limit}) → <strong>{fmt(best.result.companies, 1)} G</strong> a day from engines and employees</li>
+      <li>Companies running: <strong>{best.result.activeCount}</strong> of {plan.ownedCount} you own{#if best.result.owned > plan.ownedCount}{' + '}{best.result.owned - plan.ownedCount} you'd build{/if} (limit {best.result.limit}) → <strong>{fmt(best.result.companies, 1)} G</strong> a day from engines and employees</li>
       <li>Energy: {fmt(best.result.energyPerDay, 0)} a day; {fmt(best.result.trainingEnergy, 0)} for trainings{#if plan.selfWork}, {best.result.selfWorkActions} self-works → {fmt(best.result.selfWorkPoints, 0)} points = <strong>{fmt(best.result.selfWork, 1)} G</strong>{/if}</li>
     </ul>
     <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27 gave everyone one free reset). The model: engine and employee output at today's prices for each company's good, employees' output and payroll as the game shows them, Management +2% per point of its value on employee output.</p>
