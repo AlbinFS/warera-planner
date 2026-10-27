@@ -49,7 +49,22 @@
   // Contract terms, remembered in this browser.
   const KEY = 'contract.terms.v1';
   const saved = (() => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}'); } catch { return {}; } })();
-  let terms = $state({ mode: 'skills', bounty: 0.08, poolLoot: 0.13, lose: '1', income: 0, sort: 'damage', show: 'frontier', ...saved });
+  let terms = $state({ mode: 'skills', bounty: 0.08, poolLoot: 0.13, lootItems: 0, lootRarity: 'epic', lose: '1', income: 0, sort: 'damage', show: 'frontier', ...saved });
+
+  // Battle loot: equipment pieces dropped per fight, each worth the median market
+  // price of that rarity's weapons and armour (every roll, from the trade history).
+  const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+  const lootPrice = $derived.by(() => {
+    const items = data.market.gameConfigItems;
+    const byRarity = {};
+    for (const r of data.market.equipmentMarketRolls) {
+      const item = items[r.code];
+      if (!item || (item.type !== 'equipment' && item.type !== 'weapon') || !(r.averagePrice > 0)) continue;
+      (byRarity[item.rarity] ??= []).push(r.averagePrice);
+    }
+    return Object.fromEntries(Object.entries(byRarity).map(([k, v]) => [k, v.sort((a, b) => a - b)[v.length >> 1]]));
+  });
+  const loot = $derived(Math.max(0, Number(terms.lootItems) || 0) * (lootPrice[terms.lootRarity] ?? 0));
   $effect(() => {
     const snapshot = JSON.stringify(terms);
     try { localStorage.setItem(KEY, snapshot); } catch {}
@@ -73,6 +88,7 @@
   const contract = $derived({
     bounty: Number(terms.bounty) || 0,
     poolLoot: Number(terms.poolLoot) || 0,
+    loot,
     economy: (Number(terms.income) || 0) + (search?.incomeChange ?? 0),
   });
 
@@ -201,6 +217,16 @@
       </label>
       <label><span>Bounty (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={terms.bounty} /></label>
       <label><span>Pool loot (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={terms.poolLoot} /></label>
+      <label>
+        <span>Battle loot (items {periodLabel(settings)})</span>
+        <span class="loot">
+          <input type="number" step="0.5" min="0" bind:value={terms.lootItems} aria-label="Battle loot items" />
+          <select bind:value={terms.lootRarity} aria-label="Battle loot rarity">
+            {#each RARITIES as r (r)}<option value={r} disabled={!lootPrice[r]}>{r}</option>{/each}
+          </select>
+        </span>
+        <small class="muted">{fmt(lootPrice[terms.lootRarity] ?? 0, 1)} G each{loot ? ` · ${fmt(loot, 1)} G in all` : ''}. Pieces dropped in the battle, whatever the damage; 0 to use pool loot only.</small>
+      </label>
       <label><span>Willing to lose (G)</span><input type="number" step="1" min="0" bind:value={terms.lose} placeholder="No limit" /></label>
       <label>
         <span>Economy income (G per day)</span>
@@ -222,7 +248,7 @@
       </div>
     </form>
     <p class="hint muted">
-      Net = (bounty + pool loot) × damage / 1000 + economy income − cost, {periodLabel(settings)} (fight window, pill, bonus and food come from the settings bar).
+      Net = (bounty + pool loot) × damage / 1000 + battle loot + economy income − cost, {periodLabel(settings)} (fight window, pill, bonus and food come from the settings bar).
       Pool loot measured from battle data is about 0.12–0.16. The skill search starts from the skills in the planner.
     </p>
     {#if running}
@@ -388,4 +414,7 @@
   .scroll { overflow: auto; max-height: 70vh; }
   @media (max-width: 520px) { .terms .wide { grid-column: auto; } }
   tr.eco-first td { border-top: 2px solid var(--line); }
+  .loot { display: flex; gap: 6px; }
+  .loot input { width: 70px; }
+  .loot select { flex: 1; }
 </style>

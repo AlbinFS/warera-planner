@@ -1,7 +1,7 @@
 /**
  * Contract optimizer: the builds that pay best under a bounty contract.
  *
- * net = (bounty + pool loot) × damage / 1000 + economy income − cost
+ * net = (bounty + pool loot) × damage / 1000 + battle loot + economy income − cost
  *
  * - Gear only: every exact build the optimizer offers across the player's
  *   damage range, kept when no other build beats it on both damage and cost.
@@ -28,11 +28,14 @@ const SCREEN_KEEP = 4;
 const SEED_DAILY_DAMAGE = [400e3, 1e6, 2.5e6];
 const SEED_TIME_MS = 8000;
 
-/** A build's result under the contract terms; break-even is the bounty rate where net is 0. */
-export function evaluate(p, { bounty, poolLoot, economy }) {
-  const income = ((bounty + poolLoot) * p.damage) / 1000;
+/**
+ * A build's result under the contract terms; break-even is the bounty rate where net is 0.
+ * `loot` is battle loot as a fixed amount per fight (items dropped, valued at market prices).
+ */
+export function evaluate(p, { bounty, poolLoot, economy, loot = 0 }) {
+  const income = ((bounty + poolLoot) * p.damage) / 1000 + loot;
   const net = income + economy - p.cost;
-  const breakEven = p.damage > 0 ? ((p.cost - economy) / p.damage) * 1000 - poolLoot : Infinity;
+  const breakEven = p.damage > 0 ? ((p.cost - economy - loot) / p.damage) * 1000 - poolLoot : Infinity;
   return { ...p, income, net, breakEven };
 }
 
