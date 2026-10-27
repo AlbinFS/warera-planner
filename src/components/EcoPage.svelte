@@ -5,7 +5,7 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies } from '../lib/eco.svelte.js';
-  import { estimatePointValue, goodsProfit, ecoValue } from '../lib/eco.js';
+  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, goodsProfit, ecoValue } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import EcoSkills from './EcoSkills.svelte';
   import EcoProduction from './EcoProduction.svelte';
@@ -30,13 +30,9 @@
     loadCompanies(id).then((c) => { companies = c; error = ''; }).catch((err) => (error = err.message)).finally(() => (loading = false));
   });
 
-  // The point value: from collected raw-material trades once there are a few
-  // days of them (the game averages 7 days), else from today's prices.
-  let fromTrades = $state.raw(null);
-  fetch('/api/point-value').then((r) => (r.ok ? r.json() : null)).then((v) => (fromTrades = v)).catch(() => {});
-  const useTrades = $derived(fromTrades?.days >= 3);
-  const estimate = $derived(useTrades ? fromTrades.value : estimatePointValue(items, data.market.itemPrices));
-  const estimateNote = $derived(useTrades ? `from ${fromTrades.days} days of raw-material trades` : "from today's raw-material prices");
+  // The point value: the game's own number unless a newer one is typed in.
+  const estimate = GAME_POINT_VALUE;
+  const estimateNote = GAME_POINT_VALUE_NOTE;
   const pointValue = $derived(ecoSettings.pointValue > 0 ? ecoSettings.pointValue : estimate);
   const goods = $derived(goodsProfit(items, data.market.itemPrices));
   const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0));

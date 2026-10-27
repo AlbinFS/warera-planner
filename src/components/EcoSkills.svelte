@@ -63,7 +63,7 @@
     <label>
       <span>Value of 1 production point (G)</span>
       <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={estimate.toFixed(4)} />
-      <small class="help">In the game, hover any employee's profit (e.g. +2.13): it shows "points × <strong>0.1012</strong>". Copy that number. Empty: {estimate.toFixed(4)}, {estimateNote}.</small>
+      <small class="help">Empty: {estimate.toFixed(4)}, {estimateNote}. If it has changed, hover any employee's profit in the game: it shows "points × <strong>value</strong>".</small>
     </label>
     <label>
       <span>Trainings per day</span>

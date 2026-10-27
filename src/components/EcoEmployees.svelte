@@ -54,9 +54,9 @@
   <p class="muted intro">Your employees as the game has them, loaded with your companies. Profit is what a day of their production is worth minus a day of their wage.</p>
   {#if employeesStatus.error}<p class="bad">{employeesStatus.error}</p>{/if}
   <label class="pv">
-    <span>Value of 1 production point: the number after × in any employee's "Estimated profit" tooltip in the game (e.g. 0.1012)</span>
+    <span>Value of 1 production point (G): the number after × in any employee's "Estimated profit" tooltip in the game</span>
     <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={pointValue.toFixed(4)} />
-    {#if !(ecoSettings.pointValue > 0)}<small class="muted">Using an estimate {estimateNote} ({fmt(pointValue, 4)}); "Profit (game)" matches the game once you type in its value.</small>{/if}
+    {#if !(ecoSettings.pointValue > 0)}<small class="muted">Using {fmt(pointValue, 4)}, {estimateNote}; type the game's current one if it has changed.</small>{/if}
   </label>
   <dl class="big">
     <div><dt>Employees</dt><dd class="num">{totals.count}</dd></div>

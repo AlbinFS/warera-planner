@@ -13,7 +13,7 @@ const load = (key, fallback) => {
 };
 
 export const ecoSettings = $state(load(SETTINGS_KEY, {
-  pointValue: null, // null: use the estimate from market prices
+  pointValue: null, // null: the game's value (eco.js GAME_POINT_VALUE)
   selfWork: false,
   trainingsPerDay: 0,
   budgetMode: 'keepFight', // keepFight | all | custom
