@@ -7,7 +7,8 @@
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import { itemLabel } from '../lib/market.js';
   import PlayerCard from './PlayerCard.svelte';
-  import { cached, getLootPrices } from '../lib/warera.js';
+  import { cached } from '../lib/warera.js';
+  import { lootPrices, lootBasis, RARITIES } from '../lib/fightIncome.svelte.js';
   import { loadContracts } from '../lib/unit.js';
   import GearStrip from './GearStrip.svelte';
 
@@ -53,32 +54,8 @@
   const saved = read(KEY) ?? (({ income, mode, ...rest }) => rest)(read('contract.terms.v1') ?? {});
   let terms = $state({ mode: 'economy', bounty: 0.08, poolLoot: 0.13, lootMode: 'perK', lootItems: 3, lootRarity: 'epic', lose: '1', ownIncome: '', sort: 'damage', show: 'frontier', ...saved });
 
-  // Battle loot: equipment pieces dropped per fight. Each is worth the median of
-  // that rarity's weapon and armour trades in the last 24 h, or of the last 7 days
-  // when that day looks manipulated (the site's loot prices); until those load,
-  // the median of the per-roll prices.
-  const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
-  let lootTrades = $state.raw({});
-  getLootPrices().then((r) => (lootTrades = r ?? {})).catch(() => {});
-  const lootPrice = $derived.by(() => {
-    const items = data.market.gameConfigItems;
-    const byRarity = {};
-    for (const r of data.market.equipmentMarketRolls) {
-      const item = items[r.code];
-      if (!item || (item.type !== 'equipment' && item.type !== 'weapon') || !(r.averagePrice > 0)) continue;
-      (byRarity[item.rarity] ??= []).push(r.averagePrice);
-    }
-    const prices = Object.fromEntries(Object.entries(byRarity).map(([k, v]) => [k, v.sort((a, b) => a - b)[v.length >> 1]]));
-    for (const [k, v] of Object.entries(lootTrades)) prices[k] = v.price;
-    return prices;
-  });
-  const lootBasis = (r) => {
-    const t = lootTrades[r];
-    if (!t) return 'median of the roll prices';
-    if (t.basis === 'day') return `median of ${t.trades} trades in the last 24 h`;
-    const left = t.excluded ? `, ${t.excluded} manipulated day${t.excluded > 1 ? 's' : ''} left out` : '';
-    return `7-day median${left}; the last 24 h ${t.day != null ? `were at ${fmt(t.day, 1)}` : 'had too few trades'}`;
-  };
+  // Battle loot: equipment pieces dropped per fight, each at the site's loot price for its rarity.
+  const lootPrice = $derived(lootPrices(data.market));
   // Loot is counted one way: G per 1k damage, or a number of items per fight.
   const byItems = $derived(terms.lootMode === 'items');
   const loot = $derived(byItems ? Math.max(0, Number(terms.lootItems) || 0) * (lootPrice[terms.lootRarity] ?? 0) : 0);

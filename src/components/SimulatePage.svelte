@@ -1,8 +1,10 @@
 <script>
   /**
-   * Simulator: plays the planned build hit by hit, thousands of times, for an
-   * 8 h pill window, a 16 h session (8 h on the pill, then 8 h in its debuff)
-   * or one set of full bars, and shows the spread luck gives.
+   * Simulator: plays the planned build hit by hit, 5000 times, for an 8 h pill
+   * window, a 16 h session or a full day (the hours after the pill in its
+   * debuff, in the debuff build when the settings use one), and shows the
+   * spread luck gives. Income (bounty, battle loot, company profit) is the
+   * Planner's, from Hits and costs.
    */
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
@@ -12,19 +14,23 @@
   import { itemLabel } from '../lib/market.js';
   import Icon from './Icon.svelte';
   import { mdiDice5, mdiPill } from '@mdi/js';
+  import { fightIncome, incomeTerms, companyProfit } from '../lib/fightIncome.svelte.js';
+  import { navigate } from '../lib/route.svelte.js';
 
   let { data } = $props();
 
-  const KEY = 'simulate.v1';
-  const saved = (() => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}'); } catch { return {}; } })();
-  let form = $state({ session: '8', bounty: 0.08, perK: 0.13, flat: 0, runs: 5000, ...saved });
-  $effect(() => { const s = JSON.stringify(form); try { localStorage.setItem(KEY, s); } catch {} });
+  const KEY = 'simulate.v2';
+  const RUNS = 5000;
+  let session = $state((() => { try { return localStorage.getItem(KEY) ?? '8'; } catch { return '8'; } })());
+  $effect(() => { const s = session; try { localStorage.setItem(KEY, s); } catch {} });
 
   const SESSIONS = [
-    { id: '8', label: '8 h pill window', hint: 'Full bars, fighting through the pill’s 8 hours (regen included).' },
-    { id: '16', label: '16 h session', hint: 'The pill’s 8 hours, then 8 more in its −60% debuff on regen (in the debuff build, if the settings use one): a day with 8 hours of sleep.' },
-    { id: 'burst', label: 'Full bars', hint: 'One full health bar and hunger bar, no regen.' },
+    { id: '8', label: '8 hours', hint: 'Full bars, fighting through the pill’s 8 hours (regen included).' },
+    { id: '16', label: '16 hours', hint: 'The pill’s 8 hours, then 8 more in its −60% debuff on regen: a day with 8 hours of sleep.' },
+    { id: '24', label: '24 hours', hint: 'A full day: the pill’s 8 hours, then 16 in its debuff on regen.' },
   ];
+  const withDebuffBuild = $derived(session !== '8' && settings.pill && settings.splitDebuff && !!planner.debuff);
+  const terms = $derived(incomeTerms(data.market));
 
   let result = $state.raw(null);
   let error = $state('');
@@ -43,10 +49,7 @@
             ? { gear: lockedGear(data.market, planner.debuff.gear), food: planner.debuff.food && planner.debuff.food !== 'none' ? planner.debuff.food : null }
             : null,
         };
-        const session = form.session === 'burst' ? { burst: true, pill: settings.pill } : { pill: settings.pill, hours: Number(form.session) };
-        const terms = { bounty: Number(form.bounty) || 0, perK: Number(form.perK) || 0, flat: Number(form.flat) || 0 };
-        const runs = Math.min(20000, Math.max(100, Number(form.runs) || 5000));
-        result = simulate(data.market, build, session, { battleBonusPercent: Number(settings.battleBonus) || 0, terms, runs, seed: Date.now() % 1e9 });
+        result = simulate(data.market, build, { pill: settings.pill, hours: Number(session) }, { battleBonusPercent: Number(settings.battleBonus) || 0, terms, runs: RUNS, seed: Date.now() % 1e9 });
       } catch (err) {
         console.error(err);
         error = err.message || String(err);
@@ -72,19 +75,22 @@
     <h2><Icon path={mdiDice5} size={20} /> Simulator</h2>
     <p class="muted">Plays the build on the Planner hit by hit, many times, so you see what luck does: misses (half damage), crits, dodges and case drops are rolled every swing.
       Pill: <strong>{settings.pill ? 'on' : 'off'}</strong> and bonus <strong>{settings.battleBonus}%</strong>, from the settings bar.</p>
-    <div class="tabs" role="tablist" aria-label="Session">
+    <div class="tabs" role="tablist" aria-label="How long">
       {#each SESSIONS as s (s.id)}
-        <button role="tab" aria-selected={form.session === s.id} title={s.hint} onclick={() => (form.session = s.id)}>{s.label}</button>
+        <button role="tab" aria-selected={session === s.id} title={s.hint} onclick={() => { session = s.id; run(); }}>{s.label}</button>
       {/each}
     </div>
-    <p class="muted small">{SESSIONS.find((s) => s.id === form.session)?.hint}</p>
-    <form class="terms" onsubmit={(e) => { e.preventDefault(); run(); }}>
-      <label><span>Bounty (G per 1k)</span><input type="number" step="0.001" min="0" bind:value={form.bounty} /></label>
-      <label><span>Loot (G per 1k)</span><input type="number" step="0.001" min="0" bind:value={form.perK} /></label>
-      <label><span>Battle loot (G per fight)</span><input type="number" step="1" min="0" bind:value={form.flat} /></label>
-      <label><span>Fights</span><input type="number" step="1000" min="100" max="20000" bind:value={form.runs} /></label>
-      <div class="actions"><button type="button" onclick={run} disabled={running}>{running ? 'Simulating…' : 'Run'}</button></div>
-    </form>
+    <p class="muted small">
+      {SESSIONS.find((s) => s.id === session)?.hint}
+      {#if session !== '8' && settings.pill}{withDebuffBuild ? ' The debuff hours are fought in your debuff build.' : ' The debuff hours are fought in the same gear: turn on "Debuff build" in the settings bar for a cheaper set.'}{/if}
+    </p>
+    <p class="muted small">
+      {fmt(RUNS, 0)} fights. Income from Hits and costs on the Planner: bounty <strong>{fmt(terms.bounty, 3)}</strong> G per 1k,
+      battle loot <strong>{fightIncome.lootMode === 'items' ? `${fmt(terms.flat, 1)} G a fight` : `${fmt(terms.perK, 3)} G per 1k`}</strong>,
+      company profit <strong>{companyProfit.value != null ? `${fmt(companyProfit.value, 1)} G a day` : 'none (load your player)'}</strong>.
+      <button type="button" class="link" onclick={() => navigate('/')}>Change</button>
+    </p>
+    {#if running}<p class="muted">Simulating…</p>{/if}
     {#if error}<p class="error">{error}</p>{/if}
   </section>
 
@@ -149,8 +155,9 @@
         <div>
           <h3>Income (average) <span class="num muted">{fmt(incomeTotal, 1)} G</span></h3>
           <ul class="list">
-            <li><span>Bounty + loot per 1k</span><span class="num">{fmt(result.avg.income.bounty, 1)}</span></li>
-            <li><span>Battle loot</span><span class="num">{fmt(result.avg.income.loot, 1)}</span></li>
+            <li><span>Bounty</span><span class="num">{fmt(result.avg.income.bounty, 1)}</span></li>
+            <li><span>Battle loot</span><span class="num">{fmt(result.avg.income.loot + result.avg.income.lootPerK, 1)}</span></li>
+            <li><span>Company profit</span><span class="num">{fmt(result.avg.income.companies, 1)}</span></li>
             <li><span>Case 1 ({fmt(result.avg.cases.case1, 1)})</span><span class="num">{fmt(result.avg.income.case1, 1)}</span></li>
             <li><span>Case 2 ({fmt(result.avg.cases.case2, 2)})</span><span class="num">{fmt(result.avg.income.case2, 1)}</span></li>
           </ul>
@@ -158,7 +165,7 @@
       </div>
     </section>
   {:else}
-    <section class="card"><p class="muted">Set up the build on the Planner, pick a session and press <strong>Run</strong>.</p></section>
+    <section class="card"><p class="muted">Set up the build on the Planner and pick how long to fight.</p></section>
   {/if}
 </div>
 
@@ -170,11 +177,7 @@
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
   .tabs button { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 12px; cursor: pointer; }
   .tabs button[aria-selected='true'] { border-color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
-  .terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end; margin-top: 10px; }
-  label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
-  input { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 10px; color: var(--text); font-size: 14px; }
-  .actions button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); padding: 9px 18px; font-weight: 600; cursor: pointer; }
-  .actions button:disabled { opacity: .6; }
+  .link { background: none; border: 0; color: var(--info); cursor: pointer; padding: 0 2px; font: inherit; }
   .big { display: flex; flex-wrap: wrap; gap: 12px 36px; margin: 0 0 12px; }
   .big div { display: grid; }
   .big dt { color: var(--muted); font-size: 12px; }

@@ -91,6 +91,22 @@ export async function evaluateBuild(market, planner, settings) {
   return { damage: b.damage, cost: b.cost, build: { equipment: toEquipment(market, b.gear), foodCode: b.food ?? 'none' }, details: b };
 }
 
+/**
+ * A debuff build for the planned pill build: the cheapest gear doing the
+ * same damage in the debuff as the pill gear would. { equipment, food,
+ * saving (G), damage } or null when the pill gear is already the cheapest.
+ */
+export async function suggestDebuff(market, planner, settings) {
+  const opts = { ...fightOptions(settings), splitDebuff: false, phase: 'debuff' };
+  const player = playerOf(planner);
+  const worn = prepFor(market, { locked: lockedGear(market, planner.gear), lockedFood: plannedFood(planner) });
+  const same = strongest(worn, planner.skills, player, opts);
+  if (!same?.damage) return null;
+  const b = cheapest(prepFor(market, { lockedFood: foodSetting(settings) }), planner.skills, player, opts, same.damage);
+  if (!b?.reachedTarget || b.cost >= same.cost - 0.05) return null;
+  return { equipment: toEquipment(market, b.gear), food: b.food ?? 'none', saving: same.cost - b.cost, damage: b.damage };
+}
+
 /** Cheaper build with the same damage and stronger build for the same cost (null when the planned one is best). */
 export async function findHints(market, planner, settings, evaluated) {
   const prep = prepFor(market, { lockedFood: foodSetting(settings) });

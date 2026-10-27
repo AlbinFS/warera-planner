@@ -5,7 +5,8 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
-  import { splitActive } from '../lib/compute.js';
+  import { splitActive, suggestDebuff } from '../lib/compute.js';
+  import { setDebuff } from '../lib/planner.svelte.js';
   import { GEAR_SLOTS, SLOT_NAMES, itemLabel } from '../lib/market.js';
   import { STATS, RARITY_COLORS, statText, itemImage, rarityOf } from '../lib/visual.js';
   import { mdiClose } from '@mdi/js';
@@ -30,15 +31,32 @@
   const split = $derived(splitActive(data.market, settings));
   let editing = $state('pill');
   const target = $derived(split && editing === 'debuff' && planner.debuff ? planner.debuff : planner);
-  function editDebuff() {
-    if (!planner.debuff) planner.debuff = { gear: structuredClone($state.snapshot(planner.gear)), food: planner.food };
+  const debuffHours = $derived(settings.pill && settings.windowHours > 8);
+  let suggesting = $state(false);
+  let suggestNote = $state('');
+  /** Fills the debuff build with the cheapest gear doing the pill gear's damage in the debuff. */
+  async function suggest() {
+    suggesting = true;
+    try {
+      const s = await suggestDebuff(data.market, planner, settings);
+      if (s) { setDebuff(s); suggestNote = `Same damage in the debuff as your pill gear, ${s.saving.toFixed(1)} G cheaper.`; }
+      else { planner.debuff = { gear: structuredClone($state.snapshot(planner.gear)), food: planner.food }; suggestNote = 'Your pill gear is already the cheapest for its damage in the debuff.'; }
+    } finally {
+      suggesting = false;
+    }
+  }
+  async function editDebuff() {
+    if (!planner.debuff) await suggest();
     editing = 'debuff';
     open = null;
   }
   function sameAsPill() {
     planner.debuff = null;
     editing = 'pill';
+    suggestNote = '';
   }
+  // Turning the switch on with no debuff build yet fills in the suggested one.
+  $effect(() => { if (split && !planner.debuff && !suggesting) suggest(); });
   const items = $derived(data.market.gameConfigItems);
 
   let open = $state(null); // slot being edited
@@ -80,13 +98,19 @@
 
 <section class="card" aria-labelledby="gear-title">
   <h2 id="gear-title">Gear</h2>
-  {#if split}
+  {#if debuffHours}
     <div class="builds" role="group" aria-label="Which build">
-      <button type="button" aria-pressed={editing === 'pill' || !planner.debuff} onclick={() => { editing = 'pill'; open = null; }}>Pill build <small>first 8 h</small></button>
-      <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>after the pill</small></button>
-      {#if planner.debuff}<button type="button" class="link" onclick={sameAsPill}>Use the pill build for both</button>{/if}
+      <label class="switch"><input type="checkbox" role="switch" bind:checked={settings.splitDebuff} /> Separate debuff build</label>
+      {#if split}
+        <button type="button" aria-pressed={editing === 'pill' || !planner.debuff} onclick={() => { editing = 'pill'; open = null; }}>Pill build <small>first 8 h</small></button>
+        <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>after the pill</small></button>
+        <button type="button" class="link" onclick={suggest} disabled={suggesting}>{suggesting ? 'Finding…' : 'Suggest the cheapest'}</button>
+        {#if planner.debuff}<button type="button" class="link" onclick={sameAsPill}>Use the pill build for both</button>{/if}
+      {/if}
     </div>
-    {#if !planner.debuff}<p class="hint muted">The debuff hours use the pill build until you set a debuff build (the optimizers also pick one).</p>{/if}
+    {#if !split}<p class="hint muted">The {settings.windowHours - 8} hours after the pill are fought in this gear. Turn on a separate debuff build to fight them in cheaper gear.</p>
+    {:else if editing === 'debuff' && planner.debuff}<p class="hint muted">Editing the debuff build (worn after the pill). {suggestNote}</p>
+    {:else if suggestNote}<p class="hint muted">{suggestNote} See it under Debuff build.</p>{/if}
   {/if}
   <div class="tiles">
     {#each ALL as slot (slot)}
@@ -144,6 +168,7 @@
   .builds button[aria-pressed='true'] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
   .builds button small { color: var(--muted); margin-left: 4px; }
   .builds .link { background: none; border: 0; color: var(--info); padding: 4px; }
+  .builds .switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin-right: 6px; }
   .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
   .hint { font-size: 12px; margin: 10px 0 0; }
   .editor { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }

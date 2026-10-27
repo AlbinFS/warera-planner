@@ -27,8 +27,8 @@ function random(seed) {
 
 /**
  * build: { levels, prestige, militaryRankPercent, gear (engine rolls), food, debuff? }
- * session: { pill, hours } or { burst: true } (the bars as they are full, no regen)
- * terms: { bounty, perK, flat } · runs: how many fights.
+ * session: { pill, hours }
+ * terms: { bounty, perK, flat, economy } · runs: how many fights.
  */
 export function simulate(market, build, session, { battleBonusPercent = 0, terms = {}, runs = 5000, seed = 1 } = {}) {
   const config = configOf(market);
@@ -50,17 +50,15 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
     };
   };
   const main = kit(build.gear, build.food);
-  const split = !!build.debuff && !session.burst && session.pill && (session.hours ?? 8) > 8;
-  const phases = session.burst
-    ? [{ multiplier: session.pill ? 1 + (config.items.cocain?.flatStats?.percentAttack ?? 60) / 100 : 1, health: stats.health, foodMax: build.food ? stats.hunger : 0, heal: build.food ? stats.health * ((config.items[build.food]?.flatStats?.healthRegenPercent ?? 0) / 100) : 0, kit: main }]
-    : split
-      ? [
-        ...phasesFor(config, stats, build.food, { pill: true, hours: session.hours, phase: 'pill' }).map((p) => ({ ...p, kit: main })),
-        ...phasesFor(config, stats, build.debuff.food, { pill: true, hours: session.hours, phase: 'debuff' }).map((p) => ({ ...p, kit: kit(build.debuff.gear, build.debuff.food) })),
-      ]
-      : phasesFor(config, stats, build.food, { pill: session.pill, hours: session.hours }).map((p) => ({ ...p, kit: main }));
+  const split = !!build.debuff && session.pill && (session.hours ?? 8) > 8;
+  const phases = split
+    ? [
+      ...phasesFor(config, stats, build.food, { pill: true, hours: session.hours, phase: 'pill' }).map((p) => ({ ...p, kit: main })),
+      ...phasesFor(config, stats, build.debuff.food, { pill: true, hours: session.hours, phase: 'debuff' }).map((p) => ({ ...p, kit: kit(build.debuff.gear, build.debuff.food) })),
+    ]
+    : phasesFor(config, stats, build.food, { pill: session.pill, hours: session.hours }).map((p) => ({ ...p, kit: main }));
   const { armor, dodge } = main;
-  const pill = session.pill && !session.burst ? price('cocain') : 0;
+  const pill = session.pill ? price('cocain') : 0;
   const rate = ((terms.bounty ?? 0) + (terms.perK ?? 0)) / 1000;
 
   const rnd = random(seed);
@@ -97,7 +95,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
     cost -= case1 * price('case1') + case2 * price('case2');
     out.damage[r] = damage;
     out.swings[r] = swings;
-    out.net[r] = rate * damage + (terms.flat ?? 0) - cost;
+    out.net[r] = rate * damage + (terms.flat ?? 0) + (terms.economy ?? 0) - cost;
     totalSwings += swings; totalFood += food; totalCase1 += case1; totalCase2 += case2;
   }
   const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
@@ -111,7 +109,10 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
     avg: {
       damage: mean(out.damage), net: mean(out.net), swings: swingsMean, food: totalFood / runs,
       costs: { weapon: spent.weapon / runs, armor: spent.armor / runs, ammo: spent.ammo / runs, food: spent.food / runs, pill },
-      income: { case1: (totalCase1 / runs) * price('case1'), case2: (totalCase2 / runs) * price('case2'), bounty: rate * mean(out.damage), loot: terms.flat ?? 0 },
+      income: {
+        case1: (totalCase1 / runs) * price('case1'), case2: (totalCase2 / runs) * price('case2'),
+        bounty: ((terms.bounty ?? 0) / 1000) * mean(out.damage), lootPerK: ((terms.perK ?? 0) / 1000) * mean(out.damage), loot: terms.flat ?? 0, companies: terms.economy ?? 0,
+      },
       cases: { case1: totalCase1 / runs, case2: totalCase2 / runs },
     },
   };

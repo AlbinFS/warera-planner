@@ -15,7 +15,12 @@ export const planner = $state({
   gear: emptyGear(), // weapon/armor: { code, skills } or null; ammo: code or null
   food: 'cookedFish',
   // The build worn in the pill's debuff, when the settings use one: { gear, food }, or null (the same as above).
-  debuff: null,
+  // Remembered in this browser (the worn gear reloads with the player; this doesn't).
+  debuff: (() => { try { return JSON.parse(localStorage.getItem('planner.debuff') ?? 'null'); } catch { return null; } })(),
+});
+
+$effect.root(() => {
+  $effect(() => { const s = JSON.stringify(planner.debuff); try { localStorage.setItem('planner.debuff', s); } catch {} });
 });
 
 /** Gear from the API's current-equipment shape. */
@@ -90,7 +95,12 @@ export async function loadPlayer(user) {
 export function applyBuild(equipment, foodCode, debuff = null) {
   planner.gear = gearFrom(equipment);
   if (foodCode) planner.food = foodCode;
-  if (debuff) planner.debuff = { gear: gearFrom(debuff.equipment), food: debuff.food ?? 'none' };
+  if (debuff) setDebuff(debuff);
+}
+
+/** Puts an optimizer build (equipment + food) in as the debuff build. */
+export function setDebuff(debuff) {
+  planner.debuff = { gear: gearFrom(debuff.equipment), food: debuff.food ?? 'none' };
 }
 
 /**
