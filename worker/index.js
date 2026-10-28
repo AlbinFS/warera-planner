@@ -8,7 +8,7 @@
 import { runJob, ensureSchema, readDataset } from './job.js';
 import { lootPrices } from './prices.js';
 import { WareraApi } from './warera.js';
-import { handleAuthRoute, currentSession, signInRequired } from './auth.js';
+import { handleAuthRoute, currentSession, signInRequired, managerApi } from './auth.js';
 
 // How old data may get before it is flagged stale (the job refreshes far more often).
 const STALE_AFTER_MS = { 'game-config': 3 * 60 * 60 * 1000, 'item-prices': 30 * 60 * 1000, equipment: 60 * 60 * 1000, 'battle-loot': 6 * 60 * 60 * 1000 };
@@ -149,7 +149,11 @@ export default {
     try {
       const auth = await handleAuthRoute(env, request);
       if (auth) return auth;
-      if (!await currentSession(env, request)) return signInRequired(request);
+      const session = await currentSession(env, request);
+      if (!session) return signInRequired(request);
+      // A manager's own invite codes (GET me, POST create / revoke): the only non-GET API.
+      const manager = pathname.match(/^\/api\/manager\/([a-z-]+)$/);
+      if (manager) return await managerApi(env, request, session, manager[1]);
     } catch (err) {
       console.error('auth', err);
       return json({ error: 'Server error' }, 500);

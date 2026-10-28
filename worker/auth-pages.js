@@ -103,8 +103,22 @@ export const ADMIN_PAGE = page('Admin', `
     </section>
     <section class="card scroll">
       <table>
-        <thead><tr><th>Note</th><th>Player</th><th>Devices</th><th>Created</th><th></th></tr></thead>
+        <thead><tr><th>Note</th><th>Player</th><th>Devices</th><th>Created</th><th>By</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
+      </table>
+    </section>
+    <h2>Managers</h2>
+    <p class="muted">Players who can create invite codes themselves, on the site's Invites page while signed in as their player. They can revoke only the codes they created.</p>
+    <form class="card row" id="addmanager">
+      <label>WarEra username <input name="username" maxlength="40" required></label>
+      <label style="max-width:140px;flex:none">Codes per 7 days <input name="weekly" type="number" min="1" max="50" value="5"></label>
+      <button>Add manager</button>
+    </form>
+    <p class="error" id="merr"></p>
+    <section class="card scroll">
+      <table>
+        <thead><tr><th>Player</th><th>Codes per 7 days</th><th>Last 7 days</th><th>All codes</th><th>Added</th><th></th></tr></thead>
+        <tbody id="mrows"></tbody>
       </table>
     </section>
   </div>
@@ -120,7 +134,7 @@ async function api(action, body) {
   return data;
 }
 async function refresh() {
-  const { invites } = await api('list');
+  const { invites, managers } = await api('list');
   $('login').hidden = true; $('panel').hidden = false;
   $('rows').innerHTML = invites.map((i) => '<tr class="' + (i.revoked ? 'revoked' : '') + '">'
     + '<td>' + esc(i.label || '–') + '</td>'
@@ -129,7 +143,16 @@ async function refresh() {
         + (i.revoked ? '' : '<button class="ghost" data-remove="' + d.id + '" data-code="' + i.code_hash + '">Remove</button>')).join('<br>') : '<span class="muted">none</span>')
     + ' <span class="muted">(' + i.devices.length + ' / ' + i.max_devices + ')</span></td>'
     + '<td>' + when(i.created_at) + '</td>'
+    + '<td>' + (i.created_by_name ? esc(i.created_by_name) : '<span class="muted">you</span>') + '</td>'
     + '<td>' + (i.revoked ? 'revoked' : '<button class="ghost" data-revoke="' + i.code_hash + '">Revoke code</button>') + '</td></tr>').join('');
+  $('mrows').innerHTML = managers.length ? managers.map((m) => '<tr>'
+    + '<td>' + esc(m.player_name) + '</td>'
+    + '<td><input type="number" min="1" max="50" value="' + m.weekly + '" data-weekly="' + esc(m.player_id) + '" style="width:70px"></td>'
+    + '<td>' + m.thisWeek + ' / ' + m.weekly + '</td>'
+    + '<td>' + m.total + '</td>'
+    + '<td>' + when(m.added_at) + '</td>'
+    + '<td><button class="ghost" data-unmanage="' + esc(m.player_id) + '">Remove</button></td></tr>').join('')
+    : '<tr><td colspan="6" class="muted">No managers yet.</td></tr>';
 }
 $('login').addEventListener('submit', async (e) => {
   e.preventDefault(); $('err').textContent = '';
@@ -149,6 +172,20 @@ $('rows').addEventListener('click', async (e) => {
   if (b.dataset.revoke && confirm('Revoke this code? Everyone using it is signed out.')) await api('revoke-code', { codeHash: b.dataset.revoke });
   if (b.dataset.remove && confirm('Sign this device out? The code can then be used on another device.')) await api('remove-device', { id: b.dataset.remove, codeHash: b.dataset.code });
   refresh();
+});
+$('addmanager').addEventListener('submit', async (e) => {
+  e.preventDefault(); $('merr').textContent = '';
+  const f = new FormData(e.target);
+  try { await api('add-manager', { username: f.get('username'), weekly: Number(f.get('weekly')) }); e.target.reset(); refresh(); }
+  catch (err) { $('merr').textContent = err.message; }
+});
+$('mrows').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-unmanage]'); if (!b) return;
+  if (confirm('Remove this manager? Codes they already made keep working; revoke those above if they should go too.')) { await api('remove-manager', { playerId: b.dataset.unmanage }); refresh(); }
+});
+$('mrows').addEventListener('change', async (e) => {
+  const i = e.target.closest('input[data-weekly]'); if (!i) return;
+  await api('set-weekly', { playerId: i.dataset.weekly, weekly: Number(i.value) }); refresh();
 });
 refresh().catch(() => {});
 `);

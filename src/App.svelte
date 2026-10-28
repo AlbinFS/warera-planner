@@ -13,6 +13,7 @@
   import ApiKeyDialog from './components/ApiKeyDialog.svelte';
   import EcoPage from './components/EcoPage.svelte';
   import SimulatePage from './components/SimulatePage.svelte';
+  import InvitesPage from './components/InvitesPage.svelte';
   import BreakpointPanel from './components/BreakpointPanel.svelte';
   import { getApiKey } from './lib/warera.js';
   import { apiKeyState } from './lib/eco.svelte.js';
@@ -20,7 +21,7 @@
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
   import { route, navigate } from './lib/route.svelte.js';
-  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout, mdiWeatherNight, mdiWeatherSunny, mdiDice5 } from '@mdi/js';
+  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout, mdiWeatherNight, mdiWeatherSunny, mdiDice5, mdiTicketConfirmation } from '@mdi/js';
   import { saved } from './lib/saved.svelte.js';
   import { restoreLastPlayer } from './lib/planner.svelte.js';
   import { trackCompanyProfit } from './lib/fightIncome.svelte.js';
@@ -46,6 +47,14 @@
   loadMarket().then((d) => { data = d; trackCompanyProfit(d.market); trackDebuff(d.market); }).catch((err) => (loadError = err.message));
   restoreLastPlayer();
 
+  // Managers (players the admin picked) get an Invites page for their own codes.
+  let manager = $state(null);
+  async function loadManager() {
+    const me = await fetch('/api/manager/me').then((r) => r.json()).catch(() => null);
+    manager = me?.manager ? me : null;
+  }
+  loadManager();
+
   const PAGES = [
     { path: '/', label: 'Overview & MinMax', icon: mdiShieldSword, hint: 'Your build: damage, cost, and how to improve it' },
     { path: '/contract', label: 'Optimizer', icon: mdiFileDocumentOutline, hint: 'The best skills and gear for a bounty contract and the gold you want to spend' },
@@ -54,7 +63,9 @@
     { path: '/unit', label: 'Unit', icon: mdiAccountGroup, hint: "Your military unit's damage right now, and its contracts" },
     { path: '/builds', label: 'Saved builds', icon: mdiBookmarkMultiple, hint: 'Your saved builds, and side-by-side comparison' },
   ];
-  const page = $derived(PAGES.some((p) => p.path === route.path) ? route.path : '/');
+  const INVITES = { path: '/invites', label: 'Invites', icon: mdiTicketConfirmation, hint: 'Invite players: create and revoke your codes' };
+  const pages = $derived(manager ? [...PAGES, INVITES] : PAGES);
+  const page = $derived(pages.some((p) => p.path === route.path) ? route.path : '/');
 
   function go(event, path) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
@@ -71,7 +82,7 @@
 <header>
   <h1>WarEra Build Planner</h1>
   <nav aria-label="Main">
-    {#each PAGES as p (p.path)}
+    {#each pages as p (p.path)}
       <a href={p.path} title={p.hint} aria-current={page === p.path ? 'page' : undefined} onclick={(e) => go(e, p.path)}>
         <Icon path={p.icon} size={18} /> {p.label}
         {#if p.path === '/builds' && saved.builds.length}<span class="count">{saved.builds.length}</span>{/if}
@@ -108,6 +119,8 @@
 {:else if page === '/unit'}
   <UnitPage {data} />
   <footer><DataStatus /></footer>
+{:else if page === '/invites'}
+  <InvitesPage {manager} onchange={loadManager} />
 {:else if page === '/builds'}
   <BuildsPage {data} />
   <footer><DataStatus /></footer>
