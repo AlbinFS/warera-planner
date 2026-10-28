@@ -6,7 +6,11 @@
  * - The price is the median of those trades: a plain mean is pulled down by
  *   the occasional dumped item.
  * - For single-stat items the prices are made non-decreasing in the stat, so
- *   a better roll is never priced below a worse one.
+ *   a better roll is never priced below a worse one. For weapons (attack and
+ *   crit) a roll is priced at least as high as any worse roll (no better in
+ *   either stat) with MIN_FLOOR_TRADES trades: a better roll selling below
+ *   worse ones is one seller's few cheap listings, gone once bought (a sniper
+ *   103/20 sold at 42 while 102/20 sold at 48.2 and 104/20 at 49.3).
  *
  * Trades are stored compactly as [id, at (ms), price, roll], where roll is
  * "stat=value|stat=value" in stat-name order.
@@ -16,6 +20,8 @@ export const WINDOW_MS = 7 * DAY_MS;
 // 15 rather than 9: a burst of snipes on underpriced listings can make up most of the last 9 trades.
 export const MAX_SAMPLES = 15;
 export const MIN_SAMPLES = 5;
+// Trades a worse weapon roll needs before its price is a floor for better ones.
+export const MIN_FLOOR_TRADES = 3;
 export const HISTORY_MS = 60 * DAY_MS;
 // Battle loot: a day whose median is this many times above or below the usual
 // is taken as a manipulated market.
@@ -144,8 +150,23 @@ export function priceItem(code, dynamicStats, trades, now) {
   if (stats.length === 1) {
     entries.sort((a, b) => a.skills[stats[0]] - b.skills[stats[0]]);
     makeNonDecreasing(entries);
+  } else if (stats.length > 1) {
+    floorByWorseRolls(entries, stats);
   }
   return entries;
+}
+
+/** Each roll at least as dear as the dearest worse roll (no better in any stat) with enough trades. */
+function floorByWorseRolls(entries, stats) {
+  const own = entries.map((e) => e.averagePrice);
+  entries.forEach((e, i) => {
+    let floor = own[i];
+    entries.forEach((o, j) => {
+      if (j === i || o.transactionCount < MIN_FLOOR_TRADES || own[j] <= floor) return;
+      if (stats.every((s) => (o.skills[s] ?? 0) <= (e.skills[s] ?? 0))) floor = own[j];
+    });
+    if (floor > own[i]) { e.averagePrice = floor; e.medianPrice = floor; }
+  });
 }
 
 /**
