@@ -43,8 +43,8 @@ export function pack(planner, settings) {
     gear,
     planner.food,
     [settings.pill ? 1 : 0, Number(settings.battleBonus) || 0, settings.windowHours],
-    // The build worn in the pill's debuff: [gear, food, used], or 0.
-    planner.debuff ? [packGear(planner.debuff.gear), planner.debuff.food, settings.splitDebuff ? 1 : 0] : 0,
+    // The build worn in the pill's debuff: [gear, food, used, hits (−1: all)], or 0.
+    planner.debuff ? [packGear(planner.debuff.gear), planner.debuff.food, settings.splitDebuff ? 1 : 0, planner.debuff.hits ?? -1] : 0,
   ];
 }
 
@@ -62,7 +62,7 @@ export function unpack(packed) {
       skills: Object.fromEntries(ALL_SKILLS.map((s, i) => [s, skills[i] ?? 0])),
       gear: unpackGear(gear),
       food,
-      debuff: Array.isArray(debuff) ? { gear: unpackGear(debuff[0]), food: debuff[1] } : null,
+      debuff: Array.isArray(debuff) ? { gear: unpackGear(debuff[0]), food: debuff[1], hits: debuff[3] == null || debuff[3] < 0 ? null : debuff[3] } : null,
       settings: { pill: !!pill, battleBonus: bonus, windowHours, splitDebuff: Array.isArray(debuff) && !!debuff[2] },
     };
   } catch {

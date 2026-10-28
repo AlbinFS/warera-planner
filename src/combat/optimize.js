@@ -850,7 +850,7 @@ function phaseFrontiers(prep, levels, player, opts, prepDebuff) {
 }
 
 /** The pill build with the debuff build added: totals of both, the debuff's own build kept. */
-function joined(a, b, terms = {}) {
+export function joined(a, b, terms = {}) {
   const damage = a.damage + (b?.damage ?? 0);
   const cost = a.cost + (b?.cost ?? 0);
   const income = ((terms.bounty ?? 0) + (terms.perK ?? 0)) * damage / 1000 + (terms.flat ?? 0);

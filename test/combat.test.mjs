@@ -225,6 +225,19 @@ test('a layout no build keeps within the limit is told how far off it is', () =>
   assert.equal(strongest(prep, layout, player, opts, { bounty: 0.1 }, -best - 0.01), null);
 });
 
+test('the simulator stops the debuff build at its planned hits', async () => {
+  const { simulate } = await import('../src/combat/simulate.js');
+  const market = smallMarket();
+  const g = { weapon: { code: 'rifle', skills: { attack: 80, criticalChance: 12 } }, ammo: 'lightAmmo', helmet: null, chest: null, pants: null, boots: null, gloves: null };
+  const build = { levels: layout, prestige: {}, militaryRankPercent: 20, gear: g, food: null, debuff: { gear: g, food: null, hits: 25 } };
+  const capped = simulate(market, build, { pill: true, hours: 16 }, { runs: 50 });
+  const all = simulate(market, { ...build, debuff: { ...build.debuff, hits: null } }, { pill: true, hours: 16 }, { runs: 50 });
+  // At most the 25 planned (a run can run out of health first).
+  assert.ok(capped.byPhase[1].swings <= 25 && capped.byPhase[1].swings > 24);
+  assert.ok(all.byPhase[1].swings > 25);
+  assert.equal(capped.byPhase[0].swings, all.byPhase[0].swings);
+});
+
 test('a share link keeps the debuff build, and old links still read', async () => {
   globalThis.location ??= { origin: 'http://x' };
   const { pack, unpack } = await import('../src/lib/share.js');
@@ -236,6 +249,8 @@ test('a share link keeps the debuff build, and old links still read', async () =
   assert.equal(back.debuff.gear.weapon.code, 'knife');
   assert.equal(back.debuff.food, 'steak');
   assert.equal(back.settings.splitDebuff, true);
+  assert.equal(back.debuff.hits, null);
+  assert.equal(unpack(JSON.parse(JSON.stringify(pack({ ...planner, debuff: { ...planner.debuff, hits: 120 } }, settings)))).debuff.hits, 120);
   // A link from before the debuff build: no ninth element.
   const old = pack({ ...planner, debuff: null }, settings).slice(0, 8);
   assert.equal(unpack(old).debuff, null);

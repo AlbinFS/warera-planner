@@ -98,9 +98,15 @@ export function applyBuild(equipment, foodCode, debuff = null) {
   if (debuff) setDebuff(debuff);
 }
 
-/** Puts an optimizer build (equipment + food) in as the debuff build. */
+/**
+ * Puts an optimizer build (equipment + food) in as the debuff build, with the
+ * hits to stop at (null: every hit the bars allow). { none: true }: no
+ * fighting in the debuff (the pill gear kept, 0 hits).
+ */
 export function setDebuff(debuff) {
-  planner.debuff = { gear: gearFrom(debuff.equipment), food: debuff.food ?? 'none' };
+  planner.debuff = debuff.none
+    ? { gear: structuredClone($state.snapshot(planner.gear)), food: 'none', hits: 0 }
+    : { gear: gearFrom(debuff.equipment), food: debuff.food ?? 'none', hits: debuff.hits ?? null };
 }
 
 /**

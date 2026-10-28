@@ -5,8 +5,9 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
-  import { splitActive, suggestDebuff } from '../lib/compute.js';
-  import { setDebuff } from '../lib/planner.svelte.js';
+  import { splitActive, suggestDebuff, payingHits } from '../lib/compute.js';
+  import { setDebuff, playerStatus } from '../lib/planner.svelte.js';
+  import { incomeTerms } from '../lib/fightIncome.svelte.js';
   import { GEAR_SLOTS, SLOT_NAMES, itemLabel } from '../lib/market.js';
   import { STATS, RARITY_COLORS, statText, itemImage, rarityOf } from '../lib/visual.js';
   import { mdiClose } from '@mdi/js';
@@ -35,13 +36,14 @@
   const debuffHours = $derived(settings.pill && settings.windowHours > 8);
   let suggesting = $state(false);
   let suggestNote = $state('');
-  /** Fills the debuff build with the cheapest gear doing the pill gear's damage in the debuff. */
+  /** Fills the debuff build with the one that pays for itself: the most damage there without losing gold. */
   async function suggest() {
     suggesting = true;
     try {
-      const s = await suggestDebuff(data.market, planner, settings);
-      if (s) { setDebuff(s); suggestNote = `Same damage in the debuff as your pill gear, ${s.saving.toFixed(1)} G cheaper.`; }
-      else { planner.debuff = { gear: structuredClone($state.snapshot(planner.gear)), food: planner.food }; suggestNote = 'Your pill gear is already the cheapest for its damage in the debuff.'; }
+      const s = await suggestDebuff(data.market, planner, settings, incomeTerms(data.market));
+      setDebuff(s);
+      suggestNote = s.none ? "At −60 % no hit pays for itself at these prices: don't fight after the pill."
+        : `The most damage that still pays for itself in the debuff: about ${s.hits} hits, then stop (more lose gold).`;
     } finally {
       suggesting = false;
     }
@@ -57,7 +59,13 @@
     suggestNote = '';
   }
   // Turning the switch on with no debuff build yet fills in the suggested one.
-  $effect(() => { if (split && !planner.debuff && !suggesting) suggest(); });
+  // Only once the player (their skills) has loaded: a suggestion for default skills is wrong.
+  $effect(() => { if (split && !planner.debuff && !suggesting && planner.player && !playerStatus.loading) suggest(); });
+  // A debuff build saved before it had a hit count: keep its gear, stop where its hits stop paying.
+  $effect(() => {
+    if (!planner.debuff || planner.debuff.hits !== undefined || !planner.player || playerStatus.loading) return;
+    payingHits(data.market, planner, settings, incomeTerms(data.market)).then((n) => { if (planner.debuff && planner.debuff.hits === undefined) planner.debuff.hits = n; });
+  });
   const items = $derived(data.market.gameConfigItems);
 
   let open = $state(null); // slot being edited
@@ -105,12 +113,15 @@
       {#if split}
         <button type="button" aria-pressed={editing === 'pill' || !planner.debuff} onclick={() => { editing = 'pill'; open = null; }}>Pill build <small>hours 1–8, +60%</small></button>
         <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>hours 9–{settings.windowHours}, −60%</small></button>
-        <button type="button" class="link" onclick={suggest} disabled={suggesting}>{suggesting ? 'Finding…' : 'Suggest the cheapest'}</button>
+        <button type="button" class="link" onclick={suggest} disabled={suggesting}>{suggesting ? 'Finding…' : 'Suggest one that pays'}</button>
         {#if planner.debuff}<button type="button" class="link" onclick={sameAsPill}>Use the pill build for both</button>{/if}
       {/if}
     </div>
     {#if !split}<p class="hint muted">The {settings.windowHours - 8} hours after the pill are fought in this gear. Turn on a separate debuff build to fight them in cheaper gear.</p>
     {:else if editing === 'debuff' && planner.debuff}<p class="hint muted">Editing the debuff build (worn after the pill). {suggestNote}</p>
+      <label class="hits">Hits in the debuff <input type="number" min="0" step="10" value={planner.debuff.hits ?? ''} placeholder="all"
+        oninput={(e) => { const v = e.currentTarget.value; planner.debuff.hits = v === '' ? null : Math.max(0, Math.floor(Number(v) || 0)); }} />
+        <small class="muted">then stop. Empty: as many as health and food allow.</small></label>
     {:else if suggestNote}<p class="hint muted">{suggestNote} See it under Debuff build.</p>{/if}
   {/if}
   <div class="tiles">
@@ -182,6 +193,8 @@
   .builds .switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin-right: 6px; }
   .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
   .hint { font-size: 12px; margin: 10px 0 0; }
+  .hits { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; margin: 6px 0 0; }
+  .hits input { width: 80px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px 8px; color: var(--text); }
   .editor { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
   .editor-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
   .close { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px; }

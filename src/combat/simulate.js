@@ -26,7 +26,7 @@ function random(seed) {
 }
 
 /**
- * build: { levels, prestige, militaryRankPercent, gear (engine rolls), food, debuff? }
+ * build: { levels, prestige, militaryRankPercent, gear (engine rolls), food, debuff?: { gear, food, hits? } }
  * session: { pill, hours }
  * terms: { bounty, perK, flat, economy, lootAt? (damage → G) } · runs: how many fights.
  */
@@ -54,7 +54,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
   const phases = split
     ? [
       ...phasesFor(config, stats, build.food, { pill: true, hours: session.hours, phase: 'pill' }).map((p) => ({ ...p, kit: main })),
-      ...phasesFor(config, stats, build.debuff.food, { pill: true, hours: session.hours, phase: 'debuff' }).map((p) => ({ ...p, kit: kit(build.debuff.gear, build.debuff.food) })),
+      ...phasesFor(config, stats, build.debuff.food, { pill: true, hours: session.hours, phase: 'debuff' }).map((p) => ({ ...p, kit: kit(build.debuff.gear, build.debuff.food), capped: true })),
     ]
     : phasesFor(config, stats, build.food, { pill: session.pill, hours: session.hours }).map((p) => ({ ...p, kit: main }));
   const { armor, dodge } = main;
@@ -70,6 +70,8 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
   let lootTotal = 0;
   for (let r = 0; r < runs; r++) {
     let damage = 0, swings = 0, food = 0, case1 = 0, case2 = 0, cost = pill;
+    // The debuff build stops after its planned hits (build.debuff.hits; none: as many as the bars allow).
+    let debuffLeft = split && build.debuff.hits != null ? build.debuff.hits : Infinity;
     for (const p of phases) {
       const k = p.kit;
       let health = p.health;
@@ -78,11 +80,13 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
       let pSwings = 0, pTaken = 0, pFood = 0;
       const damageBefore = damage;
       for (;;) {
+        if (p.capped && debuffLeft <= 0) break;
         if (health < k.hitCost) {
           if (foodLeft > 0 && p.heal > 0) { foodLeft--; pFood++; health += p.heal; continue; }
           break;
         }
         pSwings++;
+        if (p.capped) debuffLeft--;
         let d;
         if (rnd() >= k.hit) { d = base * 0.5; misses++; } else if (rnd() < k.crit) { d = base * k.critMult; crits++; } else { d = base; landed++; }
         if (d < minHit) minHit = d;

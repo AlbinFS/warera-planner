@@ -8,7 +8,9 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
-  import { lockedGear } from '../lib/compute.js';
+  import { lockedGear, suggestDebuff, payingHits } from '../lib/compute.js';
+  import { setDebuff, playerStatus } from '../lib/planner.svelte.js';
+  import { statText } from '../lib/visual.js';
   import { simulate, quantile, histogram } from '../combat/simulate.js';
   import { fmt, fmtDamage } from '../lib/format.js';
   import { itemLabel } from '../lib/market.js';
@@ -30,6 +32,23 @@
     { id: '24', label: '24 hours', hint: 'A full day: the pill’s 8 hours, its −60% debuff for 15.5 more, then half an hour at full strength, on regen.' },
   ];
   const withDebuffBuild = $derived(session !== '8' && settings.pill && settings.splitDebuff && !!planner.debuff);
+  // "Debuff build" on but none set yet: suggest one (the one that pays for itself) before a run uses the pill gear.
+  let suggesting = $state(false);
+  $effect(() => {
+    // Only once the player (their skills) has loaded: a suggestion for default skills is wrong.
+    if (!settings.pill || !settings.splitDebuff || planner.debuff || suggesting || !planner.player || playerStatus.loading) return;
+    suggesting = true;
+    suggestDebuff(data.market, planner, settings, incomeTerms(data.market)).then((s) => { if (s) setDebuff(s); }).finally(() => (suggesting = false));
+  });
+  // A debuff build saved before it had a hit count: keep its gear, stop where its hits stop paying.
+  $effect(() => {
+    if (!planner.debuff || planner.debuff.hits !== undefined || !planner.player || playerStatus.loading) return;
+    payingHits(data.market, planner, settings, incomeTerms(data.market)).then((n) => { if (planner.debuff && planner.debuff.hits === undefined) planner.debuff.hits = n; });
+  });
+  const debuffItems = $derived(planner.debuff && planner.debuff.hits !== 0
+    ? [...['weapon', 'ammo', 'helmet', 'chest', 'pants', 'boots', 'gloves'].map((slot) => planner.debuff.gear[slot]).filter(Boolean).map((g) => (typeof g === 'string' ? itemLabel(g) : `${itemLabel(g.code)} ${Object.entries(g.skills ?? {}).map(([k, v]) => statText(k, v)).join('/')}`)),
+      planner.debuff.food && planner.debuff.food !== 'none' ? itemLabel(planner.debuff.food) : 'no food']
+    : []);
   const terms = $derived(incomeTerms(data.market));
 
   let result = $state.raw(null);
@@ -46,7 +65,7 @@
           gear: lockedGear(data.market, planner.gear), food: planner.food && planner.food !== 'none' ? planner.food : null,
           // The debuff build, when the settings use one and it has been set.
           debuff: settings.splitDebuff && planner.debuff
-            ? { gear: lockedGear(data.market, planner.debuff.gear), food: planner.debuff.food && planner.debuff.food !== 'none' ? planner.debuff.food : null }
+            ? { gear: lockedGear(data.market, planner.debuff.gear), food: planner.debuff.food && planner.debuff.food !== 'none' ? planner.debuff.food : null, hits: planner.debuff.hits ?? null }
             : null,
         };
         result = simulate(data.market, build, { pill: settings.pill, hours: Number(session) }, { battleBonusPercent: Number(settings.battleBonus) || 0, terms, runs: RUNS, seed: Date.now() % 1e9 });
@@ -82,8 +101,19 @@
     </div>
     <p class="muted small">
       {SESSIONS.find((s) => s.id === session)?.hint}
-      {#if session !== '8' && settings.pill}{withDebuffBuild ? ' The debuff hours are fought in your debuff build.' : ' The debuff hours are fought in the same gear: turn on "Debuff build" in the settings bar for a cheaper set.'}{/if}
+      {#if session !== '8' && settings.pill}{withDebuffBuild ? ' The debuff hours are fought in your debuff build (below).' : settings.splitDebuff ? ' Finding a debuff build…' : ' The debuff hours are fought in the same gear: turn on "Debuff build" in the settings bar for a cheaper set.'}{/if}
     </p>
+    {#if withDebuffBuild}
+      <p class="debuff-box small">
+        <span class="tag debuff">Debuff build</span>
+        {#if planner.debuff.hits === 0}
+          Don't fight after the pill: at −60 % no hit pays for itself at these prices.
+        {:else}
+          {debuffItems.join(' · ')}{#if planner.debuff.hits != null} · <strong>stop after {planner.debuff.hits} hits</strong> (more lose gold){/if}
+        {/if}
+        <button type="button" class="link" onclick={() => navigate('/')}>Change it</button>
+      </p>
+    {/if}
     <p class="muted small">
       {fmt(RUNS, 0)} fights. Income from Hits and costs on Overview & MinMax: bounty <strong>{fmt(terms.bounty, 3)}</strong> G per 1k,
       battle loot <strong>{fightIncome.lootMode === 'auto' ? (battleLoot.data ? `from ${fmt(battleLoot.data.battles, 0)} real battles, for each fight's damage` : 'from real battles (still being collected)') : fightIncome.lootMode === 'items' ? `${fmt(terms.flat, 1)} G a fight` : `${fmt(terms.perK, 3)} G per 1k`}</strong>,
@@ -193,6 +223,8 @@
   .phases { display: grid; gap: 4px; margin: 0 0 12px; font-size: 14px; }
   .phases .tag { display: inline-block; min-width: 100px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); }
   .phases .tag.debuff { border-color: var(--info); color: var(--info); }
+  .debuff-box { margin: 6px 0; line-height: 1.6; }
+  .debuff-box .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--info); color: var(--info); margin-right: 6px; }
   .link { background: none; border: 0; color: var(--info); cursor: pointer; padding: 0 2px; font: inherit; }
   .big { display: flex; flex-wrap: wrap; gap: 12px 36px; margin: 0 0 12px; }
   .big div { display: grid; }
