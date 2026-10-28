@@ -115,9 +115,11 @@ export async function suggestDebuff(market, planner, settings, terms = {}) {
   return { equipment: toEquipment(market, b.gear), food: b.food ?? 'none', hits: Math.floor(b.swings), damage: b.damage, net: b.net };
 }
 
-/** Hits the planned debuff build can make in the debuff while they still pay for themselves (0: none do). */
-export async function payingHits(market, planner, settings, terms = {}) {
-  const debuff = planner.debuff;
+/**
+ * Hits a build can make in the debuff while they still pay for themselves (0:
+ * none do): the planned debuff build, or `debuff` ({ gear, food }).
+ */
+export async function payingHits(market, planner, settings, terms = {}, debuff = planner.debuff) {
   if (!debuff || !canFight(debuff.gear)) return 0;
   const prep = prepFor(market, { locked: lockedGear(market, debuff.gear), lockedFood: plannedFood(debuff) });
   const b = strongest(prep, planner.skills, playerOf(planner), { ...fightOptions(settings), splitDebuff: false, phase: 'debuff' }, { bounty: terms.bounty ?? 0, perK: terms.perK ?? 0 }, 0);

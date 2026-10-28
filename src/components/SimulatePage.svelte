@@ -40,6 +40,13 @@
     suggesting = true;
     suggestDebuff(data.market, planner, settings, incomeTerms(data.market)).then((s) => { if (s) setDebuff(s); }).finally(() => (suggesting = false));
   });
+  // Without a debuff build: how many hits in the pill gear still pay for themselves after the pill.
+  let sameGearHits = $state(null);
+  $effect(() => {
+    if (settings.splitDebuff || !settings.pill || !planner.player || playerStatus.loading) { sameGearHits = null; return; }
+    const gear = planner.gear, food = planner.food;
+    payingHits(data.market, planner, settings, incomeTerms(data.market), { gear, food }).then((n) => (sameGearHits = n));
+  });
   // A debuff build saved before it had a hit count: keep its gear, stop where its hits stop paying.
   $effect(() => {
     if (!planner.debuff || planner.debuff.hits !== undefined || !planner.player || playerStatus.loading) return;
@@ -63,10 +70,13 @@
         const build = {
           levels: planner.skills, prestige: planner.player?.prestige ?? {}, militaryRankPercent: planner.player?.militaryRankPercent ?? 0,
           gear: lockedGear(data.market, planner.gear), food: planner.food && planner.food !== 'none' ? planner.food : null,
-          // The debuff build, when the settings use one and it has been set.
+          // The debuff build, when the settings use one and it has been set; else the pill gear again,
+          // stopped where its hits stop paying for themselves.
           debuff: settings.splitDebuff && planner.debuff
             ? { gear: lockedGear(data.market, planner.debuff.gear), food: planner.debuff.food && planner.debuff.food !== 'none' ? planner.debuff.food : null, hits: planner.debuff.hits ?? null }
-            : null,
+            : sameGearHits != null && session !== '8' && settings.pill
+              ? { gear: lockedGear(data.market, planner.gear), food: planner.food && planner.food !== 'none' ? planner.food : null, hits: sameGearHits, same: true }
+              : null,
         };
         result = simulate(data.market, build, { pill: settings.pill, hours: Number(session) }, { battleBonusPercent: Number(settings.battleBonus) || 0, terms, runs: RUNS, seed: Date.now() % 1e9 });
       } catch (err) {
@@ -101,8 +111,18 @@
     </div>
     <p class="muted small">
       {SESSIONS.find((s) => s.id === session)?.hint}
-      {#if session !== '8' && settings.pill}{withDebuffBuild ? ' The debuff hours are fought in your debuff build (below).' : settings.splitDebuff ? ' Finding a debuff build…' : ' The debuff hours are fought in the same gear: turn on "Debuff build" in the settings bar for a cheaper set.'}{/if}
+      {#if session !== '8' && settings.pill}{withDebuffBuild ? ' The debuff hours are fought in your debuff build (below).' : settings.splitDebuff ? ' Finding a debuff build…' : ''}{/if}
     </p>
+    {#if session !== '8' && settings.pill && !settings.splitDebuff}
+      <p class="debuff-box small">
+        <span class="tag debuff">After the pill</span>
+        {#if sameGearHits === 0}Not fighting: at −60 % no hit in your pill gear pays for itself.
+        {:else if sameGearHits != null}In your pill gear, <strong>stopping after {sameGearHits} hits</strong> (more lose gold).
+        {:else}Working out where your pill gear stops paying…{/if}
+        A cheaper debuff build usually does more there.
+        <button type="button" class="link" onclick={() => { settings.splitDebuff = true; result = null; }}>Use a debuff build</button>
+      </p>
+    {/if}
     {#if withDebuffBuild}
       <p class="debuff-box small">
         <span class="tag debuff">Debuff build</span>
