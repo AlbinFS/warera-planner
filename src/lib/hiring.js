@@ -376,6 +376,9 @@ function teamPoints(team, place) {
   return team.map((e) => pointsOf(e, effects(e, team.filter((c) => c !== e), place)));
 }
 
+/** Production points a day of a whole team at a place (switching.js: the same team making another good). */
+export const teamPointsAt = (team, place) => teamPoints(team, place).reduce((s, x) => s + x, 0);
+
 /** Toolboxes a day the whole team finds. */
 function teamToolboxes(team, place) {
   return team.reduce((t, e) => t + toolboxesPerDay((e.luckBase ?? AVERAGE_STAT) + effects(e, team.filter((c) => c !== e), place).luck, e.traits), 0);

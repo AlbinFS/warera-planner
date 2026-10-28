@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { companyModel } from '../src/lib/hiring.js';
+import { switchValue, SWITCH_DAYS } from '../src/lib/switching.js';
+
+const place = { good: 'paper', raw: false, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
+// Production 4, Management 6 %, specialized 20 % in paper, a 10 % flask.
+const emp = (name, extra = {}) => ({
+  name, nationality: 'se', gender: 'male', traits: [], production: 4, bonusPercent: 36, payroll: 2.4, wageExpectation: 1,
+  happiness: { value: 50 }, stats: { responsibility: { total: 2 } }, hasTool: true, tool: { id: name, code: 'flask3', percent: 10 },
+  bonus: [{ source: 'management', percent: 6 }, { source: 'specialization', percent: 20 }, { source: 'tool', percent: 10 }],
+  specializations: { paper: 20 }, ...extra,
+});
+
+test('switching good: specialization starts over, old tools stop, a spare tool of the new kind is used, the cost comes off', () => {
+  const team = [emp('A'), emp('B')];
+  const model = companyModel(team, place, { perPoint: 0.1, fairWage: 0.6 });
+  const perPoint = { paper: 0.1, cookedFish: 0.1 };
+  const r = switchValue(model, { employees: team, good: 'cookedFish', perPoint, spare: [{ id: 's', code: 'skillet4', percent: 22 }], cost: 5 });
+  // Day 1: A loses 20 % specialization and the flask, gains the 22 % pan; B loses both. 24 points a day each at 100 %.
+  assert.ok(Math.abs(r.first - 0.1 * 24 * ((-20 - 10 + 22) + (-20 - 10)) / 100) < 1e-9, String(r.first));
+  // At full specialization: only the tools differ (A +12, B −10).
+  assert.ok(Math.abs(r.full - 0.1 * 24 * (12 - 10) / 100) < 1e-9, String(r.full));
+  assert.equal(r.tools.length, 1);
+  assert.equal(r.tools[0].percent, 22);
+  assert.ok(r.total < 0);
+  assert.equal(SWITCH_DAYS, 30);
+});
+
+test('a better-paying good pays for the switch, and says when', () => {
+  const team = [emp('A', { tool: null, hasTool: false, bonus: [{ source: 'management', percent: 6 }], bonusPercent: 6, specializations: {} })];
+  const model = companyModel(team, place, { perPoint: 0.1, fairWage: 0.6 });
+  const r = switchValue(model, { employees: team, good: 'cookedFish', perPoint: { paper: 0.1, cookedFish: 0.2 }, spare: [{ id: 's', code: 'skillet4', percent: 22 }], cost: 10 });
+  assert.ok(r.first > 0);
+  assert.ok(r.payback >= 1 && r.payback <= SWITCH_DAYS);
+  assert.ok(r.total > 0);
+});
