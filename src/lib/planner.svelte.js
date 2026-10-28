@@ -24,7 +24,7 @@ $effect.root(() => {
 });
 
 /** Gear from the API's current-equipment shape. */
-function gearFrom(equipment) {
+export function gearFrom(equipment) {
   const gear = emptyGear();
   for (const slot of SLOTS) {
     const item = equipment?.[slot];
