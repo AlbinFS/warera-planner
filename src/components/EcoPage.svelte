@@ -5,7 +5,7 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies } from '../lib/eco.svelte.js';
-  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, goodsProfit, ecoValue } from '../lib/eco.js';
+  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import EcoSkills from './EcoSkills.svelte';
   import EcoProduction from './EcoProduction.svelte';
@@ -35,8 +35,10 @@
   });
 
   // The point value: the game's own number unless a newer one is typed in.
-  const estimate = GAME_POINT_VALUE;
-  const estimateNote = GAME_POINT_VALUE_NOTE;
+  // The point value: what your employees' wages say the game uses now, else its value on Oct 27.
+  const fromWages = $derived(pointValueFromWages(Object.values(ecoEmployees).flat()));
+  const estimate = $derived(fromWages ?? GAME_POINT_VALUE);
+  const estimateNote = $derived(fromWages ? "the game's current value, read from your employees' wages" : GAME_POINT_VALUE_NOTE);
   const pointValue = $derived(ecoSettings.pointValue > 0 ? ecoSettings.pointValue : estimate);
   const goods = $derived(goodsProfit(items, data.market.itemPrices));
   const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0));

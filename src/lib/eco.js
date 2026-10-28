@@ -31,11 +31,26 @@ export const ecoMaxLevel = (skills, skill, playerLevel) => Math.max(0, ...Object
 
 /**
  * Value of 1 production point, as the game shows it in an employee's
- * "Estimated profit" tooltip (2026-10-27). The game averages raw-material
- * trades over 7 days, so it drifts; a newer number can be typed in.
+ * "Estimated profit" tooltip (2026-10-27): the fallback when no wages say
+ * otherwise. The game averages raw-material trades over 7 days, so it drifts.
  */
 export const GAME_POINT_VALUE = 0.1012;
 export const GAME_POINT_VALUE_NOTE = "the game's value on Oct 27";
+
+/** Greedy employees expect 20% more pay, Modest ones 15% less. */
+export const wageMarkup = (traits = []) => (traits.includes('greedy') ? 1.2 : 1) * (traits.includes('modest') ? 0.85 : 1);
+
+/**
+ * The game's current point value, read from employees' wages: a wage is
+ * (base + trained Production) ÷ 4 points an hour × the point value × the
+ * wage expectation (× Greedy / Modest), so wage a day ÷ (Production ×
+ * expectation × markup) ÷ 6. The median over the employees; null without any.
+ */
+export function pointValueFromWages(employees) {
+  const per = employees.filter((e) => e.wageExpectation > 0 && e.ownProduction > 0 && e.payroll > 0)
+    .map((e) => e.payroll / (e.wageExpectation * e.ownProduction * wageMarkup(e.traits ?? [])) / 6).sort((a, b) => a - b);
+  return per.length ? per[per.length >> 1] : null;
+}
 
 /** Profit per production point for every good: (price − inputs) ÷ PP. */
 export function goodsProfit(items, prices) {

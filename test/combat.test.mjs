@@ -154,3 +154,19 @@ test('a second build for the debuff never does worse than one build all day, and
   const target = cheapest(prep, layout, player, two, b.damage * 0.8);
   assert.ok(target.reachedTarget && target.damage >= b.damage * 0.8 - 1);
 });
+
+test('a share link keeps the debuff build, and old links still read', async () => {
+  globalThis.location ??= { origin: 'http://x' };
+  const { pack, unpack } = await import('../src/lib/share.js');
+  const gear = { weapon: { code: 'rifle', skills: { attack: 80, criticalChance: 12 } }, ammo: 'lightAmmo', helmet: null, chest: null, pants: null, boots: null, gloves: null };
+  const debuffGear = { ...gear, weapon: { code: 'knife', skills: { attack: 40, criticalChance: 4 } }, ammo: null };
+  const planner = { player: { level: 30, militaryRankPercent: 10, prestige: {} }, skills: { attack: 5 }, gear, food: 'cookedFish', debuff: { gear: debuffGear, food: 'steak' } };
+  const settings = { pill: true, battleBonus: 70, windowHours: 16, splitDebuff: true };
+  const back = unpack(JSON.parse(JSON.stringify(pack(planner, settings))));
+  assert.equal(back.debuff.gear.weapon.code, 'knife');
+  assert.equal(back.debuff.food, 'steak');
+  assert.equal(back.settings.splitDebuff, true);
+  // A link from before the debuff build: no ninth element.
+  const old = pack({ ...planner, debuff: null }, settings).slice(0, 8);
+  assert.equal(unpack(old).debuff, null);
+});

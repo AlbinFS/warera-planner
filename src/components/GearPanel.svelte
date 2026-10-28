@@ -11,6 +11,7 @@
   import { STATS, RARITY_COLORS, statText, itemImage, rarityOf } from '../lib/visual.js';
   import { mdiClose } from '@mdi/js';
   import ItemTile from './ItemTile.svelte';
+  import GearStrip from './GearStrip.svelte';
   import Icon from './Icon.svelte';
 
   let { data, current = null } = $props();
@@ -102,8 +103,8 @@
     <div class="builds" role="group" aria-label="Which build">
       <label class="switch"><input type="checkbox" role="switch" bind:checked={settings.splitDebuff} /> Separate debuff build</label>
       {#if split}
-        <button type="button" aria-pressed={editing === 'pill' || !planner.debuff} onclick={() => { editing = 'pill'; open = null; }}>Pill build <small>first 8 h</small></button>
-        <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>after the pill</small></button>
+        <button type="button" aria-pressed={editing === 'pill' || !planner.debuff} onclick={() => { editing = 'pill'; open = null; }}>Pill build <small>hours 1–8, +60%</small></button>
+        <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>hours 9–{settings.windowHours}, −60%</small></button>
         <button type="button" class="link" onclick={suggest} disabled={suggesting}>{suggesting ? 'Finding…' : 'Suggest the cheapest'}</button>
         {#if planner.debuff}<button type="button" class="link" onclick={sameAsPill}>Use the pill build for both</button>{/if}
       {/if}
@@ -123,6 +124,14 @@
     {/each}
   </div>
   <p class="hint muted">Click a piece to change it. Prices are what each roll sells for on the market.</p>
+  {#if split && planner.debuff}
+    {@const other = editing === 'debuff' ? planner : planner.debuff}
+    <div class="other">
+      <span>{editing === 'debuff' ? 'Pill build, hours 1–8' : `Debuff build, hours 9–${settings.windowHours}`}</span>
+      <GearStrip equipment={other.gear} food={other.food} {items} />
+      <button type="button" class="link" onclick={() => (editing === 'debuff' ? (editing = 'pill') : editDebuff())}>Edit</button>
+    </div>
+  {/if}
 
   {#if open}
     <div class="editor" role="group" aria-label="Change {LABELS[open]}">
@@ -168,6 +177,8 @@
   .builds button[aria-pressed='true'] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
   .builds button small { color: var(--muted); margin-left: 4px; }
   .builds .link { background: none; border: 0; color: var(--info); padding: 4px; }
+  .other { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: var(--radius-sm); font-size: 13px; color: var(--muted); }
+  .other .link { background: none; border: 0; color: var(--info); cursor: pointer; font: inherit; }
   .builds .switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin-right: 6px; }
   .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
   .hint { font-size: 12px; margin: 10px 0 0; }

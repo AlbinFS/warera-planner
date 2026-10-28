@@ -47,5 +47,5 @@ export function deleteBuild(id) {
   persist();
 }
 
-/** A saved build as { player, skills, gear, food, settings }. */
+/** A saved build as { player, skills, gear, food, debuff, settings }. */
 export const stateOf = (build) => unpack(build.packed);

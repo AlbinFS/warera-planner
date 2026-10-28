@@ -11,7 +11,7 @@
   import { fmt } from '../lib/format.js';
   import { itemImage } from '../lib/visual.js';
   import Icon from './Icon.svelte';
-  import { mdiAlertCircle, mdiAlert, mdiMapMarkerRadius, mdiCheckCircle, mdiAccountTie } from '@mdi/js';
+  import { mdiAlertCircle, mdiAlert, mdiMapMarkerRadius, mdiCheckCircle, mdiAccountTie, mdiHammerWrench, mdiAccountClock } from '@mdi/js';
 
   let { companies, perPoint, upgrades, items } = $props();
 
@@ -27,6 +27,10 @@
   const CORE_REGION_PERCENT = 5;
   // A manager worth hiring by at least this much a day is worth mentioning.
   const HIRE_WORTH = 0.25;
+  // Tools wear out after 500 worked hours: 0.2 condition an hour, 4.8 a day.
+  const TOOL_WEAR_PER_DAY = 100 / 500 * 24;
+  const SOON_DAYS = 2;
+  const dayText = (days) => (days < 1 ? 'within a day' : `in about ${fmt(days, 0)} day${days >= 1.5 ? 's' : ''}`);
   const FILL_WARNING_HOURS = 12;
 
   const alerts = $derived(companies.filter((c) => !c.disabled).flatMap((c) => {
@@ -53,6 +57,16 @@
         level: 'move', icon: mdiMapMarkerRadius,
         text: `${c.freeMoves === 1 ? 'A free move is' : `${c.freeMoves} free moves are`} available and the company is outside ${countries[home]?.name ?? 'your country'}'s core regions: moving into one gives every employee +${CORE_REGION_PERCENT}%${gain > 0 ? ` (about +${fmt(gain, 2)} G a day)` : ''}. A move costs the employees 10 happiness for 7 days.`,
       });
+    }
+    for (const { e, d } of staff) {
+      if (e.tool && e.tool.state != null) {
+        const days = e.tool.state / TOOL_WEAR_PER_DAY;
+        if (days < SOON_DAYS) out.push({ level: 'warn', icon: mdiHammerWrench, text: `${e.name}'s tool (+${e.tool.percent}%) wears out ${dayText(days)}: have a spare ready, or they lose ${fmt((d.points / (1 + (e.bonusPercent ?? 0) / 100)) * (e.tool.percent / 100) * pp, 2)} G a day.` });
+      }
+      if (e.retireAt) {
+        const days = (Date.parse(e.retireAt) - Date.now()) / 86400000;
+        if (days < SOON_DAYS) out.push({ level: 'warn', icon: mdiAccountClock, text: `${e.name} asks to retire ${days <= 0 ? 'now' : dayText(days)}. Keeping them costs 5 days of wage (${fmt(d.wage * 5, 2)} G); they make ${fmt(d.profit, 2)} G a day after their wage.` });
+      }
     }
     const advice = managerAdvice(c.manager, staff.map(({ e, d }) => ({ points: d.points, bonusPercent: e.bonusPercent })), pp, marketRate);
     if (c.manager?.unpaidHours > 0) {
@@ -82,7 +96,7 @@
       {/each}
     </ul>
   {:else if companies.length}
-    <p class="ok"><Icon path={mdiCheckCircle} size={18} /> Nothing needs doing: no storage is full or close to it, no company has a free move it should use, and every manager earns their pay.</p>
+    <p class="ok"><Icon path={mdiCheckCircle} size={18} /> Nothing needs doing: no storage is full or close to it, no company has a free move it should use, and every manager earns their pay, no tool is about to wear out and nobody is about to ask to retire.</p>
   {/if}
 </section>
 

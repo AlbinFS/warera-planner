@@ -193,7 +193,8 @@ export function placeOf(company, { regions = {}, countries = {}, items = {} } = 
 
 /** Fair wage per Production point per day, from what employees are paid (median). */
 export function fairWageOf(employees) {
-  const per = employees.filter((e) => e.wageExpectation > 0 && e.ownProduction > 0).map((e) => e.payroll / (e.wageExpectation * e.ownProduction)).sort((a, b) => a - b);
+  const markup = (traits = []) => (traits.includes('greedy') ? 1.2 : 1) * (traits.includes('modest') ? 0.85 : 1);
+  const per = employees.filter((e) => e.wageExpectation > 0 && e.ownProduction > 0).map((e) => e.payroll / (e.wageExpectation * e.ownProduction * markup(e.traits ?? []))).sort((a, b) => a - b);
   return per.length ? per[per.length >> 1] : 0.6;
 }
 

@@ -111,7 +111,9 @@ function fromGame(e) {
     tool: e.toolItem ? { id: e.toolItem._id, code: e.toolItem.code, percent: e.toolStatus?.bonusPercent ?? e.toolItem.skills?.production ?? 0, state: e.toolItem.state } : null,
     // Wage = fair wage × (base + trained Production) × this.
     wageExpectation: e.wageExpectation ?? null,
-    ownProduction: (e.base?.production ?? 0) + (e.trained?.production ?? 0),
+    // Base + trained Production (what the wage is set on). The API's own `base` now already includes
+    // the trained points (2026-10-28); its breakdown still has them apart.
+    ownProduction: e.breakdown?.production ? (e.breakdown.production.base ?? 0) + (e.breakdown.production.trained ?? 0) : (e.base?.production ?? 0),
     stats: { production: stat(e, 'production'), luck: stat(e, 'luck'), responsibility: stat(e, 'responsibility') },
     bonus: (e.productionBonus?.contributions ?? []).map((c) => ({ source: c.source, percent: c.percent })),
     happiness: {

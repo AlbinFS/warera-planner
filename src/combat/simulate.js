@@ -64,8 +64,9 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
   const rnd = random(seed);
   const out = { damage: new Float64Array(runs), net: new Float64Array(runs), swings: new Float64Array(runs) };
   let misses = 0, crits = 0, landed = 0, dodged = 0, totalSwings = 0, totalTaken = 0, totalFood = 0, totalCase1 = 0, totalCase2 = 0, minHit = Infinity, maxHit = 0;
-  // Costs summed over the run, by kind (each build has its own prices).
+  // Costs summed over the run, by kind (each build has its own prices); and per phase (the pill build, the debuff one).
   const spent = { weapon: 0, armor: 0, ammo: 0, food: 0 };
+  const perPhase = phases.map(() => ({ damage: 0, swings: 0, cost: 0 }));
   let lootTotal = 0;
   for (let r = 0; r < runs; r++) {
     let damage = 0, swings = 0, food = 0, case1 = 0, case2 = 0, cost = pill;
@@ -75,6 +76,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
       let foodLeft = p.foodMax;
       const base = k.swing.base * p.multiplier;
       let pSwings = 0, pTaken = 0, pFood = 0;
+      const damageBefore = damage;
       for (;;) {
         if (health < k.hitCost) {
           if (foodLeft > 0 && p.heal > 0) { foodLeft--; pFood++; health += p.heal; continue; }
@@ -91,7 +93,10 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
       }
       swings += pSwings; food += pFood; totalTaken += pTaken;
       spent.weapon += pSwings * k.wear.weapon; spent.ammo += pSwings * k.ammo; spent.armor += pTaken * k.wear.armor; spent.food += pFood * k.foodPrice;
-      cost += pSwings * (k.ammo + k.wear.weapon) + pTaken * k.wear.armor + pFood * k.foodPrice;
+      const pCost = pSwings * (k.ammo + k.wear.weapon) + pTaken * k.wear.armor + pFood * k.foodPrice;
+      cost += pCost;
+      const t = perPhase[phases.indexOf(p)];
+      t.damage += damage - damageBefore; t.swings += pSwings; t.cost += pCost;
     }
     cost -= case1 * price('case1') + case2 * price('case2');
     out.damage[r] = damage;
@@ -108,6 +113,8 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
     runs, damage: out.damage, net: out.net, swings: out.swings,
     rates: { miss: misses / all, crit: crits / all, hit: landed / all, dodged: dodged / all },
     hitRange: [minHit, maxHit], armor, dodge, phases,
+    // Averages per phase: [{ multiplier, damage, swings, cost }] (the pill's price in the first).
+    byPhase: perPhase.map((t, i) => ({ multiplier: phases[i].multiplier, damage: t.damage / runs, swings: t.swings / runs, cost: t.cost / runs + (i === 0 ? pill : 0), debuffBuild: split && i > 0 })),
     // Averages per fight, for the cost and income lists.
     avg: {
       damage: mean(out.damage), net: mean(out.net), swings: swingsMean, food: totalFood / runs,

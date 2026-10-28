@@ -113,6 +113,7 @@ export function applyState(state, label = 'Shared build') {
   planner.skills = state.skills;
   planner.gear = state.gear;
   planner.food = state.food;
+  planner.debuff = state.debuff ?? null;
   Object.assign(settings, state.settings);
 }
 

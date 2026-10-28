@@ -48,7 +48,7 @@
   let seq = 0;
   $effect(() => {
     const ids = [...picked];
-    JSON.stringify([settings, ids.includes(CURRENT) ? [planner.skills, planner.gear, planner.food] : null]);
+    JSON.stringify([settings, ids.includes(CURRENT) ? [planner.skills, planner.gear, planner.food, planner.debuff] : null]);
     if (ids.length < 2) { results = []; return; }
     const id = ++seq;
     comparing = true;

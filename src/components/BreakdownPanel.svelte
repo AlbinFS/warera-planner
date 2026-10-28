@@ -8,7 +8,7 @@
   import { settings } from '../lib/settings.svelte.js';
   import { costBreakdown } from '../lib/compute.js';
   import { fightIncome, companyProfit, incomeTerms, lootPrices, lootBasis, lootFor, battleLoot, RARITIES } from '../lib/fightIncome.svelte.js';
-  import { fmt, periodLabel } from '../lib/format.js';
+  import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import { itemImage, rarityOf, RARITY_COLORS, STATS, statText } from '../lib/visual.js';
   import { itemLabel, SLOT_NAMES } from '../lib/market.js';
 
@@ -61,13 +61,20 @@
     <p class="muted">{busy ? 'Working it out…' : 'Load or build a fighting setup to see this.'}</p>
   {:else}
     <dl class="facts" class:stale={busy}>
-      <div><dt>{breakdown.hitsArePillPhase ? 'Hits during the pill' : 'Hits'}</dt><dd class="num">{fmt(breakdown.hits, 0)}</dd>{#if breakdown.split}<small class="muted">{fmt(breakdown.split.pill, 0)} on the pill · {fmt(breakdown.split.debuff, 0)} in the debuff</small>{/if}</div>
+      <div><dt>{breakdown.hitsArePillPhase ? 'Hits during the pill' : 'Hits'}</dt><dd class="num">{fmt(breakdown.hits, 0)}</dd></div>
       <div><dt>Average damage per hit</dt><dd class="num">{fmt(breakdown.perAttack, 0)}</dd></div>
       <div><dt>Food eaten</dt><dd class="num">{fmt(breakdown.foodEaten, 1)}</dd></div>
       {#each breakdown.cases as c (c.code)}
         <div><dt>{itemLabel(c.code)} expected</dt><dd class="num">{fmt(c.count, 1)}</dd></div>
       {/each}
     </dl>
+    {#if breakdown.split}
+      {@const s = breakdown.split}
+      <div class="builds-split" aria-label="Damage by build">
+        <div><span class="tag">Pill build</span> hours 1–8 · <strong class="num">{fmtDamage(s.pillDamage)}</strong> in {fmt(s.pill, 0)} hits · {fmt(s.pillCost, 1)} G after case drops</div>
+        <div><span class="tag debuff">Debuff build</span> hours 9–{settings.windowHours} · <strong class="num">{fmtDamage(s.debuffDamage)}</strong> in {fmt(s.debuff, 0)} hits · {fmt(s.debuffCost, 1)} G after case drops</div>
+      </div>
+    {/if}
     {#if breakdown.hitsArePillPhase}<p class="muted small">On a full day, the hits after the pill wears off (in the gear you wear now) aren't counted here; their cost is.</p>{/if}
 
     <table class:stale={busy}>
@@ -151,6 +158,9 @@
   .credit td { color: var(--good); }
   .total td { font-weight: 700; border-bottom: 0; border-top: 2px solid var(--line); }
   .total.profit td { color: var(--good); }
+  .builds-split { display: grid; gap: 4px; margin: 4px 0 8px; font-size: 13px; }
+  .builds-split .tag { display: inline-block; min-width: 92px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); }
+  .builds-split .tag.debuff { border-color: var(--info); color: var(--info); }
   .income-in { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 12px; }
   .income-in label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
   .income-in .row { display: flex; gap: 6px; }

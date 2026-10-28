@@ -19,3 +19,12 @@ test('managers are paid out of company income, running or not', () => {
   assert.ok(Math.abs(without.total - withManager.total - 1.6) < 1e-9);
   assert.equal(withManager.managers, 1.6);
 });
+
+test('the point value read from wages: Greedy and Modest divided out', async () => {
+  const { pointValueFromWages } = await import('../src/lib/eco.js');
+  // Wage a day = Production ÷ 4 × 24 × value × expectation × markup, at a value of 0.0971.
+  const emp = (ownProduction, wageExpectation, traits = []) => ({ ownProduction, wageExpectation, traits, payroll: ownProduction * 6 * 0.0971 * wageExpectation * (traits.includes('greedy') ? 1.2 : 1) });
+  const v = pointValueFromWages([emp(5, 0.857), emp(3, 1.114, ['greedy']), emp(1, 0.844, ['greedy']), emp(4, 0.899)]);
+  assert.ok(Math.abs(v - 0.0971) < 1e-9);
+  assert.equal(pointValueFromWages([]), null);
+});

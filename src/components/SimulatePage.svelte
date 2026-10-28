@@ -120,6 +120,18 @@
         </figcaption>
       </figure>
 
+      {#if result.byPhase.length > 1}
+        <div class="phases" aria-label="Damage by phase">
+          {#each result.byPhase as ph, i (i)}
+            <div>
+              <span class="tag" class:debuff={i > 0}>{i === 0 ? 'Pill build' : ph.debuffBuild ? 'Debuff build' : 'Pill build, in the debuff'}</span>
+              {i === 0 ? 'hours 1–8' : `hours 9–${session}`} · ×{fmt(ph.multiplier, 1)} ·
+              <strong class="num">{fmtDamage(ph.damage)}</strong> in {fmt(ph.swings, 0)} hits · {fmt(ph.cost, 1)} G spent
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       <table class="spread">
         <thead><tr><th></th><th class="num">Worst 1%</th><th class="num">5%</th><th class="num">Median</th><th class="num">95%</th><th class="num">Best 1%</th></tr></thead>
         <tbody>
@@ -177,6 +189,9 @@
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
   .tabs button { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 12px; cursor: pointer; }
   .tabs button[aria-selected='true'] { border-color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
+  .phases { display: grid; gap: 4px; margin: 0 0 12px; font-size: 14px; }
+  .phases .tag { display: inline-block; min-width: 100px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); }
+  .phases .tag.debuff { border-color: var(--info); color: var(--info); }
   .link { background: none; border: 0; color: var(--info); cursor: pointer; padding: 0 2px; font: inherit; }
   .big { display: flex; flex-wrap: wrap; gap: 12px 36px; margin: 0 0 12px; }
   .big div { display: grid; }
