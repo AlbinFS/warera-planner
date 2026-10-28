@@ -25,6 +25,9 @@
   cached('managerOffer.getWageStats', {}, 30 * 60 * 1000).then((s) => (marketRate = s?.allowedRange?.average ? s.allowedRange.average / MANAGER_MAX_VALUE : null)).catch(() => {});
 
   const CORE_REGION_PERCENT = 5;
+  // Moving the company: every employee −10 happiness for 7 days (Responsibility shields a tenth a point, Loyal halves it).
+  const MOVE_HAPPINESS = 10;
+  const MOVE_DAYS = 7;
   // A manager worth hiring by at least this much a day is worth mentioning.
   const HIRE_WORTH = 0.25;
   // Tools wear out after 500 worked hours: 0.2 condition an hour, 4.8 a day.
@@ -52,10 +55,16 @@
     const inCore = team.length ? team.some((e) => (e.bonus ?? []).some((b) => b.source === 'coreRegion')) : region && home ? region.initialCountry === home : null;
     if (c.freeMoves > 0 && inCore === false && home) {
       // +5% on each employee's output (their bonus is additive, so on top of what it is now).
-      const gain = staff.reduce((s, { e, d }) => s + (d.points / (1 + (e.bonusPercent ?? 0) / 100)) * (CORE_REGION_PERCENT / 100), 0) * pp;
+      const base = (e, d) => d.points / (1 + (e.bonusPercent ?? 0) / 100);
+      const gain = staff.reduce((s, { e, d }) => s + base(e, d) * (CORE_REGION_PERCENT / 100), 0) * pp;
+      // The week of −10 happiness, once (happiness is a bonus point for point).
+      const lossFactor = (e) => (1 - Math.min(1, (e.stats?.responsibility?.total ?? 0) / 10)) * ((e.traits ?? []).includes('loyal') ? 0.5 : 1);
+      const cost = staff.reduce((s, { e, d }) => s + base(e, d) * (MOVE_HAPPINESS * lossFactor(e) / 100) * MOVE_DAYS, 0) * pp;
+      const payback = gain > 0 ? cost / gain : null;
       out.push({
         level: 'move', icon: mdiMapMarkerRadius,
-        text: `${c.freeMoves === 1 ? 'A free move is' : `${c.freeMoves} free moves are`} available and the company is outside ${countries[home]?.name ?? 'your country'}'s core regions: moving into one gives every employee +${CORE_REGION_PERCENT}%${gain > 0 ? ` (about +${fmt(gain, 2)} G a day)` : ''}. A move costs the employees 10 happiness for 7 days.`,
+        text: `${c.freeMoves === 1 ? 'A free move is' : `${c.freeMoves} free moves are`} available and the company is outside ${countries[home]?.name ?? 'your country'}'s core regions: moving into one gives every employee +${CORE_REGION_PERCENT}%${gain > 0 ? ` (about +${fmt(gain, 2)} G a day)` : ''}. `
+          + `The move costs every employee ${MOVE_HAPPINESS} happiness for ${MOVE_DAYS} days${cost > 0.005 ? ` (about ${fmt(cost, 2)} G in all)` : ''}${payback != null && cost > 0.005 ? `, paid back in about ${fmt(payback, 0)} days` : ''}.`,
       });
     }
     for (const { e, d } of staff) {
