@@ -23,6 +23,8 @@
   cached('region.getRegionsObject', {}, 60 * 60 * 1000).then((r) => (regions = r ?? {})).catch(() => {});
 
   const signed = (n, digits = 2) => `${n >= 0 ? '+' : ''}${fmt(n, digits)}`;
+  // Days a replacement takes to make back its firing's one-time cost.
+  const payback = (r) => { const d = r.fireCost / r.value; return d < 1 ? 'under a day' : `about ${fmt(d, d < 10 ? 1 : 0)} days`; };
   const OTHER = 'other';
   const countryName = (id) => (id === OTHER ? 'Any other country' : countries[id]?.name ?? 'Unknown country');
   const EVENT_ONLY = ['oldFriends', 'sweethearts', 'nemesis'];
@@ -111,6 +113,9 @@
       </strong>
       <span class="num value" class:good={p.ideal.value >= 0} class:bad={p.ideal.value < 0}>{signed(p.ideal.value)} G/day</span>
       <span class="muted small">{signed(p.ideal.points, 1)} points a day{#if p.best.pick} · without a trait: {signed(p.best.plain.value)} G/day{/if}</span>
+      {#if p.ideal.fireCost > 0.005}
+        <span class="muted small">Firing {p.ideal.replaces} costs once about {fmt(p.ideal.fireCost, 2)} G (every coworker −5 happiness for 24 hours){#if p.ideal.value > 0}: paid back in {payback(p.ideal)}{:else}, and the replacement doesn't pay{/if}.</span>
+      {/if}
       {#if p.ideal.coworkers.some((c) => Math.abs(c.change) > 0.05)}
         <ul class="effects">
           {#each p.ideal.coworkers.filter((c) => Math.abs(c.change) > 0.05) as c (c.name)}

@@ -115,7 +115,7 @@
     {#if top}
       <p class="verdict" class:bad={top.best.value < 0}>
         {#if top.best.value > 0}
-          Best: <strong>{top.card.label}</strong> in <strong>{top.best.company.name}</strong>{top.best.replaces ? `, replacing ${top.best.replaces}` : ''}: <strong>{signed(top.best.value)} G/day</strong>.
+          Best: <strong>{top.card.label}</strong> in <strong>{top.best.company.name}</strong>{top.best.replaces ? `, replacing ${top.best.replaces}` : ''}: <strong>{signed(top.best.value)} G/day</strong>{#if top.best.fireCost > 0.005}, after a one-time {fmt(top.best.fireCost, 2)} G for the firing (coworkers −5 happiness for 24 hours){/if}.
         {:else}
           None of these adds anything: every one costs more than they bring. Skip today's set, or reroll if energy allows.
         {/if}
@@ -135,7 +135,7 @@
               <td class="num">{s.days ?? '–'}</td>
               <td class="num">{s.card.potential}</td>
               {#each s.byCompany as r (r.company.id)}
-                <td class="num" class:best={r === s.best && r.value > 0} class:good={r.value > 0.005} class:bad={r.value < -0.005} title={r.replaces ? `Replacing ${r.replaces}` : 'Added to the company'}>
+                <td class="num" class:best={r === s.best && r.value > 0} class:good={r.value > 0.005} class:bad={r.value < -0.005} title={r.replaces ? `Replacing ${r.replaces}; firing them costs once about ${fmt(r.fireCost, 2)} G (coworkers −5 happiness for 24 hours)` : 'Added to the company'}>
                   {signed(r.value)}{#if r.replaces}<small class="muted"> for {r.replaces}</small>{/if}
                 </td>
               {/each}

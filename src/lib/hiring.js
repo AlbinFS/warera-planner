@@ -13,6 +13,11 @@
  *   candidates       = stats 1–4, at most one trait (half have none), drawn
  *                      by each trait's weight
  *
+ * Firing someone costs every coworker still there 5 happiness for 24 hours
+ * (firing again restarts that timer, it doesn't stack); a moved employee loses
+ * 5 for 7 days and can't be fired for 24 hours. Those are passing: an employee
+ * is valued without them, and a replacement shows the firing as a one-time cost.
+ *
  * A hire is scored by what the whole company makes after it: the newcomer's
  * own points plus every coworker's change (a Xenophobe next to a foreigner,
  * a Comic lifting everyone's mood, …), at the good's value per point, minus
@@ -119,6 +124,12 @@ const AVERAGE_STAT = 2.5; // candidates roll 1–4
 export const RETIRE_AGE = 65;
 // Production a newcomer typically gains from training in their first weeks (drills add 1–4).
 const TRAINED = 2;
+// Firing: every coworker −5 happiness for a day. Happiness reasons that pass (the game gives them an end time).
+const FIRED_HAPPINESS = 5;
+const FIRED_MS = 24 * 3600e3;
+// A moved employee: −5 happiness for 7 days, and can't be fired for the first 24 hours of it.
+const MOVED_MS = 7 * 24 * 3600e3;
+const PASSING = new Set(['coworkerFired', 'recentlyMoved']);
 
 /** How likely a candidate is to have this trait (half have none). */
 export function traitChance(code, gender) {
@@ -248,19 +259,28 @@ export function companyModel(employees, place, { perPoint, fairWage, management 
     const now = effects(base, employees.filter((c) => c !== e).map(asCoworker), place);
     const happinessNow = e.happiness?.value ?? 50;
     const shieldNow = Math.min(1, base.resp / 10);
+    const lossNow = (1 - shieldNow) * (base.traits.includes('loyal') ? 0.5 : 1);
+    // A recent firing or move: real today, gone in a day or a week, so not part of what they're worth.
+    const reasons = e.happiness?.reasons ?? [];
+    const passing = reasons.filter((r) => PASSING.has(r.reason) && r.until && Date.parse(r.until) > at).reduce((s, r) => s + r.delta, 0);
+    const moved = reasons.find((r) => r.reason === 'recentlyMoved' && r.until);
     return {
       ...base,
       prodBase: base.prod - now.prod,
       resp: base.resp - now.resp,
       luckBase: (e.stats?.luck?.total ?? AVERAGE_STAT) - now.luck,
       bonusBase: e.bonusPercent - now.percent - (happinessNow - 50),
-      happinessBase: happinessNow - now.gain - now.loss * (1 - shieldNow) * (base.traits.includes('loyal') ? 0.5 : 1),
+      happinessBase: happinessNow - now.gain - (now.loss + Math.min(0, passing)) * lossNow,
+      // Moved less than 24 hours ago: the game won't let them be fired yet.
+      fireBlocked: !!moved && Date.parse(moved.until) - MOVED_MS + FIRED_MS > at,
     };
   });
+  // A firing whose 24 hours are still running: firing again only restarts it.
+  const firedUntil = Math.max(0, ...employees.flatMap((e) => (e.happiness?.reasons ?? []).filter((r) => r.reason === 'coworkerFired' && r.until).map((r) => Date.parse(r.until))));
   // What a newcomer starts with: the company-wide bonuses (Management, core region), today's tax mood.
   const shared = employees[0]?.bonus?.filter((b) => b.source === 'management' || b.source === 'coreRegion').reduce((s, b) => s + b.percent, 0) ?? management;
   // A company whose employees hold tools gives the newcomer one too.
-  return { team, place: { ...place, tools: place.tools ?? employees.some((e) => e.hasTool) }, perPoint, fairWage, shared, toolboxValue };
+  return { team, place: { ...place, tools: place.tools ?? employees.some((e) => e.hasTool) }, perPoint, fairWage, shared, toolboxValue, firedFraction: 1 - Math.min(FIRED_MS, Math.max(0, firedUntil - at)) / FIRED_MS };
 }
 
 const DAY = 864e5;
@@ -362,13 +382,19 @@ function candidate(model, { nationality, gender, trait, production, responsibili
   };
 }
 
+/** Who can be replaced: everyone but those moved in the last 24 hours (everyone, if that's nobody). */
+function fireable(model) {
+  const can = model.team.map((_, i) => i).filter((i) => !model.team[i].fireBlocked);
+  return can.length ? can : model.team.map((_, i) => i);
+}
+
 /**
  * One real candidate for one company: what hiring them adds per day, or
  * (a full company) the best of replacing each employee with them.
- * { value, points, wage, replaces, coworkers }.
+ * { value, points, wage, replaces, coworkers, fireCost }.
  */
 export function rateCandidate(model, profile, { full = false } = {}) {
-  const slots = full ? model.team.map((_, i) => i) : [null];
+  const slots = full ? fireable(model) : [null];
   let best = null;
   for (const replace of slots) {
     const r = hireValue(model, profile, { replace });
@@ -381,7 +407,9 @@ export function rateCandidate(model, profile, { full = false } = {}) {
  * What hiring this profile changes, per day: points (the newcomer's and
  * every coworker's change), G (points × value − the newcomer's wage), and
  * each coworker's change in points (newWage: the newcomer's own). With `replace` (an index), that employee
- * leaves for the newcomer: their points and wage go with them.
+ * leaves for the newcomer: their points and wage go with them, and firing them
+ * costs once what the coworkers don't make while 5 happiness down for 24 hours
+ * (fireCost, G; less while an earlier firing's 24 hours still run).
  */
 export function hireValue(model, profile, { replace = null } = {}) {
   const before = teamPoints(model.team, model.place);
@@ -395,7 +423,18 @@ export function hireValue(model, profile, { replace = null } = {}) {
   const wage = newcomer.wage - (leaving ? leaving.wage : 0);
   // Toolboxes Luck finds (Gambler, Lucky Charm, Jinx), at what one is worth here.
   const toolboxes = (teamToolboxes([...stay, newcomer], model.place) - teamToolboxes(model.team, model.place)) * (model.toolboxValue ?? 0);
-  return { points, own, coworkers, wage, newWage: newcomer.wage, replaces: leaving?.name ?? null, toolboxes, value: points * model.perPoint + toolboxes - wage };
+  const fireCost = leaving ? firingCost(model, stay, newcomer) : 0;
+  return { points, own, coworkers, wage, newWage: newcomer.wage, replaces: leaving?.name ?? null, toolboxes, value: points * model.perPoint + toolboxes - wage, fireCost, fireBlocked: !!leaving?.fireBlocked };
+}
+
+/** G the coworkers left behind don't make in the 24 hours a firing costs them 5 happiness (the newcomer, hired after, isn't hit). */
+function firingCost(model, stay, newcomer) {
+  const team = [...stay, newcomer];
+  const lost = stay.reduce((s, e) => {
+    const fx = effects(e, team.filter((c) => c !== e), model.place);
+    return s + pointsOf(e, fx) - pointsOf(e, { ...fx, loss: fx.loss - FIRED_HAPPINESS });
+  }, 0);
+  return lost * model.perPoint * (model.firedFraction ?? 1);
 }
 
 /**
@@ -408,7 +447,7 @@ export function hireValue(model, profile, { replace = null } = {}) {
 export function bestHires(model, { otherNationality = 'other', full = false } = {}) {
   const nationalities = [...new Set([...model.team.map((e) => e.nationality), model.place.country, model.place.homeCountry, otherNationality].filter(Boolean))];
   const traits = [null, ...Object.keys(TRAITS).filter((t) => !EVENT_ONLY.has(t))];
-  const slots = full ? model.team.map((_, i) => i) : [null];
+  const slots = full ? fireable(model) : [null];
   const all = [];
   for (const nationality of nationalities) {
     for (const gender of ['male', 'female']) {

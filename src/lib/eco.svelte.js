@@ -138,7 +138,7 @@ function fromGame(e) {
     happiness: {
       value: e.happinessBreakdown?.value ?? null,
       quitChance: e.happinessBreakdown?.quitChance ?? 0,
-      reasons: (e.happinessBreakdown?.contributions ?? []).filter((c) => c.revealed !== false).map((c) => ({ reason: c.reason, delta: c.delta })),
+      reasons: (e.happinessBreakdown?.contributions ?? []).filter((c) => c.revealed !== false).map((c) => ({ reason: c.reason, delta: c.delta, until: c.until ?? null })),
     },
     traits: (e.traits ?? []).map((t) => (t.revealed === false ? null : t.code)),
     // What a trait is about, where it names something (Specialist's good, Diamond's stat).

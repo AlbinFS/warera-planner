@@ -110,3 +110,28 @@ test('a Specialist counts their own good when it is known', async () => {
   assert.equal(canGain('girlPower', [], 'male'), false);
   assert.equal(canGain('loyal', ['greedy', 'xenophobe'], 'male'), true);
 });
+
+test('firing costs every coworker 5 happiness for a day, once; a recent firing or move is not part of their worth', () => {
+  const now = Date.parse('2026-10-28T12:00:00Z');
+  const team = [emp('A', 'se', 'male', []), emp('B', 'se', 'male', []), emp('C', 'se', 'male', [])];
+  const model = companyModel(team, place, { ...opts, now });
+  const r = hireValue(model, { nationality: 'se', gender: 'male', trait: null }, { replace: 0 });
+  // Two coworkers stay, each 5 happiness down (Responsibility 2 shields a fifth): 4 points of bonus on 24 points a day, at 0.1 G.
+  assert.ok(Math.abs(r.fireCost - 2 * 24 * 0.04 * 0.1) < 1e-6, String(r.fireCost));
+  assert.equal(hireValue(model, { nationality: 'se', gender: 'male', trait: null }).fireCost, 0);
+
+  // 12 hours into an earlier firing: firing again restarts the timer, so it costs only the 12 hours added.
+  const until = new Date(now + 12 * 3600e3).toISOString();
+  const fired = (e) => ({ ...e, bonusPercent: e.bonusPercent - 4, happiness: { value: 46, reasons: [{ reason: 'coworkerFired', delta: -5, until }] } });
+  const after = companyModel(team.map(fired), place, { ...opts, now });
+  const again = hireValue(after, { nationality: 'se', gender: 'male', trait: null }, { replace: 0 });
+  assert.ok(Math.abs(again.fireCost - r.fireCost / 2) < 1e-6);
+  // And the −5 they carry today isn't held against them: same worth as before the firing.
+  assert.ok(Math.abs(again.value - r.value) < 1e-6);
+
+  // Moved an hour ago: can't be fired yet, so not the one replaced.
+  const moved = { ...team[0], name: 'M', production: 1, happiness: { value: 46, reasons: [{ reason: 'recentlyMoved', delta: -5, until: new Date(now + 7 * 864e5 - 3600e3).toISOString() }] } };
+  const m = companyModel([moved, team[1], team[2]], place, { ...opts, now });
+  assert.equal(m.team[0].fireBlocked, true);
+  assert.notEqual(rateCandidate(m, { nationality: 'se', gender: 'male', production: 4 }, { full: true }).replaces, 'M');
+});
