@@ -2,7 +2,7 @@
  * Eco page state: the player's companies and their employees (both from the
  * API) and eco settings (kept in this browser).
  */
-import { cached } from './warera.js';
+import { cached, cachedBatch } from './warera.js';
 
 const SETTINGS_KEY = 'eco.settings.v1';
 // Employees used to be typed in and kept here; they come from the game now.
@@ -38,14 +38,16 @@ $effect.root(() => {
 export async function loadCompanies(playerId) {
   const list = await cached('company.getCompanies', { userId: playerId, perPage: 100 }, 5 * 60 * 1000);
   const ids = (list.items ?? []).map((c) => (typeof c === 'string' ? c : c._id)).filter(Boolean);
-  const [companies] = await Promise.all([
+  const [companies, managers] = await Promise.all([
     Promise.all(ids.map((companyId) => cached('company.getById', { companyId }, 5 * 60 * 1000))),
+    // Each company's hired manager, if any (public): their pay and bonus.
+    cachedBatch(ids.map((companyId) => ['manager.getByCompanyId', { companyId }]), 5 * 60 * 1000).catch(() => ids.map(() => null)),
     loadEmployees(ids).then(
       () => { employeesStatus.error = ''; },
       (err) => { employeesStatus.error = `Couldn't load your employees from the game (${err.message}); income is counted without them.`; },
     ),
   ]);
-  return companies.map((c) => ({
+  return companies.map((c, i) => ({
     id: c._id,
     name: c.name,
     good: c.itemCode,
@@ -58,7 +60,14 @@ export async function loadCompanies(playerId) {
     // Storage full (production stopped) and moves that cost nothing, as the game has them.
     isFull: !!c.isFull,
     freeMoves: c.freeMoves ?? 0,
+    manager: managerOf(managers[i]),
   }));
+}
+
+/** A hired manager as the models need them: pay a day, bonus, Management level. */
+function managerOf(m) {
+  if (!m) return null;
+  return { wageDay: m.isInactive ? 0 : (m.hourlyWage ?? 0) * 24, bonusPercent: m.productionBonusPercent ?? 0, level: m.managementLevel ?? 0, rate: m.rateManagement ?? 0, unpaidHours: m.unpaidHours ?? 0, inactive: !!m.isInactive };
 }
 
 /** "incomeTax" → "Income tax": the API's codes as words. */

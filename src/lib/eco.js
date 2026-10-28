@@ -66,11 +66,49 @@ export function employeeDay(e, { managementValue, currentManagementValue = manag
 export const engineDaily = (upgrades, level) => upgrades.automatedEngine?.levels?.[String(level)]?.stats?.dailyProd ?? 0;
 
 /**
+ * Hired managers (game update v0.27): pay per hour = their rate × their
+ * Management value (level + 1); they add 2% per value point, up to +22%, to
+ * every employee's output, and once a day give one employee +5 happiness for
+ * 48 hours (about two at any time). Paid every hour, employees or not.
+ */
+export const MANAGER_MAX_VALUE = 11;
+const MANAGER_CARE = 5;
+
+/**
+ * What a manager with this bonus adds a day in one company: the bonus on each
+ * employee's output before bonuses, and their care. staff: [{ points (a day,
+ * bonuses in), bonusPercent (their total) }]. G a day at perPoint.
+ */
+export function managerGain(staff, bonusPercent, perPoint) {
+  const base = staff.map((s) => s.points / (1 + (s.bonusPercent ?? 0) / 100));
+  const bonus = base.reduce((t, b) => t + b, 0) * (bonusPercent / 100);
+  const cared = [...base].sort((a, b) => b - a).slice(0, 2).reduce((t, b) => t + b, 0) * (MANAGER_CARE / 100);
+  return (bonus + cared) * perPoint;
+}
+
+/**
+ * Is a manager worth it in this company? With one: what they add against their
+ * pay. Without: a full one (+22%) at the market's pay per point (G an hour).
+ * { has, gain, cost, net } a day, or null with no employees to manage.
+ */
+export function managerAdvice(manager, staff, perPoint, marketRatePerPoint) {
+  if (manager) {
+    const gain = managerGain(staff, manager.bonusPercent, perPoint);
+    return { has: true, gain, cost: manager.wageDay, net: gain - manager.wageDay };
+  }
+  if (!staff.length || !(marketRatePerPoint > 0)) return null;
+  const cost = marketRatePerPoint * MANAGER_MAX_VALUE * 24;
+  const gain = managerGain(staff, 2 * MANAGER_MAX_VALUE, perPoint);
+  return { has: false, gain, cost, net: gain - cost };
+}
+
+/**
  * Money per day for one eco skill layout.
- * plan: { companies: [{ id, good, engine, employees: [...] }], perPoint: {good: G},
+ * plan: { companies: [{ id, good, engine, employees: [...], manager? }], perPoint: {good: G},
  *         currentManagementValue (the one the employees' shown bonus includes),
  *         selfWork (bool), trainingsPerDay }
- * Companies run in order of profit, up to the Companies skill's limit.
+ * Companies run in order of profit, up to the Companies skill's limit. Managers'
+ * pay comes off the total: they are paid every hour, whether the company runs.
  */
 export function dailyIncome(levels, plan, config) {
   const { skills, upgrades } = config;
@@ -88,6 +126,7 @@ export function dailyIncome(levels, plan, config) {
   }).sort((a, b) => b.total - a.total);
   const active = runs.slice(0, limit);
   const companies = active.reduce((s, r) => s + r.total, 0);
+  const managers = plan.companies.reduce((s, c) => s + (c.manager?.wageDay ?? 0), 0);
 
   // Energy: a tenth of the bar per hour. Trainings and hiring come first; the rest can go to self-work.
   const energyPerDay = (ecoValue(skills, 'energy', levels.energy) / 10) * HOURS;
@@ -99,8 +138,8 @@ export function dailyIncome(levels, plan, config) {
   const selfWork = selfWorkPoints * bestPerPoint;
 
   return {
-    total: companies + selfWork,
-    companies, selfWork, selfWorkActions, selfWorkPoints,
+    total: companies + selfWork - managers,
+    companies, selfWork, selfWorkActions, selfWorkPoints, managers,
     energyPerDay, trainingEnergy, energyShort: trainingEnergy > energyPerDay,
     activeCount: active.length, limit, owned: runs.length,
     runs, active,

@@ -5,13 +5,13 @@
    * move into a core region of the owner's country gives every employee +5%.
    */
   import { ecoEmployees } from '../lib/eco.svelte.js';
-  import { employeeDay, engineDaily } from '../lib/eco.js';
+  import { employeeDay, engineDaily, managerAdvice, MANAGER_MAX_VALUE } from '../lib/eco.js';
   import { planner } from '../lib/planner.svelte.js';
   import { cached } from '../lib/warera.js';
   import { fmt } from '../lib/format.js';
   import { itemImage } from '../lib/visual.js';
   import Icon from './Icon.svelte';
-  import { mdiAlertCircle, mdiAlert, mdiMapMarkerRadius, mdiCheckCircle } from '@mdi/js';
+  import { mdiAlertCircle, mdiAlert, mdiMapMarkerRadius, mdiCheckCircle, mdiAccountTie } from '@mdi/js';
 
   let { companies, perPoint, upgrades, items } = $props();
 
@@ -20,7 +20,13 @@
   cached('country.getAllCountries', {}, 60 * 60 * 1000).then((list) => (countries = Object.fromEntries((list ?? []).map((c) => [c._id, c])))).catch(() => {});
   cached('region.getRegionsObject', {}, 60 * 60 * 1000).then((r) => (regions = r ?? {})).catch(() => {});
 
+  // The market's pay for a manager, per Management point an hour.
+  let marketRate = $state(null);
+  cached('managerOffer.getWageStats', {}, 30 * 60 * 1000).then((s) => (marketRate = s?.allowedRange?.average ? s.allowedRange.average / MANAGER_MAX_VALUE : null)).catch(() => {});
+
   const CORE_REGION_PERCENT = 5;
+  // A manager worth hiring by at least this much a day is worth mentioning.
+  const HIRE_WORTH = 0.25;
   const FILL_WARNING_HOURS = 12;
 
   const alerts = $derived(companies.filter((c) => !c.disabled).flatMap((c) => {
@@ -48,6 +54,14 @@
         text: `${c.freeMoves === 1 ? 'A free move is' : `${c.freeMoves} free moves are`} available and the company is outside ${countries[home]?.name ?? 'your country'}'s core regions: moving into one gives every employee +${CORE_REGION_PERCENT}%${gain > 0 ? ` (about +${fmt(gain, 2)} G a day)` : ''}. A move costs the employees 10 happiness for 7 days.`,
       });
     }
+    const advice = managerAdvice(c.manager, staff.map(({ e, d }) => ({ points: d.points, bonusPercent: e.bonusPercent })), pp, marketRate);
+    if (c.manager?.unpaidHours > 0) {
+      out.push({ level: 'bad', icon: mdiAccountTie, text: `The manager has ${c.manager.unpaidHours} unpaid hours: the company can't pay them. Keep money in the company.` });
+    } else if (advice?.has && advice.net < -0.005) {
+      out.push({ level: 'warn', icon: mdiAccountTie, text: `The manager costs ${fmt(advice.cost, 2)} G a day and adds ${fmt(advice.gain, 2)} G: ${fmt(-advice.net, 2)} G a day more than they bring.` });
+    } else if (advice && !advice.has && advice.net >= HIRE_WORTH) {
+      out.push({ level: 'move', icon: mdiAccountTie, text: `A full manager (+22%) at market pay would add about +${fmt(advice.net, 2)} G a day after their pay (${fmt(advice.gain, 2)} G more output for ${fmt(advice.cost, 2)} G).` });
+    }
     return out.map((a) => ({ ...a, company: c }));
   }));
   const ORDER = { bad: 0, warn: 1, move: 2 };
@@ -68,7 +82,7 @@
       {/each}
     </ul>
   {:else if companies.length}
-    <p class="ok"><Icon path={mdiCheckCircle} size={18} /> Nothing needs doing: no storage is full or close to it, and no company has a free move it should use.</p>
+    <p class="ok"><Icon path={mdiCheckCircle} size={18} /> Nothing needs doing: no storage is full or close to it, no company has a free move it should use, and every manager earns their pay.</p>
   {/if}
 </section>
 
