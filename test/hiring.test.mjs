@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { companyModel, hireValue, bestHires, traitChance, rankTraits, tierOf, rateCandidate } from '../src/lib/hiring.js';
+import { companyModel, hireValue, bestHires, traitChance, rankTraits, tierOf, rateCandidate, placeValue } from '../src/lib/hiring.js';
 import { trainingCards } from '../src/lib/training.js';
 
 const place = { raw: false, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
@@ -134,4 +134,21 @@ test('firing costs every coworker 5 happiness for a day, once; a recent firing o
   const m = companyModel([moved, team[1], team[2]], place, { ...opts, now });
   assert.equal(m.team[0].fireBlocked, true);
   assert.notEqual(rateCandidate(m, { nationality: 'se', gender: 'male', production: 4 }, { full: true }).replaces, 'M');
+});
+
+test('a lost core region: its tax costs happiness every day, and moving pays back in 70 ÷ the tax days', () => {
+  // Three employees in a Swedish core region another country holds, at its 15 % income tax.
+  const taxed = (name) => ({ ...emp(name, 'se', 'male', [], { bonus: 11 - 12, happiness: 38 }), happiness: { value: 38, reasons: [{ reason: 'incomeTax', delta: -15 }] } });
+  const model = companyModel([taxed('A'), taxed('B'), taxed('C')], { ...place, country: 'lt', tax: 15 }, opts);
+  assert.equal(model.place.tax, 15);
+  assert.equal(model.place.core, true);
+  const now = placeValue(model, {}).worth;
+  const moved = placeValue(model, { country: 'se', tax: 0 });
+  // Responsibility 2 shields a fifth: 12 points of bonus on 24 points a day each, at 0.1 G.
+  assert.ok(Math.abs(moved.worth - now - 3 * 24 * 0.12 * 0.1) < 1e-6);
+  // The move: 10 happiness (8 after the shield) for 7 days.
+  assert.ok(Math.abs(moved.moveCost - 3 * 24 * 0.08 * 7 * 0.1) < 1e-6);
+  assert.ok(Math.abs(moved.moveCost / (moved.worth - now) - 70 / 15) < 1e-6);
+  // Out of a core region, the +5 % goes with it.
+  assert.ok(placeValue(model, { country: 'se', tax: 0, core: false }).worth < moved.worth);
 });

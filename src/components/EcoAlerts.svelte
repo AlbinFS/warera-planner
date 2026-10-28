@@ -53,6 +53,14 @@
     const region = regions[c.region];
     const home = planner.player?.countryId;
     const inCore = team.length ? team.some((e) => (e.bonus ?? []).some((b) => b.source === 'coreRegion')) : region && home ? region.initialCountry === home : null;
+    // A core region of yours another country took: its tax and mood now (the Location tab weighs moving).
+    if (region && home && team.length && region.initialCountry === home && region.country !== home) {
+      const tax = countries[region.country]?.taxes?.income ?? 0;
+      out.push({
+        level: 'warn', icon: mdiMapMarkerRadius, group: `occupied ${region._id}`,
+        text: `${region.name} is held by ${countries[region.country]?.name ?? 'another country'} now: its ${fmt(tax, 1)}% income tax costs every employee ${fmt(tax, 1)} happiness (as much % output). See the Location tab for whether moving pays before it's retaken.`,
+      });
+    }
     if (c.freeMoves > 0 && inCore === false && home) {
       // +5% on each employee's output (their bonus is additive, so on top of what it is now).
       const base = (e, d) => d.points / (1 + (e.bonusPercent ?? 0) / 100);
@@ -88,7 +96,14 @@
     return out.map((a) => ({ ...a, company: c }));
   }));
   const ORDER = { bad: 0, warn: 1, move: 2 };
-  const sorted = $derived([...alerts].sort((a, b) => ORDER[a.level] - ORDER[b.level]));
+  // Alerts about a whole region come once, naming every company there.
+  const merged = $derived(alerts.reduce((list, a) => {
+    const same = a.group && list.find((x) => x.group === a.group);
+    if (same) same.companies.push(a.company);
+    else list.push({ ...a, companies: [a.company] });
+    return list;
+  }, []));
+  const sorted = $derived([...merged].sort((a, b) => ORDER[a.level] - ORDER[b.level]));
 </script>
 
 <section class="card" aria-labelledby="alerts-title">
@@ -98,8 +113,8 @@
       {#each sorted as a, i (i)}
         <li data-level={a.level}>
           <Icon path={a.icon} size={18} />
-          <img src={itemImage(a.company.good, items)} alt="" width="18" height="18" class="mini" />
-          <strong>{a.company.name}</strong>
+          {#if a.companies.length === 1}<img src={itemImage(a.company.good, items)} alt="" width="18" height="18" class="mini" />{/if}
+          <strong>{a.companies.map((c) => c.name).join(', ')}</strong>
           <span>{a.text}</span>
         </li>
       {/each}

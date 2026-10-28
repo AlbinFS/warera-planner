@@ -3,10 +3,13 @@
  *
  * The game's employee rules (its web app's config, 2026-10-27):
  *   points per day   = Production ÷ 4 × 24 × (1 + bonus %)
- *   bonus %          = Management + core region + tool + specialization
- *                      + percentage traits + (happiness − 50)
- *   happiness        = 50 + every reason; Responsibility shields losses,
- *                      Responsibility ÷ 10 of each (all of it at 10)
+ *   bonus %          = Management + core region (+5 in a core region of
+ *                      the owner's country, held or not) + tool
+ *                      + specialization + percentage traits + (happiness − 50)
+ *   happiness        = 50 + every reason (the region's country's income tax,
+ *                      −1 a %, and −5 while the region is attacked, among
+ *                      them); Responsibility shields losses, Responsibility
+ *                      ÷ 10 of each (all of it at 10)
  *   wage per day     = fair wage per Production point × (base + trained
  *                      Production) × wage expectation (Greedy +20 %,
  *                      Modest −15 %)
@@ -130,6 +133,11 @@ const FIRED_MS = 24 * 3600e3;
 // A moved employee: −5 happiness for 7 days, and can't be fired for the first 24 hours of it.
 const MOVED_MS = 7 * 24 * 3600e3;
 const PASSING = new Set(['coworkerFired', 'recentlyMoved']);
+// A core region of the owner's country: +5 % on every employee.
+const CORE_PERCENT = 5;
+// Moving the company: every employee −10 happiness for 7 days.
+const COMPANY_MOVE_HAPPINESS = 10;
+const COMPANY_MOVE_DAYS = 7;
 
 /** How likely a candidate is to have this trait (half have none). */
 export function traitChance(code, gender) {
@@ -186,6 +194,10 @@ function effects(e, coworkers, place) {
   const age = e.age != null ? e.age + Math.min(10, Math.max(0, (RETIRE_AGE - e.age) / 2)) : null;
   if (has('lateBloomer')) out.prod += age == null ? 2 : Math.min(6, 2 * Math.max(0, Math.floor((age - 40) / 10)));
   if (has('wornOut')) out.prod -= age == null ? 1 : Math.min(6, 2 * Math.max(0, Math.floor((age - 50) / 10)));
+  // The place itself: its country's income tax, an attack on the region, a core region of the owner's country.
+  if (place.tax) happy(-place.tax);
+  if (place.attacked) happy(-place.attacked);
+  if (place.core) out.percent += CORE_PERCENT;
   if (has('patriot') && place.homeCountry === e.nationality) { out.prod += 2; happy(10); }
   if (has('homesick') && place.country !== e.nationality) { out.prod -= 2; happy(-10); }
   if (has('expat') && place.country !== e.nationality) out.prod += 2;
@@ -224,8 +236,13 @@ function pointsOf(e, fx) {
   return (prod / OUTPUT_DIVISOR) * HOURS * (1 + (e.bonusBase + fx.percent + happiness - 50) / 100);
 }
 
-/** Where a company works, for traits that care: its good (raw or manufactured), storage, country, home country, tax. */
-export function placeOf(company, { regions = {}, countries = {}, items = {} } = {}) {
+/**
+ * Where a company works: its good (raw or manufactured), storage, country
+ * (who holds the region now), home country (whose core region it is), the
+ * income tax, and whether it's a core region of the owner's country (`home`:
+ * the owner's country; unknown without it, and then read from the employees).
+ */
+export function placeOf(company, { regions = {}, countries = {}, items = {}, home = null } = {}) {
   const region = regions[company.region];
   return {
     good: company.good ?? null,
@@ -234,7 +251,21 @@ export function placeOf(company, { regions = {}, countries = {}, items = {} } = 
     country: region?.country ?? null,
     homeCountry: region?.initialCountry ?? null,
     tax: countries[region?.country]?.taxes?.income ?? 0,
+    attacked: 0,
+    core: home && region ? region.initialCountry === home : null,
   };
+}
+
+/**
+ * The place as the employees feel it now, where the game says so: the income
+ * tax and an attack from their happiness reasons, the core region from their bonus.
+ */
+function livePlace(employees, place) {
+  const reasons = employees.flatMap((e) => e.happiness?.reasons ?? []);
+  const tax = reasons.find((r) => r.reason === 'incomeTax');
+  const attacked = reasons.find((r) => r.reason === 'regionAttacked');
+  const core = employees.length && employees.some((e) => e.bonus) ? employees.some((e) => (e.bonus ?? []).some((b) => b.source === 'coreRegion')) : place.core;
+  return { ...place, tax: tax ? -tax.delta : place.tax ?? 0, attacked: attacked ? -attacked.delta : place.attacked ?? 0, core: !!core };
 }
 
 /** Fair wage per Production point per day, from what employees are paid (median). */
@@ -249,7 +280,8 @@ export function fairWageOf(employees) {
  * place: { raw, storage, country, homeCountry, tax }, value per point, and
  * the fair wage per Production point per day.
  */
-export function companyModel(employees, place, { perPoint, fairWage, management = 0, toolboxValue = 0, now: at = Date.now() }) {
+export function companyModel(employees, placeIn, { perPoint, fairWage, management = 0, toolboxValue = 0, now: at = Date.now() }) {
+  const place = livePlace(employees, placeIn);
   // Each employee's numbers with today's trait effects taken out, so they can be put back for any team.
   const team = employees.map((e) => {
     const base = {
@@ -277,8 +309,8 @@ export function companyModel(employees, place, { perPoint, fairWage, management 
   });
   // A firing whose 24 hours are still running: firing again only restarts it.
   const firedUntil = Math.max(0, ...employees.flatMap((e) => (e.happiness?.reasons ?? []).filter((r) => r.reason === 'coworkerFired' && r.until).map((r) => Date.parse(r.until))));
-  // What a newcomer starts with: the company-wide bonuses (Management, core region), today's tax mood.
-  const shared = employees[0]?.bonus?.filter((b) => b.source === 'management' || b.source === 'coreRegion').reduce((s, b) => s + b.percent, 0) ?? management;
+  // What a newcomer starts with: Management (the place's core region, tax and attacks come from the place).
+  const shared = employees[0]?.bonus?.filter((b) => b.source === 'management').reduce((s, b) => s + b.percent, 0) ?? management;
   // A company whose employees hold tools gives the newcomer one too.
   return { team, place: { ...place, tools: place.tools ?? employees.some((e) => e.hasTool) }, perPoint, fairWage, shared, toolboxValue, firedFraction: 1 - Math.min(FIRED_MS, Math.max(0, firedUntil - at)) / FIRED_MS };
 }
@@ -377,7 +409,7 @@ function candidate(model, { nationality, gender, trait, production, responsibili
     traitArgs: trait === 'specialist' && specialistGood ? { specialist: specialistGood } : {},
     prodBase: own, prod: own, resp: responsibility ?? AVERAGE_STAT, luckBase: luck ?? AVERAGE_STAT,
     daysLeft: age != null ? Math.max(0, RETIRE_AGE - age) : null, tenure: 0,
-    bonusBase: model.shared, happinessBase: 50 - model.place.tax,
+    bonusBase: model.shared, happinessBase: 50,
     wage: model.fairWage * own * expectation * markup,
   };
 }
@@ -425,6 +457,22 @@ export function hireValue(model, profile, { replace = null } = {}) {
   const toolboxes = (teamToolboxes([...stay, newcomer], model.place) - teamToolboxes(model.team, model.place)) * (model.toolboxValue ?? 0);
   const fireCost = leaving ? firingCost(model, stay, newcomer) : 0;
   return { points, own, coworkers, wage, newWage: newcomer.wage, replaces: leaving?.name ?? null, toolboxes, value: points * model.perPoint + toolboxes - wage, fireCost, fireBlocked: !!leaving?.fireBlocked };
+}
+
+/**
+ * The team elsewhere: what it makes a day at `place` (G, wages are the same
+ * anywhere), and what moving there costs once: every employee 10 happiness
+ * down for 7 days. The model's own place is where they are now.
+ */
+export function placeValue(model, place) {
+  const at = { ...model.place, ...place, tools: model.place.tools };
+  const team = model.team;
+  const worth = teamWorth({ ...model, place: at }, team);
+  const lost = team.reduce((s, e) => {
+    const fx = effects(e, team.filter((c) => c !== e), at);
+    return s + pointsOf(e, fx) - pointsOf(e, { ...fx, loss: fx.loss - COMPANY_MOVE_HAPPINESS });
+  }, 0);
+  return { worth, moveCost: lost * COMPANY_MOVE_DAYS * model.perPoint };
 }
 
 /** G the coworkers left behind don't make in the 24 hours a firing costs them 5 happiness (the newcomer, hired after, isn't hit). */
