@@ -47,7 +47,7 @@ export async function collectBuilds(market, planner, settings, skills, onProgres
   }
   return builds.map((b) => ({
     damage: b.damage, cost: b.cost, food: b.food ?? 'none', equipment: toEquipment(market, b.gear), armor: b.armor, dodge: b.dodge,
-    debuff: b.debuff ? { equipment: toEquipment(market, b.debuff.gear), food: b.debuff.food ?? 'none' } : null,
+    debuff: b.debuff ? { equipment: toEquipment(market, b.debuff.gear), food: b.debuff.food ?? 'none', hits: Math.floor(b.debuff.swings) } : null,
   }));
 }
 

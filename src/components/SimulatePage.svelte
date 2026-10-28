@@ -50,9 +50,13 @@
   let result = $state.raw(null);
   let error = $state('');
   let running = $state(false);
-  function run() {
+  async function run() {
     error = '';
     running = true;
+    // Without a debuff build the pill gear stops where its hits stop paying: wait for that count.
+    if (!settings.splitDebuff && settings.pill && session !== '8' && sameGearHits == null && planner.player) {
+      sameGearHits = await payingHits(data.market, planner, settings, incomeTerms(data.market), { gear: planner.gear, food: planner.food }).catch(() => null);
+    }
     // Let the button show its state before the (short) work starts.
     setTimeout(() => {
       try {

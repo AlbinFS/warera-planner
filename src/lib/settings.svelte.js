@@ -9,7 +9,10 @@ const DEFAULTS = { battleBonus: 60, pill: true, food: 'any', windowHours: 8, spl
 
 function load() {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    // The debuff build became the profitable one (2026-10-28): switched on once for everyone.
+    if (!localStorage.getItem('settings.debuffOn')) { saved.splitDebuff = true; localStorage.setItem('settings.debuffOn', '1'); }
+    return { ...DEFAULTS, ...saved };
   } catch {
     return { ...DEFAULTS };
   }

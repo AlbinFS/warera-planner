@@ -134,23 +134,23 @@ test('armor wears only on hits taken: dodge spares it, the weapon wears every sw
   assert.ok(Math.abs(perSwing - armorWear * (1 - withArmor.dodge / 100)) < 1e-9, `${perSwing} vs ${armorWear * (1 - withArmor.dodge / 100)}`);
 });
 
-test('a second build for the debuff never does worse than one build all day, and buys the pill once', () => {
+test('two builds a day: the pill build on its own, the debuff build for profit on top', async () => {
+  const { mostProfit } = await import('../src/combat/optimize.js');
   const prep = prepare(smallMarket());
   const player = { level: 32, militaryRankPercent: 20, prestige: {} };
-  const one = { pill: true, battleBonusPercent: 70, hours: 16 };
-  const two = { ...one, splitDebuff: true };
+  const two = { pill: true, battleBonusPercent: 70, hours: 16, splitDebuff: true };
+  const profit = mostProfit(prep, layout, player, { ...two, splitDebuff: false, phase: 'debuff' }, { bounty: 0.1 });
   for (const limit of [60, 150, Infinity]) {
-    const a = strongest(prep, layout, player, one, { bounty: 0.1 }, limit);
+    const pill = strongest(prep, layout, player, { ...two, splitDebuff: false, phase: 'pill' }, { bounty: 0.1 }, limit);
     const b = strongest(prep, layout, player, two, { bounty: 0.1 }, limit);
-    assert.ok(b.damage >= a.damage * 0.995, `split ${b.damage} < single ${a.damage} at ${limit}`);
+    // The same pill build as alone (the debuff's profit doesn't buy it dearer gear), the debuff's profit added.
+    assert.ok(Math.abs(b.damage - pill.damage - (profit?.damage ?? 0)) < 1e-6);
+    assert.ok(Math.abs(b.net - pill.net - (profit?.net ?? 0)) < 1e-6);
     assert.ok(b.net >= -limit - 1e-6);
   }
+  // The pill (35) is bought once, with the pill build.
   const b = strongest(prep, layout, player, two);
-  const pillOnly = strongest(prep, layout, player, { ...two, phase: 'pill' });
-  const debuffOnly = strongest(prep, layout, player, { ...two, phase: 'debuff' });
-  // The pill (35) is in the pill build's cost only.
-  assert.ok(pillOnly.cost - 35 < pillOnly.cost && debuffOnly.cost < pillOnly.cost);
-  assert.ok(b.debuff && b.phases.length === 2 && Math.abs(b.damage - pillOnly.damage - debuffOnly.damage) < b.damage * 0.01);
+  assert.ok(b.debuff == null || b.debuff.cost < 35);
   const target = cheapest(prep, layout, player, two, b.damage * 0.8);
   assert.ok(target.reachedTarget && target.damage >= b.damage * 0.8 - 1);
 });
