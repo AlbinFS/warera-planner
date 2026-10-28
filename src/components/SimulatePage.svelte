@@ -27,7 +27,7 @@
   const SESSIONS = [
     { id: '8', label: '8 hours', hint: 'Full bars, fighting through the pill’s 8 hours (regen included).' },
     { id: '16', label: '16 hours', hint: 'The pill’s 8 hours, then 8 more in its −60% debuff on regen: a day with 8 hours of sleep.' },
-    { id: '24', label: '24 hours', hint: 'A full day: the pill’s 8 hours, then 16 in its debuff on regen.' },
+    { id: '24', label: '24 hours', hint: 'A full day: the pill’s 8 hours, its −60% debuff for 15.5 more, then half an hour at full strength, on regen.' },
   ];
   const withDebuffBuild = $derived(session !== '8' && settings.pill && settings.splitDebuff && !!planner.debuff);
   const terms = $derived(incomeTerms(data.market));
@@ -123,9 +123,10 @@
       {#if result.byPhase.length > 1}
         <div class="phases" aria-label="Damage by phase">
           {#each result.byPhase as ph, i (i)}
+            {@const from = result.byPhase.slice(0, i).reduce((t, x) => t + (x.hours ?? 0), 0)}
             <div>
-              <span class="tag" class:debuff={i > 0}>{i === 0 ? 'Pill build' : ph.debuffBuild ? 'Debuff build' : 'Pill build, in the debuff'}</span>
-              {i === 0 ? 'hours 1–8' : `hours 9–${session}`} · ×{fmt(ph.multiplier, 1)} ·
+              <span class="tag" class:debuff={i > 0}>{i === 0 ? 'Pill build' : ph.debuffBuild ? 'Debuff build' : 'Pill build, after the pill'}</span>
+              hours {fmt(from, 1)}–{fmt(from + (ph.hours ?? 0), 1)} · ×{fmt(ph.multiplier, 1)}{ph.multiplier === 1 && i > 0 ? ' (the debuff is over)' : ''} ·
               <strong class="num">{fmtDamage(ph.damage)}</strong> in {fmt(ph.swings, 0)} hits · {fmt(ph.cost, 1)} G spent
             </div>
           {/each}

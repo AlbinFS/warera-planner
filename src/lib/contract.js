@@ -15,6 +15,7 @@ import { prepare, buildFrontier } from '../combat/optimize.js';
 import { searchLayout } from '../combat/client.js';
 import { fightOptions, playerOf, toEquipment, keptPoints } from './compute.js';
 import { incomePlan, incomeOf } from './income.js';
+import { incomeSteps } from './eco.js';
 
 export { evaluate, lootCurve } from './contractMath.js';
 import { evaluate } from './contractMath.js';
@@ -73,13 +74,25 @@ export async function searchSkills(market, planner, settings, options) {
     bounty: terms.bounty, perK: terms.poolLoot ?? 0, flat: typeof terms.loot === 'number' ? terms.loot : 0, economy: terms.economy ?? 0,
     lootCurve: terms.lootCurve ?? null,
   };
-  const report = (s) => ({
-    step: s.steps ?? s.step ?? 0, levels: { ...start, ...s.levels }, checked: s.checked, budget: s.budget, used: s.used,
-    best: s.best && { ...evaluate({ damage: s.best.damage, cost: s.best.cost }, { ...terms, economy: (terms.economy ?? 0) + (s.best.incomeChange ?? 0) }), armor: s.best.armor, dodge: s.best.dodge },
-    incomeChange: s.best?.incomeChange ?? 0,
-  });
+  const report = (s) => {
+    // A layout no build keeps within the limit (worker.js scores it to climb on) is no answer.
+    const best = s.best?.infeasible ? null : s.best;
+    return {
+      step: s.steps ?? s.step ?? 0, levels: { ...start, ...s.levels }, checked: s.checked, budget: s.budget, used: s.used,
+      best: best && { ...evaluate({ damage: best.damage, cost: best.cost }, { ...terms, economy: (terms.economy ?? 0) + (best.incomeChange ?? 0) }), armor: best.armor, dodge: best.dodge },
+      incomeChange: best?.incomeChange ?? 0,
+    };
+  };
+  // Economy skills searched: they start at 0, their points free for fighting, and come back a
+  // number of points at a time, each the layout earning most for them (optimize.js bestLayoutEconomy).
+  // From a full economy spec a joint climb would trade them for fight levels one step at a time.
+  const zeroed = economySearch ? ECONOMY_SKILLS : [];
+  const economy = income ? {
+    skills: searched.filter((s) => ECONOMY_SKILLS.includes(s)),
+    steps: incomeSteps(income.plan, income.config, { skills: searched.filter((s) => ECONOMY_SKILLS.includes(s)), budget, playerLevel: planner.player?.level ?? 1 }),
+  } : null;
   const r = await searchLayout(market, {
-    lockedFood: settings.food === 'any' ? undefined : settings.food, start, searched, budget,
+    lockedFood: settings.food === 'any' ? undefined : settings.food, start, searched, budget, zeroed, economy,
     player: playerOf(planner), opts: fightOptions(settings),
     objective: { kind: 'damage', terms: engineTerms, limit: Number.isFinite(maxLoss) ? maxLoss : null }, income,
   }, { onProgress: (s) => onStep?.(report(s)), signal });

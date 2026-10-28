@@ -48,12 +48,18 @@ payroll per day match exactly.
 - [ ] **Hiring:** rank `employee.getCandidates` by profit per day at your
   company (their production × your bonus − their wage), and against your
   weakest employee (6 of 14 cost more than they make today).
-- [ ] **Replace or train:** for each losing employee, compare training (the
-  production gain over the potential left) with replacing them.
+- [x] **Replace or train:** for each losing employee, compare training (what a
+  session's best card adds over the days they have left) with replacing them.
+- [x] **Training cards:** every card the game can deal each employee (its pool,
+  rarity odds with Leadership and Luck, a hand of 3), valued over the days the
+  employee has left before retiring (training.js). Which card of a rarity comes
+  up isn't in the config: taken as any of them, evenly.
 - [ ] **Wage expectation:** flag employees whose wage will move toward their
   expectation (unit to confirm first).
-- [ ] **Trainings per day:** fill the setting from the employees (energy each
-  training takes) instead of asking.
+- [x] **Trainings per day:** filled from the employees (one each while they
+  have potential left; a Trainer coworker adds one); the box overrides it.
+- [x] **Self-work** on by default (config: 30 points + 3 a Production level per
+  10 energy); **Leadership** valued by the better training cards it brings.
 - [ ] **Specialization:** when the page suggests switching a company's good
   (e.g. to cooked fish), count the specialization bonus the employees lose
   (+1 % a day, up to 20 %).

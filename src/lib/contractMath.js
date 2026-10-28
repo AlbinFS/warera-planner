@@ -12,7 +12,7 @@ export function evaluate(p, { bounty, poolLoot = 0, economy, loot = 0 }) {
   return { ...p, income, loot: lootValue, net, breakEven };
 }
 
-/** Loot by damage as points for the search's workers: [damage, G], log-spaced from 20k to 200M. */
+/** Loot by damage as points for the search's workers: [damage, G], log-spaced from 20k to 200M (120 a decade, 2 % apart). */
 export function lootCurve(lootAt) {
-  return Array.from({ length: 81 }, (_, i) => 20e3 * 10 ** (i / 20)).map((d) => [d, lootAt(d)]);
+  return Array.from({ length: 481 }, (_, i) => 20e3 * 10 ** (i / 120)).map((d) => [d, lootAt(d)]);
 }

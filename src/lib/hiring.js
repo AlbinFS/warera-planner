@@ -16,8 +16,9 @@
  * A hire is scored by what the whole company makes after it: the newcomer's
  * own points plus every coworker's change (a Xenophobe next to a foreigner,
  * a Comic lifting everyone's mood, …), at the good's value per point, minus
- * the newcomer's wage. Traits that only pay off over weeks are counted at a
- * typical value; ones that don't change output (luck, retention) at none.
+ * the newcomer's wage. Traits that only pay off over weeks are counted over
+ * the days the employee has left; Luck by the toolboxes it finds
+ * (toolboxValue: G a toolbox is worth to these companies); retention at none.
  *
  * Which trait to look for: first the ones that match the team (their value
  * here beyond what they'd give next to plain coworkers: Girl Power next to
@@ -47,21 +48,21 @@ export const TRAITS = {
   xenophobe: { weight: 10, bad: true, note: '−2 Production, −5 happiness with any foreign coworker' },
   cosmopolitan: { weight: 10, note: '+2 Production per foreign nationality among coworkers (up to +4)' },
   loner: { weight: 5, note: '+100 %, +5 happiness as the only employee' },
-  sociable: { weight: 10, note: '+25 % per coworker (up to +50 %), −10 happiness alone' },
-  comic: { weight: 10, note: 'every coworker +10 happiness; −1 Production themselves' },
-  mentor: { weight: 2, note: 'every weaker coworker +2 Production; −1 themselves' },
+  sociable: { mixed: true, weight: 10, note: '+25 % per coworker (up to +50 %), −10 happiness alone' },
+  comic: { mixed: true, weight: 10, note: 'every coworker +10 happiness; −1 Production themselves' },
+  mentor: { mixed: true, weight: 2, note: 'every weaker coworker +2 Production; −1 themselves' },
   foreman: { weight: 5, note: 'every coworker +3 Responsibility' },
-  rival: { weight: 5, note: '+3 Production when someone out-produces them, −1 at the top' },
-  primaDonna: { weight: 5, note: '+20 % when paid more than every coworker, else −10 happiness' },
-  bully: { weight: 5, note: '+2 Production; every coworker −10 happiness' },
+  rival: { mixed: true, weight: 5, note: '+3 Production when someone out-produces them, −1 at the top' },
+  primaDonna: { mixed: true, weight: 5, note: '+20 % when paid more than every coworker, else −10 happiness' },
+  bully: { mixed: true, weight: 5, note: '+2 Production; every coworker −10 happiness' },
   envious: { weight: 10, bad: true, note: '−5 happiness per better-paid coworker (up to −10)' },
   girlPower: { weight: 5, gender: 'female', note: '+15 % per female coworker (up to +30 %)' },
   bandOfBrothers: { weight: 5, gender: 'male', note: '+15 % per male coworker (up to +30 %)' },
   manHater: { weight: 5, gender: 'female', bad: true, note: '−15 % per male coworker (up to −30 %)' },
   misogynist: { weight: 5, gender: 'male', bad: true, note: '−15 % per female coworker (up to −30 %)' },
-  specialist: { weight: 10, note: '+3 Production, +5 happiness making their own good, which is random: about 1 in 20 matches yours (counted so)' },
-  craftsman: { weight: 10, note: '+3 Production on manufactured goods, −1 on raw' },
-  laborer: { weight: 10, note: '+3 Production on raw resources, −1 on manufactured' },
+  specialist: { weight: 10, note: '+3 Production, +5 happiness making their own good (named on the card); unknown, about 1 in 20 matches yours' },
+  craftsman: { mixed: true, weight: 10, note: '+3 Production on manufactured goods, −1 on raw' },
+  laborer: { mixed: true, weight: 10, note: '+3 Production on raw resources, −1 on manufactured' },
   quickStudy: { weight: 10, note: 'specializes twice as fast (20 % in 10 days, not 20)' },
   stockpiler: { weight: 10, note: 'no penalty when storage is full' },
   claustrophobe: { weight: 5, bad: true, note: '−20 % with storage at level 2 or lower' },
@@ -82,10 +83,10 @@ export const TRAITS = {
   climber: { weight: 10, bad: true, note: 'expected pay grows 2 % a week' },
   loyal: { weight: 5, note: 'happiness losses halved' },
   flightRisk: { weight: 10, bad: true, note: 'quits below 50 happiness, not 30' },
-  anchor: { weight: 5, note: 'never quits, but −50 % while unhappy' },
-  scavenger: { weight: 2, note: 'twice the toolbox chance, −25 % Production' },
+  anchor: { mixed: true, weight: 5, note: 'never quits, but −50 % while unhappy' },
+  scavenger: { mixed: true, weight: 2, note: 'twice the toolbox chance, −25 % Production' },
   salvager: { weight: 5, note: 'finds toolboxes even with storage full' },
-  gambler: { weight: 10, note: '+3 Luck, −15 % Production' },
+  gambler: { mixed: true, weight: 10, note: '+3 Luck, −15 % Production' },
   luckyCharm: { weight: 5, note: 'every coworker +3 Luck (toolboxes, training draws, events)' },
   jinx: { weight: 10, bad: true, note: 'every coworker −2 Luck' },
   recruiter: { weight: 2, note: '+1 candidate on your daily shortlist' },
@@ -97,6 +98,19 @@ export const traitName = (code) => NAMES[code] ?? String(code).replace(/([A-Z])/
 
 // Event-only traits (a named partner): never on a candidate.
 const EVENT_ONLY = new Set(['oldFriends', 'nemesis', 'sweethearts']);
+
+// Traits the game never puts together (its web app's config, 2026-10-28): no card teaches one to
+// someone who has the other.
+const CLASHES = [['handy', 'improviser'], ['loner', 'sociable'], ['cosmopolitan', 'xenophobe'], ['comic', 'bully'], ['craftsman', 'laborer'],
+  ['expat', 'homesick'], ['statist', 'taxShy'], ['sprinter', 'creatureOfHabit'], ['sprinter', 'veteran'], ['diamondInTheRough', 'burnout'],
+  ['greedy', 'modest'], ['flightRisk', 'anchor'], ['luckyCharm', 'jinx'], ['scavenger', 'handy']];
+/** Whether someone with these traits can gain this one (not already theirs, no clash, their gender). */
+export function canGain(code, traits, gender) {
+  const t = TRAITS[code];
+  if (!t || EVENT_ONLY.has(code) || traits.includes(code)) return false;
+  if (t.gender && gender && t.gender !== gender) return false;
+  return !CLASHES.some(([a, b]) => (a === code && traits.includes(b)) || (b === code && traits.includes(a)));
+}
 
 const HOURS = 24;
 const OUTPUT_DIVISOR = 4;
@@ -115,11 +129,11 @@ export function traitChance(code, gender) {
 
 /**
  * What an employee's traits and their coworkers' traits do to them, given
- * who they work with: { prod, resp, percent, happy } (happy as raw gains
- * and losses, before Responsibility's shield).
+ * who they work with: { prod, resp, luck, percent, gain, loss } (gain and
+ * loss: happiness, before Responsibility's shield).
  */
 function effects(e, coworkers, place) {
-  const out = { prod: 0, resp: 0, percent: 0, gain: 0, loss: 0 };
+  const out = { prod: 0, resp: 0, luck: 0, percent: 0, gain: 0, loss: 0 };
   const happy = (v) => { if (v > 0) out.gain += v; else out.loss += v; };
   const has = (t) => e.traits.includes(t);
   const n = coworkers.length;
@@ -140,12 +154,21 @@ function effects(e, coworkers, place) {
   if (has('bandOfBrothers')) out.percent += Math.min(30, 15 * of('male'));
   if (has('manHater')) out.percent -= Math.min(30, 15 * of('male'));
   if (has('misogynist')) out.percent -= Math.min(30, 15 * of('female'));
-  // Their good is one of about 20: it matches this company's about 1 time in 20.
-  if (has('specialist')) { out.prod += 3 / 20; happy(5 / 20); }
+  // Their good is on them (rolled); unknown, it matches this company's about 1 time in 20.
+  if (has('specialist')) {
+    const good = e.traitArgs?.specialist;
+    const share = good ? (good === place.good ? 1 : 0) : 1 / 20;
+    out.prod += 3 * share;
+    happy(5 * share);
+  }
   if (has('craftsman')) out.prod += place.raw ? -1 : 3;
   if (has('laborer')) out.prod += place.raw ? 3 : -1;
   if (has('claustrophobe') && place.storage <= 2) out.percent -= 20;
-  if (has('veteran')) out.percent += 10;
+  // +20 % once 30 days in the company: its share of the days they have left (+10 % when not known).
+  if (has('veteran')) {
+    const left = e.daysLeft;
+    out.percent += left == null ? 10 : left > 0 ? (20 * Math.max(0, left - Math.max(0, 30 - (e.tenure ?? 0)))) / left : 0;
+  }
   if (has('diamondInTheRough')) out.prod += 2 / 3;
   if (has('burnout')) out.prod -= 1;
   // Age-based traits at the age they reach halfway through the next 20 days (a year passes a day); +2 / −1 when the age is unknown.
@@ -160,14 +183,25 @@ function effects(e, coworkers, place) {
   if (has('improviser') && !e.tool) out.percent += 25;
   if (has('handy') && e.tool) out.percent += 40;
   if (has('scavenger')) out.percent -= 25;
-  if (has('gambler')) out.percent -= 15;
+  if (has('gambler')) { out.percent -= 15; out.luck += 3; }
   for (const c of coworkers) {
     if (c.traits.includes('comic')) happy(10);
     if (c.traits.includes('bully')) happy(-10);
     if (c.traits.includes('foreman')) out.resp += 3;
     if (c.traits.includes('mentor') && e.prod < c.prod) out.prod += 2;
+    if (c.traits.includes('luckyCharm')) out.luck += 3;
+    if (c.traits.includes('jinx')) out.luck -= 2;
   }
   return out;
+}
+
+// Luck finds toolboxes: 0.1 % an hour per point, at most 2 % an hour (Scavenger twice as likely).
+const TOOLBOX_PER_POINT = 0.001;
+const TOOLBOX_MAX = 0.02;
+/** Toolboxes a day an employee finds at this Luck. */
+export function toolboxesPerDay(luck, traits = []) {
+  const times = traits.includes('scavenger') ? 2 : 1;
+  return HOURS * Math.min(TOOLBOX_MAX * times, Math.max(0, luck) * TOOLBOX_PER_POINT * times);
 }
 
 /** Points per day from stats and bonus, with happiness held in 0–100. */
@@ -179,10 +213,11 @@ function pointsOf(e, fx) {
   return (prod / OUTPUT_DIVISOR) * HOURS * (1 + (e.bonusBase + fx.percent + happiness - 50) / 100);
 }
 
-/** Where a company works, for traits that care: raw or manufactured good, storage, country, home country, tax. */
+/** Where a company works, for traits that care: its good (raw or manufactured), storage, country, home country, tax. */
 export function placeOf(company, { regions = {}, countries = {}, items = {} } = {}) {
   const region = regions[company.region];
   return {
+    good: company.good ?? null,
     raw: items[company.good]?.type === 'raw',
     storage: company.storage ?? 1,
     country: region?.country ?? null,
@@ -203,10 +238,13 @@ export function fairWageOf(employees) {
  * place: { raw, storage, country, homeCountry, tax }, value per point, and
  * the fair wage per Production point per day.
  */
-export function companyModel(employees, place, { perPoint, fairWage, management = 0 }) {
+export function companyModel(employees, place, { perPoint, fairWage, management = 0, toolboxValue = 0, now: at = Date.now() }) {
   // Each employee's numbers with today's trait effects taken out, so they can be put back for any team.
   const team = employees.map((e) => {
-    const base = { ...e, traits: e.traits.filter(Boolean), prod: e.production, resp: e.stats?.responsibility?.total ?? AVERAGE_STAT, wage: e.payroll, tool: e.hasTool };
+    const base = {
+      ...e, traits: e.traits.filter(Boolean), prod: e.production, resp: e.stats?.responsibility?.total ?? AVERAGE_STAT, wage: e.payroll, tool: e.hasTool,
+      daysLeft: daysLeftOf(e, at), tenure: e.hiredAt ? Math.max(0, (at - Date.parse(e.hiredAt)) / DAY) : null,
+    };
     const now = effects(base, employees.filter((c) => c !== e).map(asCoworker), place);
     const happinessNow = e.happiness?.value ?? 50;
     const shieldNow = Math.min(1, base.resp / 10);
@@ -214,6 +252,7 @@ export function companyModel(employees, place, { perPoint, fairWage, management 
       ...base,
       prodBase: base.prod - now.prod,
       resp: base.resp - now.resp,
+      luckBase: (e.stats?.luck?.total ?? AVERAGE_STAT) - now.luck,
       bonusBase: e.bonusPercent - now.percent - (happinessNow - 50),
       happinessBase: happinessNow - now.gain - now.loss * (1 - shieldNow) * (base.traits.includes('loyal') ? 0.5 : 1),
     };
@@ -221,7 +260,14 @@ export function companyModel(employees, place, { perPoint, fairWage, management 
   // What a newcomer starts with: the company-wide bonuses (Management, core region), today's tax mood.
   const shared = employees[0]?.bonus?.filter((b) => b.source === 'management' || b.source === 'coreRegion').reduce((s, b) => s + b.percent, 0) ?? management;
   // A company whose employees hold tools gives the newcomer one too.
-  return { team, place: { ...place, tools: place.tools ?? employees.some((e) => e.hasTool) }, perPoint, fairWage, shared };
+  return { team, place: { ...place, tools: place.tools ?? employees.some((e) => e.hasTool) }, perPoint, fairWage, shared, toolboxValue };
+}
+
+const DAY = 864e5;
+/** Days an employee has before asking to retire: the game's date, else from their age (a year a day); null when unknown. */
+export function daysLeftOf(e, now = Date.now()) {
+  if (e.retireAt) return Math.max(0, (Date.parse(e.retireAt) - now) / DAY);
+  return e.age != null ? Math.max(0, RETIRE_AGE - e.age) : null;
 }
 
 // Traits whose effect depends on who the coworkers are: only these can match or clash with a team.
@@ -278,18 +324,39 @@ function teamPoints(team, place) {
   return team.map((e) => pointsOf(e, effects(e, team.filter((c) => c !== e), place)));
 }
 
+/** Toolboxes a day the whole team finds. */
+function teamToolboxes(team, place) {
+  return team.reduce((t, e) => t + toolboxesPerDay((e.luckBase ?? AVERAGE_STAT) + effects(e, team.filter((c) => c !== e), place).luck, e.traits), 0);
+}
+
+/** What the team makes a day in G (points and toolboxes), wages not counted. */
+const teamWorth = (model, team) => teamPoints(team, model.place).reduce((s, x) => s + x, 0) * model.perPoint + teamToolboxes(team, model.place) * (model.toolboxValue ?? 0);
+
+/**
+ * What changing one employee adds a day, coworkers included, before wages:
+ * `change(e)` gives the fields that change (stats, traits). G a day.
+ */
+export function changeValue(model, index, change) {
+  const team = model.team.map((x, i) => (i === index ? { ...x, ...change(x) } : x));
+  if (!worthNow.has(model)) worthNow.set(model, teamWorth(model, model.team));
+  return teamWorth(model, team) - worthNow.get(model);
+}
+const worthNow = new WeakMap();
+
 /** A typical candidate with this nationality, gender and trait. */
 /**
  * A candidate: a typical one (average stats, a little training, a fair wage),
  * or one from a real card when `production` is given: { production,
  * responsibility, expectation (0.7–1.3, the card's hint), age }.
  */
-function candidate(model, { nationality, gender, trait, production, responsibility, expectation = 1, age = null }) {
+function candidate(model, { nationality, gender, trait, production, responsibility, luck, expectation = 1, age = null, specialistGood = null }) {
   const markup = trait === 'greedy' ? 1.2 : trait === 'modest' ? 0.85 : 1;
   const own = production ?? AVERAGE_STAT + TRAINED;
   return {
     id: 'new', name: 'New hire', nationality, gender, age, traits: trait ? [trait] : [], tool: !!model.place.tools,
-    prodBase: own, prod: own, resp: responsibility ?? AVERAGE_STAT,
+    traitArgs: trait === 'specialist' && specialistGood ? { specialist: specialistGood } : {},
+    prodBase: own, prod: own, resp: responsibility ?? AVERAGE_STAT, luckBase: luck ?? AVERAGE_STAT,
+    daysLeft: age != null ? Math.max(0, RETIRE_AGE - age) : null, tenure: 0,
     bonusBase: model.shared, happinessBase: 50 - model.place.tax,
     wage: model.fairWage * own * expectation * markup,
   };
@@ -326,7 +393,9 @@ export function hireValue(model, profile, { replace = null } = {}) {
   const leaving = replace == null ? null : model.team[replace];
   const points = own + coworkers.reduce((s, c) => s + c.change, 0) - (leaving ? before[replace] : 0);
   const wage = newcomer.wage - (leaving ? leaving.wage : 0);
-  return { points, own, coworkers, wage, newWage: newcomer.wage, replaces: leaving?.name ?? null, value: points * model.perPoint - wage };
+  // Toolboxes Luck finds (Gambler, Lucky Charm, Jinx), at what one is worth here.
+  const toolboxes = (teamToolboxes([...stay, newcomer], model.place) - teamToolboxes(model.team, model.place)) * (model.toolboxValue ?? 0);
+  return { points, own, coworkers, wage, newWage: newcomer.wage, replaces: leaving?.name ?? null, toolboxes, value: points * model.perPoint + toolboxes - wage };
 }
 
 /**
@@ -356,36 +425,4 @@ export function bestHires(model, { otherNationality = 'other', full = false } = 
   }
   all.sort((a, b) => b.value - a.value);
   return all;
-}
-
-/**
- * Training cards for one employee, by what they add per day: removing each
- * bad trait (Rehab), teaching the best good trait (New habit), +1 Production
- * (Drill) and a 10 % lower wage expectation (Negotiation).
- */
-export function trainingCards(model, index) {
-  const before = teamPoints(model.team, model.place).reduce((s, x) => s + x, 0);
-  const valueOf = (team) => (teamPoints(team, model.place).reduce((s, x) => s + x, 0) - before) * model.perPoint;
-  const e = model.team[index];
-  const swap = (changed) => model.team.map((x, i) => (i === index ? { ...x, ...changed } : x));
-  const cards = [];
-  cards.push({ card: 'Drill', what: '+1 Production', value: valueOf(swap({ prodBase: e.prodBase + 1, prod: e.prod + 1 })) - model.fairWage * (e.wageExpectation ?? 1) });
-  // The middle Negotiation card: 0.1 off the wage expectation (it can't go below 0.7).
-  if (e.wageExpectation && e.wageExpectation - 0.1 >= 0.7) cards.push({ card: 'Negotiation', what: '−0.1 wage expectation', value: (e.wage / e.wageExpectation) * 0.1 });
-  for (const t of e.traits) {
-    const gain = valueOf(swap({ traits: e.traits.filter((x) => x !== t) }));
-    const wage = t === 'greedy' ? e.wage - e.wage / 1.2 : t === 'modest' ? e.wage - e.wage / 0.85 : 0;
-    if (gain + wage > 0.005) cards.push({ card: 'Rehab', what: `remove ${t}`, trait: t, value: gain + wage });
-  }
-  if (e.traits.length < 2) {
-    let best = null;
-    for (const t of Object.keys(TRAITS)) {
-      if (EVENT_ONLY.has(t) || e.traits.includes(t) || TRAITS[t].bad || (TRAITS[t].gender && TRAITS[t].gender !== e.gender)) continue;
-      const wage = t === 'modest' ? e.wage * 0.15 : 0;
-      const v = valueOf(swap({ traits: [...e.traits, t] })) + wage;
-      if (!best || v > best.value) best = { card: 'New habit', what: `learn ${t}`, trait: t, value: v };
-    }
-    if (best && best.value > 0.005) cards.push(best);
-  }
-  return cards.sort((a, b) => b.value - a.value);
 }

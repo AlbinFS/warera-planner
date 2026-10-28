@@ -3,7 +3,7 @@
  * score skill layouts in parallel, while the climb over layouts runs here.
  * The market is sent to each worker once; later searches reuse it.
  */
-import { bestLayoutAsync, better, configOf, FIGHT } from './optimize.js';
+import { bestLayoutAsync, bestLayoutEconomy, better, configOf, FIGHT } from './optimize.js';
 
 const SIZE = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 2));
 let pool = null;
@@ -40,13 +40,15 @@ function call(worker, message) {
 const rangeBetter = (a, b) => !!a && a.cost != null && (!b || b.cost == null || a.cost < b.cost - 1e-6);
 
 /**
- * A skill-layout search (args as worker.js describes, plus searched and budget).
+ * A skill-layout search (args as worker.js describes, plus searched, budget,
+ * zeroed: skills the first start sets to 0, and economy: the economy steps
+ * for bestLayoutEconomy).
  * onProgress gets each step; `signal` stops it after the current step.
  */
 export async function searchLayout(market, args, { onProgress, signal } = {}) {
   const workers = getPool();
   const ctx = nextCtx++;
-  const { searched, budget, ...context } = JSON.parse(JSON.stringify(args));
+  const { searched, budget, zeroed, economy, ...context } = JSON.parse(JSON.stringify(args));
   const withMarket = market === sentMarket ? context : { ...context, market: JSON.parse(JSON.stringify(market)) };
   sentMarket = market;
   await Promise.all(workers.map((w) => call(w, { op: 'context', ctx, args: withMarket })));
@@ -56,7 +58,7 @@ export async function searchLayout(market, args, { onProgress, signal } = {}) {
   // new fight goes to the worker with the fewest new fights in this batch.
   const fightKey = (l) => FIGHT.map((s) => l[s] ?? 0).join(',');
   const owner = new Map();
-  const scoreMany = async (layouts) => {
+  const scoreMany = async (layouts, hint = null, quick = false) => {
     const parts = workers.map(() => []);
     const fresh = workers.map(() => 0);
     const where = layouts.map((l) => {
@@ -70,11 +72,17 @@ export async function searchLayout(market, args, { onProgress, signal } = {}) {
       parts[w].push(l);
       return [w, parts[w].length - 1];
     });
-    const results = await Promise.all(parts.map((part, w) => (part.length ? call(workers[w], { op: 'score', ctx, layouts: part }) : [])));
+    // The neighbours' layout's damage: where the battle loot step can start (worker.js).
+    const near = hint && !hint.infeasible && hint.damage > 0 ? hint.damage : null;
+    const results = await Promise.all(parts.map((part, w) => (part.length ? call(workers[w], { op: 'score', ctx, layouts: part, near, quick }) : [])));
     return where.map(([w, i]) => results[w][i]);
   };
-  return bestLayoutAsync(configOf(market), {
-    start: args.start, searched, budget, playerLevel: args.player.level, scoreMany,
+  // Economy skills searched for most damage: placed exactly, per number of points (optimize.js).
+  return (economy && args.objective.kind === 'damage' ? bestLayoutEconomy : bestLayoutAsync)(configOf(market), {
+    economy,
+    start: args.start, searched, budget, zeroed, playerLevel: args.player.level, scoreMany,
+    // Most damage: neighbours are screened with one build all session and the loot counted once.
+    scoreQuick: args.objective.kind === 'damage' ? (layouts, hint) => scoreMany(layouts, hint, true) : null,
     isBetter: args.objective.kind === 'range' ? rangeBetter : better,
     onStep: onProgress, shouldStop: () => signal?.aborted,
   });

@@ -20,7 +20,7 @@
     <span class="unit">%</span>
   </label>
 
-  <div class="field" role="group" aria-label="Fight window" title="8 h: full health and hunger, fighting through one pill's 8 hours. 16 h: a play session (8 h asleep): the pill's 8 hours, then 8 hours in its −60% debuff on regen. Full day: 24 hours, the debuff included.">
+  <div class="field" role="group" aria-label="Fight window" title="8 h: full health and hunger, fighting through one pill's 8 hours. 16 h: a play session (8 h asleep): the pill's 8 hours, then 8 hours in its −60% debuff on regen. Full day: 24 hours: the debuff (15.5 h) included, then half an hour at full strength.">
     <Icon path={mdiClockOutline} size={18} color="var(--c-defense)" />
     <span>Fight for</span>
     <span class="seg">

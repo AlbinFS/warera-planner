@@ -4,7 +4,7 @@
  */
 import { cached, cachedBatch } from './warera.js';
 
-const SETTINGS_KEY = 'eco.settings.v1';
+const SETTINGS_KEY = 'eco.settings.v2';
 // Employees used to be typed in and kept here; they come from the game now.
 try { localStorage.removeItem('eco.employees.v2'); } catch {}
 
@@ -12,13 +12,22 @@ const load = (key, fallback) => {
   try { return { ...fallback, ...JSON.parse(localStorage.getItem(key) ?? '{}') }; } catch { return { ...fallback }; }
 };
 
+// v1 had self-work off and trainings typed in (0); both now default to what the game says.
+try {
+  const v1 = localStorage.getItem('eco.settings.v1');
+  if (v1 && !localStorage.getItem(SETTINGS_KEY)) {
+    const { selfWork, trainingsPerDay, ...rest } = JSON.parse(v1);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(rest));
+  }
+  localStorage.removeItem('eco.settings.v1');
+} catch {}
+
 export const ecoSettings = $state(load(SETTINGS_KEY, {
   pointValue: null, // null: the game's value (eco.js GAME_POINT_VALUE)
-  selfWork: false,
-  trainingsPerDay: 0,
+  selfWork: true,
+  trainingsPerDay: null, // null: from the employees (eco.js trainingsFromEmployees)
   budgetMode: 'keepFight', // keepFight | all | custom
   customBudget: 0,
-  minLeadership: 0,
   extraCompanies: 0, // companies you'd build, to see what a higher Companies skill would earn
 }));
 
@@ -122,6 +131,8 @@ function fromGame(e) {
       reasons: (e.happinessBreakdown?.contributions ?? []).filter((c) => c.revealed !== false).map((c) => ({ reason: c.reason, delta: c.delta })),
     },
     traits: (e.traits ?? []).map((t) => (t.revealed === false ? null : t.code)),
+    // What a trait is about, where it names something (Specialist's good, Diamond's stat).
+    traitArgs: Object.fromEntries((e.traits ?? []).filter((t) => t.revealed !== false && t.arg).map((t) => [t.code, t.arg])),
     potential: e.potential ?? null,
     potentialMax: e.potentialMax ?? null,
     trainingsToday: e.trainingsToday ?? 0,

@@ -13,7 +13,7 @@
   import { itemLabel } from '../lib/market.js';
   import TraitChip from './TraitChip.svelte';
 
-  let { companies, perPoint, items, managementPercent = 0 } = $props();
+  let { companies, perPoint, items, managementPercent = 0, toolboxValue = 0 } = $props();
 
   let countries = $state.raw({});
   let regions = $state.raw({});
@@ -34,6 +34,8 @@
   function remove(id) { cards.list = cards.list.filter((c) => c.id !== id); }
 
   const signed = (n, digits = 2) => `${n >= 0 ? '+' : ''}${fmt(n, digits)}`;
+  // Goods a company can make (for a Specialist's good).
+  const goodCodes = $derived(Object.keys(perPoint).sort((a, b) => itemLabel(a).localeCompare(itemLabel(b))));
   const traitCodes = Object.keys(TRAITS).filter((t) => !['oldFriends', 'nemesis', 'sweethearts'].includes(t)).sort((a, b) => traitName(a).localeCompare(traitName(b)));
 
   const active = $derived(companies.filter((c) => !c.disabled));
@@ -41,15 +43,16 @@
   const models = $derived(active.map((c) => ({
     company: c,
     full: (ecoEmployees[c.id] ?? []).length >= (c.breakRoom ?? 1),
-    model: companyModel(ecoEmployees[c.id] ?? [], placeOf(c, { regions, countries, items }), { perPoint: perPoint[c.good] ?? 0, fairWage, management: managementPercent }),
+    model: companyModel(ecoEmployees[c.id] ?? [], placeOf(c, { regions, countries, items }), { perPoint: perPoint[c.good] ?? 0, fairWage, management: managementPercent, toolboxValue }),
   })));
 
   // Every candidate in every company.
   const scores = $derived(cards.list.map((card) => {
     const profile = {
       nationality: card.nationality || null, gender: card.gender, trait: card.trait || null, age: Number(card.age) || null,
-      production: Math.max(1, Number(card.production) || 1), responsibility: Math.max(0, Number(card.responsibility) || 0),
+      production: Math.max(1, Number(card.production) || 1), responsibility: Math.max(0, Number(card.responsibility) || 0), luck: Math.max(0, Number(card.luck) || 0),
       expectation: Math.min(1.6, Math.max(0.5, (Number(card.expectation) || 100) / 100)),
+      specialistGood: card.trait === 'specialist' ? card.specialistGood || null : null,
     };
     const byCompany = models.map((m) => ({ company: m.company, full: m.full, ...rateCandidate(m.model, profile, { full: m.full }) }));
     const best = byCompany.reduce((a, b) => (!a || b.value > a.value ? b : a), null);
@@ -86,6 +89,12 @@
                 <option value="">No trait</option>
                 {#each traitCodes as t (t)}<option value={t}>{traitName(t)}</option>{/each}
               </select>
+              {#if c.trait === 'specialist'}
+                <select bind:value={c.specialistGood} aria-label="Specialist's good">
+                  <option value="">Good not known</option>
+                  {#each goodCodes as g (g)}<option value={g}>{itemLabel(g)}</option>{/each}
+                </select>
+              {/if}
             </td>
             <td><select bind:value={c.gender} aria-label="Gender"><option value="male">Man</option><option value="female">Woman</option></select></td>
             <td>

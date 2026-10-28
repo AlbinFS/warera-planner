@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { softCapPercent, breakpoint, playerStats, swingDamage, fight, needsAmmo, wearPerSwing } from '../src/combat/model.js';
-import { prepare, strongest, cheapest } from '../src/combat/optimize.js';
+import { prepare, strongest, cheapest, phasesFor, layoutSpace, bestNet, bestLayoutAsync } from '../src/combat/optimize.js';
 import { buildMarket } from '../src/engine/inputs.js';
 
 const table = (base, step, cost = (n) => (n * (n + 1)) / 2) => ({
@@ -153,6 +153,76 @@ test('a second build for the debuff never does worse than one build all day, and
   assert.ok(b.debuff && b.phases.length === 2 && Math.abs(b.damage - pillOnly.damage - debuffOnly.damage) < b.damage * 0.01);
   const target = cheapest(prep, layout, player, two, b.damage * 0.8);
   assert.ok(target.reachedTarget && target.damage >= b.damage * 0.8 - 1);
+});
+
+test('two builds under a limit used to the last gold: no rounding failure, net within it', () => {
+  const prep = prepare(smallMarket());
+  const player = { level: 32, militaryRankPercent: 20, prestige: {} };
+  for (const hours of [16, 24]) for (const bounty of [0, 0.08, 0.1]) for (let limit = 0; limit <= 300; limit += 7.5) {
+    const b = strongest(prep, layout, player, { pill: true, battleBonusPercent: 70, hours, splitDebuff: true }, { bounty }, limit);
+    if (b) assert.ok(b.net >= -limit - 1e-6, `net ${b.net} below −${limit}`);
+  }
+});
+
+test('the debuff lasts its own 15.5 h: a full day ends at full strength, and no food is lost to rounding', () => {
+  const cfg = { ...config, items: { ...config.items, cocain: { flatStats: { percentAttack: 60, buffDurationHours: 8, debuffDurationHours: 15.5 } } } };
+  const stats = playerStats(cfg, layout);
+  const phases = phasesFor(cfg, stats, 'cookedFish', { pill: true, hours: 24 });
+  assert.deepEqual(phases.map((p) => [p.multiplier, p.hours]), [[1.6, 8], [0.4, 15.5], [1, 0.5]]);
+  // The whole day's food, as one 24 h window counts it: the full bar plus 2.4 bars of regen.
+  assert.equal(phases.reduce((t, p) => t + p.foodMax, 0), Math.floor(stats.hunger * 3.4 + 1e-9));
+  // 16 h: the debuff runs to the end.
+  assert.deepEqual(phasesFor(cfg, stats, null, { pill: true, hours: 16 }).map((p) => p.multiplier), [1.6, 0.4]);
+});
+
+test('skill search starts: economy skills zeroed in the first, the same random starts every run', () => {
+  const skills = { ...config.skills, production: table(30, 3), energy: table(100, 10) };
+  const start = { ...layout, production: 8, energy: 8 };
+  const args = { start, searched: [...Object.keys(layout), 'production', 'energy'], budget: 200, playerLevel: 40, zeroed: ['production', 'energy'] };
+  const a = layoutSpace({ skills }, args);
+  const b = layoutSpace({ skills }, args);
+  assert.equal(a.starts[0].production, 0);
+  assert.equal(a.starts[0].energy, 0);
+  assert.equal(a.starts[0].attack, layout.attack);
+  assert.equal(a.starts.length, 7);
+  assert.deepEqual(a.starts, b.starts);
+  for (const s of a.starts) assert.ok(a.fits(s));
+});
+
+test('screening neighbours with a rough score that ranks alike finds the same layout, scoring far fewer exactly', async () => {
+  const skills = Object.fromEntries(Object.keys(layout).map((s) => [s, table(0, 1)]));
+  // A made-up damage with diminishing returns and a few skills that pay more.
+  const weight = { attack: 5, precision: 3, criticalChance: 3, criticalDamages: 2, armor: 2, dodge: 2, health: 2, lootChance: 1, hunger: 1 };
+  const damage = (l) => Object.entries(weight).reduce((t, [s, w]) => t + w * Math.sqrt(l[s] ?? 0), 0);
+  const exact = async (ls) => ls.map((l) => ({ damage: damage(l), net: 0 }));
+  const rough = async (ls) => ls.map((l) => ({ damage: damage(l) * 0.8 + 1, net: 0 }));
+  const args = { start: layout, budget: 80, playerLevel: 40 };
+  const plain = await bestLayoutAsync({ skills }, { ...args, scoreMany: exact });
+  const screened = await bestLayoutAsync({ skills }, { ...args, scoreMany: exact, scoreQuick: rough, screen: 6 });
+  assert.equal(screened.best.damage, plain.best.damage);
+  assert.ok(screened.checked < plain.checked / 2, `${screened.checked} vs ${plain.checked}`);
+});
+
+test('economy placed by points: fight skills climbed per economy step, the best kept', async () => {
+  const { bestLayoutEconomy } = await import('../src/combat/optimize.js');
+  const skills = { ...Object.fromEntries(Object.keys(layout).map((s) => [s, table(0, 1)])), companies: table(0, 1) };
+  const weight = { attack: 5, precision: 3, criticalChance: 3, criticalDamages: 2, armor: 2, dodge: 2, health: 2, lootChance: 1, hunger: 1 };
+  // Damage from fight skills; companies only help through gold: up to 2 levels lift the damage a lot.
+  const score = async (ls) => ls.map((l) => ({ damage: Object.entries(weight).reduce((t, [s, w]) => t + w * Math.sqrt(l[s] ?? 0), 0) + 6 * Math.min(2, l.companies ?? 0), net: 0 }));
+  const steps = [0, 1, 2, 3].map((n) => ({ levels: { companies: n }, points: (n * (n + 1)) / 2 }));
+  const r = await bestLayoutEconomy({ skills }, { start: { ...layout, companies: 4 }, searched: [...Object.keys(layout), 'companies'], budget: 60, playerLevel: 40, economy: { skills: ['companies'], steps }, scoreMany: score });
+  assert.equal(r.levels.companies, 2);
+  assert.ok(r.used <= 60);
+});
+
+test('a layout no build keeps within the limit is told how far off it is', () => {
+  const prep = prepare(smallMarket());
+  const player = { level: 32, militaryRankPercent: 20, prestige: {} };
+  const opts = { pill: true, battleBonusPercent: 70, hours: 8 };
+  const best = bestNet(prep, layout, player, opts, { bounty: 0.1 });
+  // Just inside the best net: a build exists; just outside: none.
+  assert.ok(strongest(prep, layout, player, opts, { bounty: 0.1 }, -best + 0.01));
+  assert.equal(strongest(prep, layout, player, opts, { bounty: 0.1 }, -best - 0.01), null);
 });
 
 test('a share link keeps the debuff build, and old links still read', async () => {

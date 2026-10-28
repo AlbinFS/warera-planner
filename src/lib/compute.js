@@ -217,7 +217,7 @@ export async function optimizeSkills(market, planner, settings, { min, max, keep
   const income = !keepEconomy && planner.player?.id ? await incomePlan(market, planner).catch(() => null) : null;
   const targets = Array.from({ length: 4 }, (_, i) => min + ((max - min) * i) / 3);
   const r = await searchLayout(market, {
-    lockedFood: foodSetting(settings), start, searched, budget: level * 4 - keptPoints(market, start, searched),
+    lockedFood: foodSetting(settings), start, searched, budget: level * 4 - keptPoints(market, start, searched), zeroed: keepEconomy ? [] : ECONOMY_SKILLS,
     player: playerOf(planner), opts: fightOptions(settings), objective: { kind: 'range', targets }, income,
   }, { onProgress: (s) => onProgress?.({ evaluations: s.checked }), signal });
   if (!r?.best || r.best.unreachable) return { error: 'No skill layout reaches that damage range with these settings.' };

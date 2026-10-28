@@ -2,7 +2,7 @@
   /** The eco skill optimizer: the split of skill points that earns the most per day. */
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings } from '../lib/eco.svelte.js';
-  import { ECO_SKILLS, ecoValue, ecoCost, ecoMaxLevel, dailyIncome, optimizeEcoSkills } from '../lib/eco.js';
+  import { ECO_SKILLS, ecoValue, ecoCost, dailyIncome, optimizeEcoSkills, trainingsFromEmployees } from '../lib/eco.js';
   import { fmt } from '../lib/format.js';
   import Icon from './Icon.svelte';
   import { mdiFactory, mdiLightningBolt, mdiAccountGroup, mdiCrown, mdiAccountStar } from '@mdi/js';
@@ -14,7 +14,7 @@
     management: { label: 'Management', icon: mdiCrown, what: '+2% output for every employee per point (its value is level + 1).' },
     energy: { label: 'Energy', icon: mdiLightningBolt, what: 'Pays for hiring, training and self-work (10 each); refills a tenth of the bar an hour.' },
     production: { label: 'Production', icon: mdiFactory, what: 'Production points from each self-work.' },
-    leadership: { label: 'Leadership', icon: mdiAccountStar, what: 'Better training cards and event odds. No direct income: worth it while you train employees.' },
+    leadership: { label: 'Leadership', icon: mdiAccountStar, what: 'Better training cards (and event odds): worth what the better cards add to your employees still training. Not money, but counted.' },
   };
 
   const skills = $derived(config.skills);
@@ -26,18 +26,19 @@
     : Math.max(0, level * 4 - fightPoints));
 
   const now = $derived(dailyIncome(current, plan, config));
+  // What the employees can train a day (the box overrides it).
+  const autoTrainings = $derived(trainingsFromEmployees(plan.companies.flatMap((c) => c.employees ?? [])));
+  const typedTrainings = $derived(ecoSettings.trainingsPerDay !== null && ecoSettings.trainingsPerDay !== '' && ecoSettings.trainingsPerDay !== undefined);
 
   // Runs when the button is pressed; changing a setting afterwards marks the result as out of date.
   let best = $state.raw(null);
   let ran = $state(false);
   let ranWith = $state('');
-  const inputsKey = $derived(JSON.stringify([budget, ecoSettings.minLeadership, plan]));
+  const inputsKey = $derived(JSON.stringify([budget, plan]));
   let applied = $state(false);
   function optimize() {
     applied = false;
-    best = optimizeEcoSkills(plan, config, {
-      budget, playerLevel: level, minimum: { leadership: Math.min(Number(ecoSettings.minLeadership) || 0, ecoMaxLevel(skills, 'leadership', level)) },
-    });
+    best = optimizeEcoSkills(plan, config, { budget, playerLevel: level });
     ran = true;
     ranWith = inputsKey;
   }
@@ -67,20 +68,15 @@
     </label>
     <label>
       <span>Trainings per day</span>
-      <input type="number" min="0" max="60" bind:value={ecoSettings.trainingsPerDay} />
-      <small class="help">How many employee trainings you do each day (each costs 10 energy). Count your employees who still have training left. Not training: 0.</small>
-    </label>
-    <label>
-      <span>Keep Leadership at least</span>
-      <input type="number" min="0" max="10" bind:value={ecoSettings.minLeadership} />
-      <small class="help">Leadership gives better training cards but no money directly, so the optimizer drops it unless you set a minimum. Training employees now: guides suggest high (e.g. 5–10). Done training: 0.</small>
+      <input type="number" min="0" max="60" bind:value={ecoSettings.trainingsPerDay} placeholder={String(autoTrainings)} />
+      <small class="help">{#if typedTrainings}Your number. Empty: {autoTrainings}, from your employees.{:else}{autoTrainings}, from your employees: each with training left trains once a day (a Trainer coworker adds one), 10 energy each. Type a number to plan otherwise.{/if}</small>
     </label>
     <label>
       <span>Companies I'd build</span>
       <input type="number" min="0" max="20" bind:value={ecoSettings.extraCompanies} />
       <small class="help">You own {plan.ownedCount}. Count new ones here to see what a higher Companies skill would earn: each new company gets a level 1 engine making the best-paying good. The cost of building them isn't included.</small>
     </label>
-    <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy <small class="help">(off until confirmed how many points one self-work gives)</small></label>
+    <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy <small class="help">(10 energy each, for your Production skill's points: {ecoValue(skills, 'production', current.production ?? 0)} now, +3 a level)</small></label>
   </div>
   <div class="go">
     <button class="primary" onclick={optimize}>Find best eco skills</button>
@@ -97,7 +93,8 @@
     <dl class="big">
       <div><dt>Money per day now</dt><dd class="num">{fmt(now.total, 1)} G</dd></div>
       <div><dt>With the best skills</dt><dd class="num good">{fmt(best.result.total, 1)} G</dd></div>
-      <div><dt>Difference</dt><dd class="num">{best.result.total >= now.total ? '+' : ''}{fmt(best.result.total - now.total, 1)} G</dd></div>
+      {#if best.result.leadership > 0.05 || now.leadership > 0.05}<div><dt>Better training cards</dt><dd class="num">{fmt(best.result.leadership, 1)} G</dd><small class="muted">Leadership {best.levels.leadership}: value, not money (now {fmt(now.leadership, 1)})</small></div>{/if}
+      <div><dt>Difference</dt><dd class="num">{best.result.value >= now.value ? '+' : ''}{fmt(best.result.value - now.value, 1)} G</dd></div>
       <div><dt>Points used</dt><dd class="num">{best.spent} <small class="muted">of {budget}</small></dd></div>
     </dl>
     <table>
@@ -120,11 +117,12 @@
     <ul class="parts">
       <li>Companies running: <strong>{best.result.activeCount}</strong> of {plan.ownedCount} you own{#if best.result.owned > plan.ownedCount}{' + '}{best.result.owned - plan.ownedCount} you'd build{/if} (limit {best.result.limit}) → <strong>{fmt(best.result.companies, 1)} G</strong> a day from engines and employees</li>
       <li>Energy: {fmt(best.result.energyPerDay, 0)} a day; {fmt(best.result.trainingEnergy, 0)} for trainings{#if plan.selfWork}, {best.result.selfWorkActions} self-works → {fmt(best.result.selfWorkPoints, 0)} points = <strong>{fmt(best.result.selfWork, 1)} G</strong>{/if}</li>
+      {#if best.result.energyShort}<li class="warn">No layout within {budget} points has the energy for all {plan.trainingsPerDay} trainings a day: this one has the most ({fmt(best.result.energyPerDay / 10, 0)} actions).</li>{/if}
     </ul>
     <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27 gave everyone one free reset). The model: engine and employee output at today's prices for each company's good, employees' output and payroll as the game shows them, Management +2% per point of its value on employee output.</p>
   </section>
 {:else}
-  <section class="card"><p class="warn">No layout fits: the trainings need more energy than any layout within {budget} points gives. Lower the trainings per day or allow more points.</p></section>
+  <section class="card"><p class="warn">No layout fits within {budget} points.</p></section>
 {/if}
 
 <style>

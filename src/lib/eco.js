@@ -52,6 +52,20 @@ export function pointValueFromWages(employees) {
   return per.length ? per[per.length >> 1] : null;
 }
 
+/**
+ * Trainings a day the employees can take: one each (a Trainer coworker adds
+ * one; the game counts it in their trainingsPerDay) while they have potential left.
+ */
+export function trainingsFromEmployees(employees) {
+  return employees.reduce((t, e) => {
+    const left = Math.max(0, (e.potentialMax ?? 0) - (e.potential ?? 0));
+    return t + Math.min(left, e.trainingsPerDay ?? 1);
+  }, 0);
+}
+
+/** Trainings a day for the income model: the number typed in, else the employees'. */
+export const trainingsPerDayOf = (setting, employees) => (setting === null || setting === undefined || setting === '' ? trainingsFromEmployees(employees) : Math.max(0, Number(setting) || 0));
+
 /** Profit per production point for every good: (price − inputs) ÷ PP. */
 export function goodsProfit(items, prices) {
   const out = [];
@@ -121,9 +135,13 @@ export function managerAdvice(manager, staff, perPoint, marketRatePerPoint) {
  * Money per day for one eco skill layout.
  * plan: { companies: [{ id, good, engine, employees: [...], manager? }], perPoint: {good: G},
  *         currentManagementValue (the one the employees' shown bonus includes),
- *         selfWork (bool), trainingsPerDay }
+ *         selfWork (bool), trainingsPerDay,
+ *         leadershipValues: [G a day by Leadership level] (training.js: better cards) }
  * Companies run in order of profit, up to the Companies skill's limit. Managers'
  * pay comes off the total: they are paid every hour, whether the company runs.
+ * Leadership's better training cards are value made a day (paid out over
+ * the employees' remaining days), for the trainings the energy covers: not
+ * money, so outside `total`; `value` is both (what the eco skills aim for).
  */
 export function dailyIncome(levels, plan, config) {
   const { skills, upgrades } = config;
@@ -151,10 +169,13 @@ export function dailyIncome(levels, plan, config) {
   const bestPerPoint = Math.max(0, ...active.map((r) => r.perPoint));
   const selfWorkPoints = selfWorkActions * ecoValue(skills, 'production', levels.production);
   const selfWork = selfWorkPoints * bestPerPoint;
+  const trained = trainingEnergy > 0 ? Math.min(1, energyPerDay / trainingEnergy) : 1;
+  const leadership = (plan.leadershipValues?.[levels.leadership ?? 0] ?? 0) * trained;
 
   return {
     total: companies + selfWork - managers,
-    companies, selfWork, selfWorkActions, selfWorkPoints, managers,
+    value: companies + selfWork - managers + leadership,
+    companies, selfWork, selfWorkActions, selfWorkPoints, managers, leadership,
     energyPerDay, trainingEnergy, energyShort: trainingEnergy > energyPerDay,
     activeCount: active.length, limit, owned: runs.length,
     runs, active,
@@ -162,21 +183,66 @@ export function dailyIncome(levels, plan, config) {
 }
 
 /**
- * The eco skill layout with the most money per day within a point budget.
+ * The economy layouts worth their points, for a search that trades economy
+ * skills against fight skills: for each number of points (up to `budget`),
+ * the layout of `skills` (the rest at 0) that makes the most money a day,
+ * kept only when it makes more than every cheaper one. [{ levels, points,
+ * income }], the first all at 0.
+ */
+export function incomeSteps(plan, config, { skills: names, budget, playerLevel }) {
+  const { skills } = config;
+  const max = Object.fromEntries(names.map((s) => [s, ecoMaxLevel(skills, s, playerLevel)]));
+  const byPoints = new Map();
+  const levels = Object.fromEntries(ECO_SKILLS.map((s) => [s, 0]));
+  const walk = (i, spent) => {
+    if (i === names.length) {
+      const income = dailyIncome(levels, plan, config).total;
+      const prev = byPoints.get(spent);
+      if (!prev || income > prev.income + 1e-9) byPoints.set(spent, { levels: Object.fromEntries(names.map((s) => [s, levels[s]])), points: spent, income });
+      return;
+    }
+    const s = names[i];
+    for (let n = 0; n <= max[s]; n++) {
+      const cost = ecoCost(skills, s, n);
+      if (spent + cost > budget) break;
+      levels[s] = n;
+      walk(i + 1, spent + cost);
+    }
+    levels[s] = 0;
+  };
+  walk(0, 0);
+  const steps = [];
+  for (const step of [...byPoints.values()].sort((a, b) => a.points - b.points)) {
+    if (!steps.length || step.income > steps.at(-1).income + 0.01) steps.push(step);
+  }
+  return steps;
+}
+
+/**
+ * The eco skill layout with the most value per day (money, and Leadership's
+ * better training cards) within a point budget.
  * Exhaustive over the five eco skills (small search). Options: minimum
  * levels per skill (e.g. Leadership while training) and the player level
- * for unlocks. Ties go to the cheaper layout, then to more Energy.
+ * for unlocks. Ties go to the cheaper layout, then to more Energy. When no
+ * layout has the energy for every training, the one with the most energy
+ * (then the most money), its result marked energyShort.
  */
 export function optimizeEcoSkills(plan, config, { budget, playerLevel, minimum = {} }) {
   const { skills } = config;
   const max = Object.fromEntries(ECO_SKILLS.map((s) => [s, ecoMaxLevel(skills, s, playerLevel)]));
   let best = null;
+  let short = null;
   const levels = {};
   const walk = (i, spent) => {
     if (i === ECO_SKILLS.length) {
       const r = dailyIncome(levels, plan, config);
-      if (r.energyShort) return;
-      if (!best || r.total > best.result.total + 1e-9 || (Math.abs(r.total - best.result.total) <= 1e-9 && spent < best.spent)) {
+      if (r.energyShort) {
+        if (!best && (!short || r.energyPerDay > short.result.energyPerDay || (r.energyPerDay === short.result.energyPerDay && r.value > short.result.value + 1e-9))) {
+          short = { levels: { ...levels }, result: r, spent };
+        }
+        return;
+      }
+      if (!best || r.value > best.result.value + 1e-9 || (Math.abs(r.value - best.result.value) <= 1e-9 && spent < best.spent)) {
         best = { levels: { ...levels }, result: r, spent };
       }
       return;
@@ -190,5 +256,5 @@ export function optimizeEcoSkills(plan, config, { budget, playerLevel, minimum =
     }
   };
   walk(0, 0);
-  return best;
+  return best ?? short;
 }

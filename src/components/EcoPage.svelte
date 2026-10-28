@@ -5,8 +5,11 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies } from '../lib/eco.svelte.js';
-  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue } from '../lib/eco.js';
+  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
+  import { staffModels } from '../lib/income.js';
+  import { leadershipValues } from '../lib/training.js';
+  import { cached } from '../lib/warera.js';
   import EcoSkills from './EcoSkills.svelte';
   import EcoProduction from './EcoProduction.svelte';
   import EcoEmployees from './EcoEmployees.svelte';
@@ -23,6 +26,11 @@
   const config = $derived({ skills: data.market.gameConfigSkills, upgrades: data.upgrades, items });
 
   let tab = $state('skills');
+  // Where companies are, for traits that care (Patriot, Expat, tax).
+  let countries = $state.raw({});
+  let regions = $state.raw({});
+  cached('country.getAllCountries', {}, 60 * 60 * 1000).then((list) => (countries = Object.fromEntries((list ?? []).map((c) => [c._id, c])))).catch(() => {});
+  cached('region.getRegionsObject', {}, 60 * 60 * 1000).then((r) => (regions = r ?? {})).catch(() => {});
   let companies = $state.raw([]);
   let error = $state('');
   let loading = $state(false);
@@ -44,6 +52,15 @@
   const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0));
   const perPoint = $derived(Object.fromEntries(goods.map((g) => [g.code, g.perPoint])));
 
+  // The employees as the hiring and training models see them; what a toolbox is worth to them.
+  const staffing = $derived(staffModels(companies, ecoEmployees, { perPoint, managementPercent: 2 * currentManagementValue, regions, countries, items }));
+  // What each Leadership level adds a day through better training cards.
+  const leadershipTop = $derived(Math.max(0, ...Object.keys(data.market.gameConfigSkills.leadership?.levels ?? { 0: 1 }).map(Number)));
+  const leadershipByLevel = $derived(leadershipValues(staffing.models, leadershipTop));
+  const leadership = $derived(planner.player?.ecoLevels?.leadership ?? 0);
+  // What 10 energy of self-work makes now: the Production skill's points at the best-paying good.
+  const selfWorkValue = $derived(ecoValue(data.market.gameConfigSkills, 'production', planner.player?.ecoLevels?.production ?? 0) * Math.max(0, ...companies.filter((c) => !c.disabled).map((c) => perPoint[c.good] ?? 0)));
+
   /** Everything the model needs, from the companies, employees and settings. */
   const plan = $derived({
     companies: [
@@ -59,7 +76,8 @@
     // The employees' shown bonus includes the owner's Management as it is now.
     currentManagementValue: currentManagementValue,
     selfWork: ecoSettings.selfWork,
-    trainingsPerDay: Number(ecoSettings.trainingsPerDay) || 0,
+    trainingsPerDay: trainingsPerDayOf(ecoSettings.trainingsPerDay, Object.values(ecoEmployees).flat()),
+    leadershipValues: leadershipByLevel,
   });
 
   const fightPoints = $derived(FIGHT_SKILLS.reduce((sum, s) => {
@@ -108,9 +126,9 @@
     {:else if tab === 'employees'}
       <EcoEmployees {companies} {perPoint} {pointValue} {items} {estimateNote} />
     {:else if tab === 'hiring'}
-      <EcoHiring {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} />
+      <EcoHiring {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} />
     {:else}
-      <EcoTraining {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} />
+      <EcoTraining {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} {selfWorkValue} selfWork={ecoSettings.selfWork} />
     {/if}
   {/if}
 </div>

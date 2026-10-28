@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { companyModel, hireValue, bestHires, trainingCards, traitChance, rankTraits, tierOf, rateCandidate } from '../src/lib/hiring.js';
+import { companyModel, hireValue, bestHires, traitChance, rankTraits, tierOf, rateCandidate } from '../src/lib/hiring.js';
+import { trainingCards } from '../src/lib/training.js';
 
 const place = { raw: false, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
 const opts = { perPoint: 0.1, fairWage: 0.6 };
@@ -49,8 +50,8 @@ test('the best hire beats a plain one, and gendered traits fit the gender', () =
 
 test('rehab of a hurting trait is worth something', () => {
   const team = [emp('X', 'se', 'male', ['xenophobe'], { production: 2, happiness: 45 }), emp('F', 'fi', 'male', [])];
-  const cards = trainingCards(companyModel(team, place, opts), 0);
-  assert.ok(cards.find((c) => c.card === 'Rehab' && c.trait === 'xenophobe').value > 0);
+  const { cards } = trainingCards(companyModel(team, place, opts), 0);
+  assert.ok(cards.find((c) => c.card === 'rehab' && c.trait === 'xenophobe').total > 0);
 });
 
 test('a trait that matches the team comes before the tier list', () => {
@@ -93,4 +94,19 @@ test('age-based traits follow the candidate\'s age', () => {
   // A Late Bloomer gains Production once past 40; a young one gets there later.
   assert.ok(at(44, 'lateBloomer') > at(20, 'lateBloomer'));
   assert.ok(at(56, 'wornOut') < at(20, 'wornOut'));
+});
+
+test('a Specialist counts their own good when it is known', async () => {
+  const { canGain } = await import('../src/lib/hiring.js');
+  const at = { ...place, good: 'iron' };
+  const own = companyModel([emp('S', 'se', 'male', [])], at, opts);
+  const match = hireValue(own, { nationality: 'se', gender: 'male', trait: 'specialist', specialistGood: 'iron' });
+  const miss = hireValue(own, { nationality: 'se', gender: 'male', trait: 'specialist', specialistGood: 'steel' });
+  const unknown = hireValue(own, { nationality: 'se', gender: 'male', trait: 'specialist' });
+  assert.ok(match.value > unknown.value && unknown.value > miss.value);
+  // The game's clashes: no Modest for the Greedy, no Handy for a Scavenger; gender traits by gender.
+  assert.equal(canGain('modest', ['greedy'], 'male'), false);
+  assert.equal(canGain('handy', ['scavenger'], 'male'), false);
+  assert.equal(canGain('girlPower', [], 'male'), false);
+  assert.equal(canGain('loyal', ['greedy', 'xenophobe'], 'male'), true);
 });

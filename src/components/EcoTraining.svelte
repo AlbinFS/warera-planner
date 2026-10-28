@@ -1,20 +1,22 @@
 <script>
   /**
    * Training & tools: what to spend the next energy on (training, replacing,
-   * hiring), who to train or replace, and which employee should hold which
-   * tool (src/lib/staffing.js).
+   * hiring, self-work), who to train or replace, which cards to pick for each
+   * employee (src/lib/training.js), and which employee should hold which tool
+   * (src/lib/staffing.js).
    */
   import { ecoEmployees, spareTools } from '../lib/eco.svelte.js';
   import { employeeDay } from '../lib/eco.js';
-  import { companyModel, hireValue, bestHires, placeOf, fairWageOf } from '../lib/hiring.js';
-  import { assignTools, trainingPlan, toolKindFor, toolKind, TOOL_KINDS, TOOL_GOODS, ENERGY_PER_ACTION } from '../lib/staffing.js';
+  import { companyModel, hireValue, bestHires, placeOf, fairWageOf, daysLeftOf } from '../lib/hiring.js';
+  import { assignTools, trainingPlan, toolKindFor, toolKind, TOOL_KINDS, TOOL_GOODS, DAYS_UNKNOWN } from '../lib/staffing.js';
+  import { trainingCards } from '../lib/training.js';
   import { cached } from '../lib/warera.js';
   import { fmt } from '../lib/format.js';
   import { itemImage } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
   import TraitChip from './TraitChip.svelte';
 
-  let { companies, perPoint, items, managementPercent = 0 } = $props();
+  let { companies, perPoint, items, managementPercent = 0, toolboxValue = 0, leadership = 0, selfWorkValue = 0, selfWork = true } = $props();
 
   let countries = $state.raw({});
   let regions = $state.raw({});
@@ -28,13 +30,17 @@
 
   const active = $derived(companies.filter((c) => !c.disabled));
   const fairWage = $derived(fairWageOf(Object.values(ecoEmployees).flat()));
-  const models = $derived(Object.fromEntries(active.map((c) => [c.id, companyModel(ecoEmployees[c.id] ?? [], placeOf(c, { regions, countries, items }), { perPoint: perPoint[c.good] ?? 0, fairWage, management: managementPercent })])));
+  const models = $derived(Object.fromEntries(active.map((c) => [c.id, companyModel(ecoEmployees[c.id] ?? [], placeOf(c, { regions, countries, items }), { perPoint: perPoint[c.good] ?? 0, fairWage, management: managementPercent, toolboxValue })])));
 
   // Everyone, with what the plans need.
   const workers = $derived(active.flatMap((c) => (ecoEmployees[c.id] ?? []).map((e, index) => {
     const d = employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 });
-    return { ...e, id: e.id ?? `${c.id}-${index}`, index, company: c, good: c.good, perPoint: perPoint[c.good] ?? 0, traits: (e.traits ?? []).filter(Boolean), profit: d.profit };
+    return { ...e, id: e.id ?? `${c.id}-${index}`, index, company: c, good: c.good, perPoint: perPoint[c.good] ?? 0, traits: (e.traits ?? []).filter(Boolean), profit: d.profit, daysLeft: daysLeftOf(e) };
   })));
+
+  // Every card each employee could be dealt, valued (only those still training).
+  const cards = $derived(Object.fromEntries(workers.filter((w) => (w.potentialMax ?? 0) > (w.potential ?? 0)).map((w) => [w.id, trainingCards(models[w.company.id], w.index, { leadership })])));
+  const selfWorkNow = $derived(selfWork ? selfWorkValue : 0);
 
   // What replacing someone with a typical candidate (no trait, best nationality and gender) adds per day.
   function replaceValue(w) {
@@ -44,7 +50,7 @@
     for (const nationality of nationalities) for (const gender of ['male', 'female']) best = Math.max(best, hireValue(model, { nationality, gender, trait: null }, { replace: w.index }).value);
     return best;
   }
-  const plan = $derived(trainingPlan(workers, fairWage, replaceValue));
+  const plan = $derived(trainingPlan(workers, fairWage, replaceValue, { sessionOf: (w) => cards[w.id]?.session ?? 0, selfWork: selfWorkNow }));
 
   // Free slots: hiring a typical candidate there.
   const hires = $derived(active.filter((c) => (ecoEmployees[c.id] ?? []).length < (c.breakRoom ?? 1)).map((c) => {
@@ -52,16 +58,19 @@
     return { company: c, value: best?.value ?? 0 };
   }));
 
-  // One list for the next energy: every action is 10 energy.
+  // One list for the next energy: every action is 10 energy. G in all: a session over the days the
+  // employee has left, a replacement over the days the one leaving would have stayed, a hire over a typical stay.
   const actions = $derived([
-    ...plan.filter((p) => p.verdict === 'train').map((p) => ({ kind: 'Train', who: p.worker.name, where: p.worker.company, what: 'Drill Production', value: p.perSession })),
-    ...plan.filter((p) => p.verdict === 'negotiate').map((p) => ({ kind: 'Train', who: p.worker.name, where: p.worker.company, what: 'Negotiation (lower wage), then Drill', value: p.perSession })),
+    ...plan.filter((p) => p.verdict === 'train').map((p) => ({ kind: 'Train', who: p.worker.name, where: p.worker.company, what: `the best of the hand (often ${cards[p.worker.id]?.cards[0]?.label ?? 'a Drill'})`, value: p.perSession })),
     // Anyone losing money can also be replaced: listed when a typical candidate would do better.
-    ...plan.filter((p) => p.verdict === 'replace' || (p.worker.profit < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new', value: p.replace })),
-    ...hires.filter((h) => h.value > 0).map((h) => ({ kind: 'Hire', who: 'new employee', where: h.company, what: 'fill a free slot', value: h.value })),
+    ...plan.filter((p) => p.verdict === 'replace' || (p.worker.profit < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new', value: p.replace * p.days })),
+    ...hires.filter((h) => h.value > 0).map((h) => ({ kind: 'Hire', who: 'new employee', where: h.company, what: 'fill a free slot', value: h.value * DAYS_UNKNOWN })),
   ].filter((a) => a.value > 0.005).sort((a, b) => b.value - a.value));
 
-  const VERDICT = { train: 'Train', negotiate: 'Negotiate first', replace: 'Replace', done: 'Done training', skip: "Don't train" };
+  const VERDICT = $derived({ train: 'Train', replace: 'Replace', done: 'Done training', skip: selfWork ? 'Self-work instead' : "Don't train" });
+  // Cards shown per employee: the best dozen; Wild Card always (it can bring a bad trait).
+  const shown = (list) => [...list.slice(0, 12), ...list.slice(12).filter((c) => c.card === 'wildCard')];
+  const RARITY_SHORT = { common: 'C', uncommon: 'U', rare: 'R', epic: 'E', legendary: 'L' };
 
   // Tools.
   const spare = $derived(spareTools.list.map((t) => ({ ...t, code: `${t.kind}${t.rarity}` })));
@@ -77,33 +86,37 @@
 
 <section class="card">
   <h2>What to spend your next energy on</h2>
-  <p class="muted small">Training, hiring and rerolling a company's candidates ("Reroll all") each take a flat 10 energy. Ranked by what each adds per day.</p>
+  <p class="muted small">
+    Training, hiring and rerolling a company's candidates ("Reroll all") each take a flat 10 energy. Ranked by what each adds in all:
+    a training session over the days the employee has left before retiring (they age a year a day and ask to retire at 65),
+    a replacement over the days the one leaving would have stayed, a new hire over a typical {DAYS_UNKNOWN} days.
+    {#if selfWork}Self-work makes <strong>{fmt(selfWorkValue, 1)} G</strong> per 10 energy: anything below that isn't worth the energy.{/if}
+  </p>
   {#if actions.length}
     <ol class="actions">
       {#each actions.slice(0, 10) as a, i (i)}
         <li>
           <span class="kind" data-kind={a.kind}>{a.kind}</span>
           <span><strong>{a.who}</strong> <span class="muted">· {a.where.name} ({itemLabel(a.where.good) || a.where.good})</span> · {a.what}</span>
-          <span class="num good">{signed(a.value)} G/day</span>
+          <span class="num good">{signed(a.value, 1)} G</span>
         </li>
       {/each}
     </ol>
   {:else}
-    <p class="muted">Nothing pays right now: everyone is trained out or training wouldn't add anything.</p>
+    <p class="muted">Nothing pays more than self-work right now: everyone is trained out, or training wouldn't add enough.</p>
   {/if}
 </section>
 
 <section class="card">
   <h2>Training priority</h2>
   <p class="muted small">
-    Wages rise with Production, so training only pays when one more Production point earns more than it adds to the wage
-    (6 points a day × their bonus × the value of a point, against a fair wage of {fmt(fairWage, 3)} G × their wage expectation).
-    A Drill adds about 1.5 Production. Someone paid more than that should get Negotiation first; someone who loses money even at the
-    lowest wage (0.7) is better replaced.
+    A session deals 3 cards and you keep one: its worth is the best of the hand, on average (the cards each employee can get are below).
+    Wages rise with Production: one more point earns its output (6 points a day × their bonus × the value of a point) less a fair wage of
+    {fmt(fairWage, 3)} G × their wage expectation. What a card adds lasts until they retire, so the young pay back more.
   </p>
   <div class="scroll">
     <table>
-      <thead><tr><th>Employee</th><th>Company</th><th class="num" title="G per day one more Production point adds, after its wage">Per Production point</th><th class="num">Profit now</th><th class="num">Trainings left</th><th>Do</th><th class="num" title="What the next 10 energy on them adds per day">Next 10 energy</th></tr></thead>
+      <thead><tr><th>Employee</th><th>Company</th><th class="num" title="G per day one more Production point adds, after its wage">Per Production point</th><th class="num">Profit now</th><th class="num" title="Days until they ask to retire">Days left</th><th class="num">Trainings left</th><th>Do</th><th class="num" title="What the next 10 energy on them adds in all (the best of a hand, on average)">Next session</th></tr></thead>
       <tbody>
         {#each plan as p (p.worker.id)}
           <tr>
@@ -111,15 +124,48 @@
             <td><img src={itemImage(p.worker.good, items)} alt="" width="16" height="16" class="mini" /> {p.worker.company.name}</td>
             <td class="num" class:good={p.margin > 0} class:bad={p.margin < 0}>{signed(p.margin, 3)}</td>
             <td class="num" class:good={p.worker.profit > 0} class:bad={p.worker.profit < 0}>{signed(p.worker.profit)}</td>
-            <td class="num">{p.left}</td>
+            <td class="num">{fmt(p.days, 0)}</td>
+            <td class="num">{p.left}{#if (p.worker.trainingsToday ?? 0) >= (p.worker.trainingsPerDay ?? 1) && p.left} <small class="muted" title="Trained today">✓</small>{/if}</td>
             <td><span class="verdict" data-verdict={p.verdict} title={p.why}>{VERDICT[p.verdict]}</span></td>
-            <td class="num">{p.perSession > 0 ? signed(p.perSession) : '–'}</td>
+            <td class="num">{p.left ? `${signed(p.perSession, 1)} G` : '–'}</td>
           </tr>
         {/each}
       </tbody>
     </table>
   </div>
-  <p class="muted small">Hover the verdict for why. Values are G per day.</p>
+  <p class="muted small">Hover the verdict for why. ✓: trained today. Profit and per point are G a day; the session is G in all.</p>
+</section>
+
+<section class="card">
+  <h2>Which card to pick</h2>
+  <p class="muted small">
+    Every card the game can deal each employee, best first: pick the highest of the three you're offered. Values are what the card adds
+    a day (output, toolboxes from Luck, coworkers included, less any wage rise) and in all, over the days they have left. Odds use your
+    Leadership ({leadership}) and their Luck; which card of a rarity comes up isn't in the game's config, so it's taken as any of them, evenly.
+  </p>
+  {#each workers.filter((w) => cards[w.id]) as w (w.id)}
+    {@const r = cards[w.id]}
+    <details>
+      <summary><strong>{w.name}</strong> <span class="muted">· {w.company.name} · {r.left} {r.left === 1 ? 'training' : 'trainings'} left · {fmt(r.days, 0)} days · a session ≈ {signed(r.session, 1)} G</span></summary>
+      <div class="scroll">
+        <table class="cards">
+          <thead><tr><th>Card</th><th title="Rarity">R</th><th class="num" title="Chance it is in a hand of 3">In a hand</th><th class="num">G a day</th><th class="num">G in all</th></tr></thead>
+          <tbody>
+            {#each shown(r.cards) as c, i (i)}
+              <tr class:bad-row={c.total < 0}>
+                <td>{c.label}</td>
+                <td><span class="rarity" data-rarity={c.rarity}>{RARITY_SHORT[c.rarity]}</span></td>
+                <td class="num">{fmt(c.chance * 100, 1)}%</td>
+                <td class="num" class:good={c.perDay > 0} class:bad={c.perDay < 0}>{signed(c.perDay, 3)}</td>
+                <td class="num" class:good={c.total > 0} class:bad={c.total < 0}>{signed(c.total, 1)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      {#if r.cards.length > shown(r.cards).length}<p class="muted small">{r.cards.length - shown(r.cards).length} other cards (habits) are worth {signed(r.cards[12]?.total ?? 0, 1)} G or less.</p>{/if}
+    </details>
+  {/each}
 </section>
 
 <section class="card">
@@ -127,7 +173,8 @@
   <p class="muted small">
     A tool adds its % to the holder's production bonus, but only if it fits the company's good
     ({TOOL_KINDS.map((k) => `${kindLabel(k)}: ${TOOL_GOODS[k].map((g) => itemLabel(g) || g).join(', ')}`).join(' · ')}).
-    The best tool of a kind goes to whoever it adds most to: the highest output (Handy +40 % with any tool; Improviser loses its +25 %).
+    Each kind is shared out for the most in all: a tool's % counts on the holder's output (Handy +40 % with any tool, so they take a weak one;
+    Improviser loses its +25 %). A toolbox (Luck finds them) is worth about {fmt(toolboxValue, 1)} G to you now: a tool for someone without one.
   </p>
 
   <h3>Spare tools in your inventory</h3>
@@ -193,6 +240,15 @@
   [data-kind='Replace'], [data-verdict='replace'] { color: var(--bad); border-color: var(--bad); }
   [data-kind='Hire'] { color: var(--info); border-color: var(--info); }
   [data-verdict='done'], [data-verdict='skip'] { color: var(--muted); }
+  details { border-top: 1px solid var(--line); padding: 6px 0; }
+  summary { cursor: pointer; font-size: 13px; }
+  table.cards { margin: 6px 0; }
+  tr.bad-row td:first-child { color: var(--bad); }
+  .rarity { display: inline-block; min-width: 18px; text-align: center; font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 4px; border: 1px solid var(--line); }
+  .rarity[data-rarity='uncommon'] { color: var(--good); border-color: var(--good); }
+  .rarity[data-rarity='rare'] { color: var(--info); border-color: var(--info); }
+  .rarity[data-rarity='epic'] { color: #a35bd6; border-color: #a35bd6; }
+  .rarity[data-rarity='legendary'] { color: var(--accent); border-color: var(--accent); }
   .spare { display: grid; gap: 6px; }
   .spare-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   select, input { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 7px; color: var(--text); font-size: 14px; }

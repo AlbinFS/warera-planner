@@ -114,7 +114,7 @@ export function simulate(market, build, session, { battleBonusPercent = 0, terms
     rates: { miss: misses / all, crit: crits / all, hit: landed / all, dodged: dodged / all },
     hitRange: [minHit, maxHit], armor, dodge, phases,
     // Averages per phase: [{ multiplier, damage, swings, cost }] (the pill's price in the first).
-    byPhase: perPhase.map((t, i) => ({ multiplier: phases[i].multiplier, damage: t.damage / runs, swings: t.swings / runs, cost: t.cost / runs + (i === 0 ? pill : 0), debuffBuild: split && i > 0 })),
+    byPhase: perPhase.map((t, i) => ({ multiplier: phases[i].multiplier, hours: phases[i].hours, damage: t.damage / runs, swings: t.swings / runs, cost: t.cost / runs + (i === 0 ? pill : 0), debuffBuild: split && i > 0 })),
     // Averages per fight, for the cost and income lists.
     avg: {
       damage: mean(out.damage), net: mean(out.net), swings: swingsMean, food: totalFood / runs,

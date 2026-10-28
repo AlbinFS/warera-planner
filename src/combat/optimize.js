@@ -23,7 +23,10 @@ const COST_BUCKET = 0.004;
 // Options are kept if they're on the frontier at any of this many dodge %s across the range
 // (5: the same best layouts as pricing every dodge % exactly, at under half the time).
 const KEEP_STEPS = 5;
-const SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
+// Gold the limit may be missed by from rounding alone: the fast loop and fillForDamage add the
+// same numbers in another order, so a limit used to the last gold can come out a hair either side.
+const ROUNDING = 1e-6;
+const SLOTS =['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 export const FIGHT = ['attack', 'precision', 'criticalChance', 'criticalDamages', 'armor', 'dodge', 'health', 'lootChance', 'hunger'];
 
 /** The model's config from market data. */
@@ -114,7 +117,27 @@ export function prepare(market, { locked = {}, lockedFood } = {}) {
   const dodgeLevels = config.skills.dodge?.levels ?? {};
   const topDodge = Math.max(0, ...Object.values(dodgeLevels).map((l) => l.value ?? 0)) + Math.max(0, ...slots.boots.map((b) => b?.skills.dodge ?? 0));
   const minKeep = 1 - softCapPercent(topDodge, config.skills.dodge?.softCap ?? 40) / 100;
-  return { market, config, slots, ammos, foods, armorPairs: [...pairs.values()], wearOf, maxOffArmor, minKeep, pairCache: new Map(), cache: new Map() };
+  return {
+    market, config, slots, ammos, foods, armorPairs: [...pairs.values()], wearOf, maxOffArmor, minKeep,
+    pairCache: new Map(), defCache: new Map(), offCache: new Map(), offByDodge: new Map(),
+  };
+}
+
+// Caches by stat values grow with every layout a search tries: on the real market 150 layouts
+// kept 330 MB, and each of a search's workers keeps its own (the page crashed). Past these many
+// entries the least recently used go (a climb mostly comes back to nearby stats).
+const KEEP = { pairCache: 400, defCache: 200, offCache: 40, offByDodge: 400 };
+function remembered(prep, name, key, make) {
+  const map = prep[name];
+  let v = map.get(key);
+  if (v !== undefined) {
+    map.delete(key);
+  } else {
+    v = make();
+    if (map.size >= KEEP[name]) map.delete(map.keys().next().value);
+  }
+  map.set(key, v);
+  return v;
 }
 
 /**
@@ -182,14 +205,13 @@ function offenseCandidates(prep, stats, opts) {
   const v = (r, k) => r?.skills[k] ?? 0;
   const pairsFor = (crit) => {
     const key = `${stats.precision}|${stats.criticalDamages}|${stats.criticalChance + crit}`;
-    if (!prep.pairCache.has(key)) {
+    return remembered(prep, 'pairCache', key, () => {
       const pairs = [];
       for (const h of slots.helmet) for (const g of slots.gloves) {
         pairs.push({ h, g, f: damage(100, crit, v(h, 'criticalDamages'), v(g, 'precision'), 0), cost: prep.wearOf(h, 'helmet') + prep.wearOf(g, 'gloves') });
       }
-      prep.pairCache.set(key, frontier2(pairs, (x) => x.f, (x) => x.cost));
-    }
-    return prep.pairCache.get(key);
+      return frontier2(pairs, (x) => x.f, (x) => x.cost);
+    });
   };
   // Cost per swing is fixed + keep × armor (keep = 1 − dodge %, between minKeep and 1). The options
   // kept are those on the frontier at any of a few keeps across that range (KEEP_STEPS), bucketed
@@ -246,17 +268,30 @@ function offenseOptions(candidates, keep) {
 export function phasesFor(config, stats, food, opts) {
   const pill = (config.items.cocain?.flatStats?.percentAttack ?? 60) / 100;
   const heal = food ? stats.health * ((config.items[food]?.flatStats?.healthRegenPercent ?? 0) / 100) : 0;
-  const regen = (hours, fullBar) => ({ health: stats.health * ((fullBar ? 1 : 0) + hours / 10), foodMax: food ? Math.floor(stats.hunger * ((fullBar ? 1 : 0) + hours / 10)) : 0, heal });
+  // Food is counted whole over the session so far, so splitting it into phases loses none to rounding.
+  let bars = 0, foodSoFar = 0;
+  const regen = (hours, fullBar) => {
+    bars += (fullBar ? 1 : 0) + hours / 10;
+    const foodMax = food ? Math.floor(stats.hunger * bars + 1e-9) - foodSoFar : 0;
+    foodSoFar += foodMax;
+    return { hours, health: stats.health * ((fullBar ? 1 : 0) + hours / 10), foodMax, heal };
+  };
   if (opts.supply) return [{ multiplier: opts.multiplier ?? 1, health: opts.supply.health, foodMax: food ? opts.supply.foodMax : 0, heal }];
   const hours = opts.hours ?? 8;
   if (!opts.pill) return [{ multiplier: 1, ...regen(hours, true) }];
   const buff = Math.min(hours, opts.buffHours ?? config.items.cocain?.flatStats?.buffDurationHours ?? 8);
   const phases = [{ multiplier: 1 + pill, ...regen(buff, true) }];
-  if (hours > buff) phases.push({ multiplier: opts.debuffMultiplier ?? 1 - pill, ...regen(hours - buff, false) });
+  // The debuff lasts its own hours (15.5); a longer session ends at full strength again.
+  const debuff = Math.min(hours - buff, config.items.cocain?.flatStats?.debuffDurationHours ?? Infinity);
+  if (debuff > 0) phases.push({ multiplier: opts.debuffMultiplier ?? 1 - pill, ...regen(debuff, false) });
+  if (hours - buff - debuff > 0) phases.push({ multiplier: 1, ...regen(hours - buff - debuff, false) });
   if (opts.phase === 'pill') return phases.slice(0, 1);
   if (opts.phase === 'debuff') return phases.slice(1);
   return phases;
 }
+
+// Kinds of swing a fight can have: up to 3 phases, each on free health and on food.
+const KINDS = 8;
 
 /** Hours the pill's buff lasts. */
 const buffHours = (config) => config.items.cocain?.flatStats?.buffDurationHours ?? 8;
@@ -272,23 +307,17 @@ function layout(prep, levels, prestige, opts) {
   const fightOpts = { ...opts, multiplier: 1 };
   const offKey = `o${stats.attack}|${stats.precision}|${stats.criticalChance}|${stats.criticalDamages}|${opts.militaryRankPercent}|${opts.battleBonusPercent}`;
   const defKey = `d${stats.armor}|${stats.dodge}`;
-  if (!prep.cache.has(defKey)) prep.cache.set(defKey, defenseOptions(prep, stats));
+  const defs = remembered(prep, 'defCache', defKey, () => defenseOptions(prep, stats));
   // Offense depends on the dodge % (it spares the helmet and gloves): one list per dodge %.
   const offsFor = (d) => {
     const key = `${offKey}|${d.dodge}`;
-    let offs = prep.cache.get(key);
-    if (!offs) {
-      if (!prep.cache.has(offKey)) prep.cache.set(offKey, offenseCandidates(prep, stats, fightOpts));
-      offs = offenseOptions(prep.cache.get(offKey), d.keep);
-      prep.cache.set(key, offs);
-    }
-    return offs;
+    return remembered(prep, 'offByDodge', key, () => offenseOptions(remembered(prep, 'offCache', offKey, () => offenseCandidates(prep, stats, fightOpts)), d.keep));
   };
   const foods = prep.foods.map((food) => ({ food, price: food ? itemPrice(market, food) : 0, phases: phasesFor(config, stats, food, opts) }));
   const cases = (stats.lootChance / 100) * ((itemPrice(market, 'case1') ?? 0) + 0.01 * (itemPrice(market, 'case2') ?? 0));
   // The pill is bought once: with the pill phase, never with the debuff's own build.
   const pill = opts.pill && !opts.supply && opts.phase !== 'debuff' ? itemPrice(market, 'cocain') ?? 0 : 0;
-  return { stats, offsFor, defs: prep.cache.get(defKey), foods, cases, pill };
+  return { stats, offsFor, defs, foods, cases, pill };
 }
 
 /**
@@ -327,7 +356,8 @@ function fillForDamage(segs, rate, fixed, limit) {
     const gain = rate * seg.dmg - seg.cost;
     if (gain >= 0) { fill.push({ seg, x: seg.cap }); room += gain * seg.cap; } else losing.push({ seg, loss: -gain });
   }
-  if (room < 0) return null;
+  if (room < -ROUNDING) return null;
+  room = Math.max(0, room);
   losing.sort((a, b) => b.seg.dmg / b.loss - a.seg.dmg / a.loss);
   for (const { seg, loss } of losing) {
     if (room <= 0) break;
@@ -358,7 +388,7 @@ function buildOf(L, o, d, f, fill, terms) {
   const t = totals(fill);
   const cost = t.cost + L.pill;
   const income = ((terms.bounty ?? 0) + (terms.perK ?? 0)) * t.damage / 1000 + (terms.flat ?? 0);
-  const phases = f.phases.map((p, i) => ({ multiplier: p.multiplier, ...totals(fill.filter((x) => x.seg.phase === i)) }));
+  const phases = f.phases.map((p, i) => ({ multiplier: p.multiplier, hours: p.hours, ...totals(fill.filter((x) => x.seg.phase === i)) }));
   return {
     damage: t.damage, cost, income, net: income + (terms.economy ?? 0) - cost, swings: t.swings, foodEaten: t.foodEaten, food: f.food,
     perSwing: o.dmg, healthPerSwing: d.hp, armor: d.armor, dodge: d.dodge, phases, cases: L.cases, stats: L.stats,
@@ -382,8 +412,8 @@ export function strongest(prep, levels, player, opts, terms = {}, limit = Infini
   const rate = ((terms.bounty ?? 0) + (terms.perK ?? 0)) / 1000;
   const fixed = (terms.flat ?? 0) + (terms.economy ?? 0) - L.pill;
   // The same fill as fillForDamage, in plain numbers (this loop runs ~10^5 times per layout).
-  const cap = new Float64Array(4), mult = new Float64Array(4), extra = new Float64Array(4), dmg = new Float64Array(4), loss = new Float64Array(4);
-  const order = [0, 0, 0, 0];
+  const cap = new Float64Array(KINDS), mult = new Float64Array(KINDS), extra = new Float64Array(KINDS), dmg = new Float64Array(KINDS), loss = new Float64Array(KINDS);
+  const order = new Array(KINDS).fill(0);
   let best = null;
   for (const f of L.foods) for (const d of L.defs) {
     let n = 0;
@@ -393,12 +423,28 @@ export function strongest(prep, levels, player, opts, terms = {}, limit = Infini
     }
     // Strongest offense first: once even every swing at its damage can't beat the best, none after can.
     let reach = 0;
-    for (let i = 0; i < n; i++) reach += cap[i] * mult[i];
+    let top = 0;
+    for (let i = 0; i < n; i++) { reach += cap[i] * mult[i]; top = Math.max(top, mult[i]); }
+    // Swings at the top multiplier (the pill phase's, free and food) and the rest, for the bound below.
+    let topCap = 0, restCap = 0, second = 0;
+    for (let i = 0; i < n; i++) if (mult[i] === top) topCap += cap[i]; else { restCap += cap[i]; second = Math.max(second, mult[i]); }
     const offs = L.offsFor(d);
     for (let j = offs.length - 1; j >= 0; j--) {
       const o = offs[j];
       if (best && o.dmg * reach < best.damage * (1 - 1e-6)) break;
       const base = o.cost + d.cost - L.cases;
+      // Under a limit, the gold caps the damage: a swing loses at least base − rate × its damage
+      // (food only adds), and stronger swings give more per gold. So at most: the gold spent on the
+      // top multiplier's swings, then on the rest at the next multiplier. Far cheaper than the fill.
+      if (best && limit !== Infinity) {
+        const least = base - rate * o.dmg * top;
+        if (least > 0) {
+          const gold = fixed + limit;
+          const most = gold <= topCap * least ? (gold * o.dmg * top) / least
+            : topCap * o.dmg * top + Math.min(restCap, (gold - topCap * least) / (base - rate * o.dmg * second)) * o.dmg * second;
+          if (most < best.damage * (1 - 1e-6)) continue;
+        }
+      }
       let room = fixed + limit;
       let gains = 0;
       let damage = 0;
@@ -408,7 +454,7 @@ export function strongest(prep, levels, player, opts, terms = {}, limit = Infini
         const gain = rate * dmg[i] - base - extra[i];
         if (gain >= 0) { room += gain * cap[i]; gains += gain * cap[i]; damage += dmg[i] * cap[i]; } else { loss[i] = -gain; order[m++] = i; }
       }
-      if (room < 0) continue;
+      if (room < -ROUNDING) continue;
       // Losing kinds by damage per gold lost (at most 4: insertion sort).
       for (let a = 1; a < m; a++) for (let b = a; b > 0 && dmg[order[b]] / loss[order[b]] > dmg[order[b - 1]] / loss[order[b - 1]]; b--) [order[b], order[b - 1]] = [order[b - 1], order[b]];
       let spent = 0;
@@ -429,6 +475,29 @@ export function strongest(prep, levels, player, opts, terms = {}, limit = Infini
 }
 
 /**
+ * The best net any build of this layout can make: every swing that pays for
+ * itself and no other. For layouts no build keeps within a limit, how far off
+ * they are (a skill search climbs on it towards the limit).
+ */
+export function bestNet(prep, levels, player, opts, terms = {}) {
+  if (isSplit(prep.config, opts)) {
+    // The debuff build can always fight nothing.
+    const debuff = bestNet(prep, levels, player, phaseOpts(opts, 'debuff'), { bounty: terms.bounty, perK: terms.perK });
+    return bestNet(prep, levels, player, phaseOpts(opts, 'pill'), terms) + Math.max(0, debuff);
+  }
+  const L = ctxOf(prep, levels, player, opts);
+  const rate = ((terms.bounty ?? 0) + (terms.perK ?? 0)) / 1000;
+  const fixed = (terms.flat ?? 0) + (terms.economy ?? 0) - L.pill;
+  let best = -Infinity;
+  for (const f of L.foods) for (const d of L.defs) for (const o of L.offsFor(d)) {
+    let net = fixed;
+    for (const seg of segmentsOf(L, o, d, f)) net += Math.max(0, rate * seg.dmg - seg.cost) * seg.cap;
+    if (net > best) best = net;
+  }
+  return best;
+}
+
+/**
  * Cheapest builds reaching each of `targets` damage (one pass over the
  * options for all targets). Per option the kinds of swing are taken cheapest
  * per damage first (those that earn, i.e. cost below 0, always). Returns one
@@ -438,8 +507,8 @@ export function strongest(prep, levels, player, opts, terms = {}, limit = Infini
 export function cheapestMany(prep, levels, player, opts, targets) {
   if (isSplit(prep.config, opts)) return cheapestSplit(prep, levels, player, opts, targets);
   const L = ctxOf(prep, levels, player, opts);
-  const cap = new Float64Array(4), mult = new Float64Array(4), extra = new Float64Array(4), dmg = new Float64Array(4), cost = new Float64Array(4);
-  const order = [0, 1, 2, 3];
+  const cap = new Float64Array(KINDS), mult = new Float64Array(KINDS), extra = new Float64Array(KINDS), dmg = new Float64Array(KINDS), cost = new Float64Array(KINDS);
+  const order = Array.from({ length: KINDS }, (_, i) => i);
   const best = targets.map(() => null);
   let top = null;
   for (const f of L.foods) for (const d of L.defs) {
@@ -518,13 +587,29 @@ export function maxLevel(config, skill, playerLevel) {
   return Math.max(0, ...Object.keys(levels).map(Number).filter((n) => (levels[n]?.unlockAtLevel ?? 0) <= playerLevel));
 }
 
+// Random starts on top of the planned ones. The climb takes small steps, so it can stop a few levels
+// from a better layout: in tests, 4 more starts found a layout 2–5 % stronger in about half the
+// searches with a limit, and closed the gap to within 0.7 %.
+const EXTRA_STARTS = 4;
+
+/** Random numbers in [0, 1) from a fixed seed: the same starts, so the same answer, every run. */
+function seeded(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /**
  * The space a skill search moves in: which layouts fit the budget, the
  * neighbours of a layout (raise one level, lowering one or two others to pay),
- * and the starting layouts (the given one, trimmed to the budget, and two
- * that spread the points).
+ * and the starting layouts: the given one (with `zeroed` skills at 0, then
+ * trimmed to the budget), two that spread the points (unless `spreads` is
+ * false), and EXTRA_STARTS random fight layouts.
  */
-export function layoutSpace(config, { start, searched = FIGHT, budget, playerLevel }) {
+export function layoutSpace(config, { start, searched = FIGHT, budget, playerLevel, zeroed = [], extraStarts = EXTRA_STARTS, spreads = true }) {
   const used = (l) => searched.reduce((t, s) => t + levelCost(config, s, l[s] ?? 0), 0);
   const max = Object.fromEntries(searched.map((s) => [s, maxLevel(config, s, playerLevel)]));
   const fits = (l) => used(l) <= budget && searched.every((s) => l[s] >= 0 && l[s] <= max[s]);
@@ -568,38 +653,80 @@ export function layoutSpace(config, { start, searched = FIGHT, budget, playerLev
     }
     return l;
   };
+  const random = seeded(0x5eed);
+  const scatter = () => {
+    const pool = searched.filter((s) => FIGHT.includes(s));
+    let l = { ...start, ...Object.fromEntries(searched.map((s) => [s, 0])) };
+    for (let miss = 0; miss < 40 && pool.length;) {
+      const s = pool[Math.floor(random() * pool.length)];
+      const next = { ...l, [s]: l[s] + 1 };
+      if (fits(next)) { l = next; miss = 0; } else miss++;
+    }
+    return l;
+  };
   const even = Object.fromEntries(FIGHT.map((s) => [s, 1]));
-  const starts = [trim(start), spread(even), spread({ ...even, attack: 1.3, lootChance: 0.8, hunger: 0.6 })];
+  const first = trim({ ...start, ...Object.fromEntries(zeroed.filter((s) => searched.includes(s)).map((s) => [s, 0])) });
+  const starts = [first, ...(spreads ? [spread(even), spread({ ...even, attack: 1.3, lootChance: 0.8, hunger: 0.6 })] : []), ...Array.from({ length: extraStarts }, scatter)];
   return { used, fits, keyOf, neighbours, starts };
 }
 
+// A step scores its neighbours roughly first (scoreQuick) and only this many of the best exactly.
+// On the real market (1,800 gear rolls, two builds, battle loot, a tight limit) a layout takes
+// 0.1–0.5 s to score exactly and a step has up to ~1,000 neighbours.
+const SCREEN = 24;
+// After the starts: this many kicks of KICK_STEPS random steps from the best, each climbed again.
+const KICKS = 4;
+const KICK_STEPS = 4;
+
 /**
  * Best skill layout, with the scoring done elsewhere (a pool of workers):
- * scoreMany(layouts) → Promise of results in the same order. Each step's
- * neighbours are scored together, so they run in parallel.
+ * scoreMany(layouts, hint) → Promise of results in the same order. Each step's
+ * neighbours are scored together, so they run in parallel; hint: the result of
+ * the layout they are next to (a close guess for theirs). scoreQuick (same
+ * shape, optional): a cheaper score that ranks layouts about as the exact one
+ * does; with it, only a step's SCREEN best neighbours by it are scored exactly.
  */
-export async function bestLayoutAsync(config, { start, searched = FIGHT, budget, playerLevel, scoreMany, isBetter = better, onStep, shouldStop }) {
-  const space = layoutSpace(config, { start, searched, budget, playerLevel });
-  const scored = new Map();
-  const scoreAll = async (list) => {
-    const fresh = [...new Map(list.map((l) => [space.keyOf(l), l])).entries()].filter(([k]) => !scored.has(k));
-    if (fresh.length) {
-      const results = await scoreMany(fresh.map(([, l]) => l));
-      fresh.forEach(([k], i) => scored.set(k, results[i]));
-    }
-    return list.map((l) => scored.get(space.keyOf(l)));
+export async function bestLayoutAsync(config, { start, searched = FIGHT, budget, playerLevel, zeroed, extraStarts, spreads, scoreMany, scoreQuick = null, screen = SCREEN, kicks = KICKS, isBetter = better, onStep, shouldStop }) {
+  const space = layoutSpace(config, { start, searched, budget, playerLevel, zeroed, extraStarts, spreads });
+  const cached = (score) => {
+    const memo = new Map();
+    const all = async (list, hint = null) => {
+      const fresh = [...new Map(list.map((l) => [space.keyOf(l), l])).entries()].filter(([k]) => !memo.has(k));
+      if (fresh.length) {
+        const results = await score(fresh.map(([, l]) => l), hint);
+        fresh.forEach(([k], i) => memo.set(k, results[i]));
+      }
+      return list.map((l) => memo.get(space.keyOf(l)));
+    };
+    all.memo = memo;
+    return all;
   };
+  const scoreAll = cached(scoreMany);
+  const quickAll = scoreQuick && cached(scoreQuick);
+  const scored = scoreAll.memo;
+  const order = (a, b) => (isBetter(a, b) ? -1 : isBetter(b, a) ? 1 : 0);
   let steps = 0;
   const climb = async (levels) => {
     let [best] = await scoreAll([levels]);
+    // Before stopping, a screened climb looks 4× wider: the rough score's ranking can miss the move.
+    let width = screen;
     for (;;) {
       if (shouldStop?.()) break;
-      const all = space.neighbours(levels);
-      const results = await scoreAll(all);
+      const near = space.neighbours(levels);
+      let all = near;
+      if (quickAll && near.length > width) {
+        const rough = await quickAll(near, best);
+        all = near.map((l, i) => [l, rough[i]]).sort((a, b) => order(a[1], b[1])).slice(0, width).map(([l]) => l);
+      }
+      const results = await scoreAll(all, best);
       let winner = null;
       let winnerLevels = null;
       results.forEach((r, i) => { if (isBetter(r, winner)) { winner = r; winnerLevels = all[i]; } });
-      if (!isBetter(winner, best)) break;
+      if (!isBetter(winner, best)) {
+        if (quickAll && width === screen && near.length > width) { width = screen * 4; continue; }
+        break;
+      }
+      width = screen;
       levels = winnerLevels;
       best = winner;
       steps++;
@@ -614,7 +741,53 @@ export async function bestLayoutAsync(config, { start, searched = FIGHT, budget,
     const r = await climb(s);
     if (!result || isBetter(r.best, result.best)) result = r;
   }
+  // Kicks: a few random steps away from the best and climb again, for a better hill close by.
+  const random = seeded(0xc1a3b);
+  for (let k = 0; k < kicks && result && !shouldStop?.(); k++) {
+    let l = result.levels;
+    for (let m = 0; m < KICK_STEPS; m++) {
+      const near = space.neighbours(l);
+      if (near.length) l = near[Math.floor(random() * near.length)];
+    }
+    const r = await climb(l);
+    if (isBetter(r.best, result.best)) result = r;
+  }
   return { ...result, steps, checked: scored.size, budget, used: space.used(result.levels) };
+}
+
+/**
+ * Most damage with the economy skills searched too. Their points only buy
+ * income, gold that eases the limit, so for each number of points the economy
+ * layout earning the most is known: economy.steps, [{ levels, points }] by
+ * points, each earning more than the one before, the first all at 0. The fight
+ * skills are climbed with the economy at 0 first (every start), then with each
+ * step's economy in turn from the best so far, while that keeps paying (it
+ * stops after two steps that don't). Fight-only climbs have a third of the
+ * neighbours, and the economy is placed exactly: a joint climb trades one
+ * level at a time and stops on a worse hill.
+ */
+export async function bestLayoutEconomy(config, { start, searched, budget, economy, onStep, isBetter = better, ...rest }) {
+  const fight = searched.filter((s) => !economy.skills.includes(s));
+  let steps = 0;
+  let checked = 0;
+  const run = async (step, from, everyStart) => {
+    const r = await bestLayoutAsync(config, {
+      ...rest, isBetter, start: { ...from, ...step.levels }, searched: fight, budget: budget - step.points,
+      ...(everyStart ? {} : { extraStarts: 0, spreads: false, kicks: 0 }),
+      onStep: (s) => onStep?.({ ...s, step: steps + s.step, checked: checked + s.checked, budget, used: s.used + step.points }),
+    });
+    steps += r.steps;
+    checked += r.checked;
+    return { ...r, budget, used: r.used + step.points };
+  };
+  let best = await run(economy.steps[0], start, true);
+  let misses = 0;
+  for (const step of economy.steps.slice(1)) {
+    if (rest.shouldStop?.() || step.points > budget) break;
+    const r = await run(step, best.levels, false);
+    if (isBetter(r.best, best.best)) { best = r; misses = 0; } else if (++misses >= 2) break;
+  }
+  return { ...best, steps, checked };
 }
 
 /*
@@ -634,16 +807,18 @@ const SPLIT_POINTS = 80;
 const phaseOpts = (opts, phase) => ({ ...opts, phase, splitDebuff: false });
 
 /** One phase of a build, as a build of its own (a single build split into its pill and debuff hours). */
-function phaseOf(b, index, extraCost = 0) {
-  const p = b.phases[index];
-  if (!p) return null;
-  return { ...b, damage: p.damage, cost: p.cost + extraCost, swings: p.swings, foodEaten: p.foodEaten, phases: [p], debuff: null };
+/** Phases `from` to `to` of a build, as a build of its own (a single build split into its pill and after-pill hours). */
+function phaseOf(b, from, extraCost = 0, to = from + 1) {
+  const ps = b.phases.slice(from, to);
+  if (!ps.length) return null;
+  const sum = (k) => ps.reduce((t, p) => t + (p[k] ?? 0), 0);
+  return { ...b, damage: sum('damage'), cost: sum('cost') + extraCost, swings: sum('swings'), foodEaten: sum('foodEaten'), phases: ps, debuff: null };
 }
 /** A single build as a pair: the same gear in both phases. */
 function asPair(prep, b, terms) {
   if (!b || b.phases.length < 2) return b && { ...b, debuff: null };
   const pill = itemPrice(prep.market, 'cocain') ?? 0;
-  return joined(phaseOf(b, 0, pill), phaseOf(b, 1), terms);
+  return joined(phaseOf(b, 0, pill), phaseOf(b, 1, 0, b.phases.length), terms);
 }
 
 /**
@@ -686,7 +861,11 @@ function joined(a, b, terms = {}) {
   };
 }
 
-/** Most damage with net ≥ −limit, a build per phase. */
+/**
+ * Most damage with net ≥ −limit, a build per phase. (Checked against every
+ * split of the limit between the two, in 0.05 G steps: within 0.3 %. Seeding
+ * from the phases' curves closed that to 0.1 % at 2.5× the time; not kept.)
+ */
 export function strongestSplit(prep, levels, player, opts, terms = {}, limit = Infinity, prepDebuff = null) {
   const other = prepDebuff ?? prep;
   const pillOpts = phaseOpts(opts, 'pill');

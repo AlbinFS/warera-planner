@@ -107,7 +107,7 @@
           {#if up != null}<span class:good={up > 0.005} class:flat={Math.abs(up) <= 0.005}>next level {signed(up, 2)} G/day</span>{/if}
           {#if down != null}<span class:bad={down < -0.005} class:flat={Math.abs(down) <= 0.005}>one less {signed(down, 2)} G/day</span>{/if}
           {#if s === 'leadership'}<span class="muted">no gold directly: better training cards</span>{/if}
-          {#if s === 'energy' && !plan.selfWork && !plan.trainingsPerDay}<span class="muted">counts for trainings and self-work (set on Eco skills)</span>{/if}
+          {#if s === 'energy' && !plan.selfWork && !plan.trainingsPerDay}<span class="muted">counts for trainings and self-work (self-work is off on Eco skills)</span>{/if}
         </li>
       {/each}
     </ul>

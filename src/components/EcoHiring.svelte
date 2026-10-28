@@ -6,7 +6,8 @@
    * the current employees (src/lib/hiring.js).
    */
   import { ecoEmployees } from '../lib/eco.svelte.js';
-  import { companyModel, bestHires, hireValue, rankTraits, trainingCards, traitChance, placeOf, fairWageOf, TRAITS, TIERS } from '../lib/hiring.js';
+  import { companyModel, bestHires, hireValue, rankTraits, traitChance, placeOf, fairWageOf, TRAITS, TIERS } from '../lib/hiring.js';
+  import { trainingCards } from '../lib/training.js';
   import { cached } from '../lib/warera.js';
   import { fmt } from '../lib/format.js';
   import { itemImage, flagImage } from '../lib/visual.js';
@@ -14,7 +15,7 @@
   import TraitChip from './TraitChip.svelte';
   import EcoCandidates from './EcoCandidates.svelte';
 
-  let { companies, perPoint, items, managementPercent = 0 } = $props();
+  let { companies, perPoint, items, managementPercent = 0, toolboxValue = 0, leadership = 0 } = $props();
 
   let countries = $state.raw({});
   let regions = $state.raw({});
@@ -36,7 +37,7 @@
   function plan(c) {
     const team = ecoEmployees[c.id] ?? [];
     const place = placeOf(c, { regions, countries, items });
-    const model = companyModel(team, place, { perPoint: perPoint[c.good] ?? 0, fairWage, management: managementPercent });
+    const model = companyModel(team, place, { perPoint: perPoint[c.good] ?? 0, fairWage, management: managementPercent, toolboxValue });
     const full = team.length >= (c.breakRoom ?? 1);
     const all = bestHires(model, { otherNationality: OTHER, full });
     const profiles = all.filter((h) => !h.trait).map((plain) => {
@@ -56,7 +57,8 @@
       .map((n) => ({ nationality: n, value: Math.max(...profiles.filter((p) => p.plain.nationality === n).map((p) => p.plain.value)) }))
       .sort((a, b) => b.value - a.value);
     const genders = ['male', 'female'].map((g) => ({ gender: g, value: profiles.find((p) => p.plain.gender === g && p.plain.nationality === best.plain.nationality).plain.value }));
-    const cards = team.map((e, i) => ({ name: e.name, cards: trainingCards(model, i).slice(0, 2) })).filter((x) => x.cards.length);
+    // Each employee still training: their two best cards.
+    const cards = team.map((e, i) => ((e.potentialMax ?? 0) > (e.potential ?? 0) ? { name: e.name, cards: trainingCards(model, i, { leadership }).cards.slice(0, 2) } : null)).filter((x) => x?.cards.length);
     return { company: c, team, full, best, ideal, anyNationality, anyGender, nationalities, genders, cards };
   }
   const plans = $derived(companies.filter((c) => !c.disabled).map(plan));
@@ -73,7 +75,7 @@
   </li>
 {/snippet}
 
-<EcoCandidates {companies} {perPoint} {items} {managementPercent} />
+<EcoCandidates {companies} {perPoint} {items} {managementPercent} {toolboxValue} />
 
 <section class="card">
   <h2>Trait tier list</h2>
@@ -152,11 +154,11 @@
             {#each p.cards as e (e.name)}
               <li class="emp"><span>{e.name}</span></li>
               {#each e.cards as c, i (i)}
-                <li class="card-row"><span>{c.card}: {#if c.trait}{c.card === 'Rehab' ? 'remove' : 'learn'} <TraitChip code={c.trait} />{:else}{c.what}{/if}</span><span class="num" class:good={c.value > 0}>{signed(c.value)}</span></li>
+                <li class="card-row"><span>{c.label}</span><span class="num" class:good={c.total > 0} class:bad={c.total < 0}>{signed(c.total, 1)}</span></li>
               {/each}
             {/each}
           </ul>
-          <p class="muted small">What the card adds per day, coworkers included. Drill counts its higher wage.</p>
+          <p class="muted small">If offered: what the card adds in all, over the days they have left (coworkers and wage included). Every card is on Training &amp; tools.</p>
         </div>
       {/if}
     </div>
