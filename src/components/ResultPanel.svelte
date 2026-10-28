@@ -10,8 +10,9 @@
   import { evaluateBuild, findHints } from '../lib/compute.js';
   import { fmt, fmtDamage, periodLabel } from '../lib/format.js';
   import Icon from './Icon.svelte';
-  import { mdiArrowUpBold, mdiArrowDownBold, mdiTshirtCrew, mdiSchool, mdiCheckCircle, mdiLinkVariant, mdiContentSave } from '@mdi/js';
+  import { mdiArrowUpBold, mdiArrowDownBold, mdiTshirtCrew, mdiSchool, mdiCheckCircle, mdiLinkVariant, mdiContentSave, mdiImage, mdiContentCopy, mdiDownload, mdiShareVariant } from '@mdi/js';
   import { shareLink } from '../lib/share.js';
+  import { buildImage } from '../lib/buildImage.js';
   import { saveBuild } from '../lib/saved.svelte.js';
   import { itemLabel } from '../lib/market.js';
   import { statText } from '../lib/visual.js';
@@ -98,6 +99,44 @@
     setTimeout(() => (copied = false), 2000);
   }
 
+  // The build as a picture, for people without access: shown, then copied or downloaded.
+  let picture = $state(null); // { blob, url }
+  let pictureOpen = $state(false);
+  let pictureNote = $state('');
+  async function makePicture() {
+    pictureNote = '';
+    if (picture) URL.revokeObjectURL(picture.url);
+    picture = null;
+    pictureOpen = true;
+    const debuff = settings.pill && settings.splitDebuff && settings.windowHours > 8 && planner.debuff && planner.debuff.hits !== 0 ? planner.debuff : null;
+    try {
+      const blob = await buildImage({ planner, settings, result: result && !result.error ? result : null, items: data.market.gameConfigItems, debuff });
+      picture = { blob, url: URL.createObjectURL(blob) };
+    } catch (err) {
+      pictureNote = err.message;
+    }
+  }
+  async function copyPicture() {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': picture.blob })]);
+      pictureNote = 'Copied: paste it into Discord or a chat.';
+    } catch {
+      pictureNote = "Couldn't copy the picture here: download it instead (on a phone, press and hold it to save or share).";
+    }
+  }
+  // Phones: the system share sheet, straight into a chat app.
+  const pictureFile = $derived(picture ? new File([picture.blob], 'build.png', { type: 'image/png' }) : null);
+  const canShare = $derived(!!pictureFile && !!navigator.canShare?.({ files: [pictureFile] }));
+  async function sharePicture() {
+    try { await navigator.share({ files: [pictureFile] }); } catch {}
+  }
+  function downloadPicture() {
+    const a = document.createElement('a');
+    a.href = picture.url;
+    a.download = 'build.png';
+    a.click();
+  }
+
   const per1k = $derived(result && !result.error && result.damage > 0 ? (result.cost / result.damage) * 1000 : NaN);
 </script>
 
@@ -162,8 +201,26 @@
     <button class="action ghost" onclick={copyLink} title="A link that opens exactly this build (no player name in it)">
       <Icon path={mdiLinkVariant} size={18} /> {copied ? 'Link copied' : 'Copy link'}
     </button>
+    <button class="action ghost" onclick={makePicture} title="The build as a picture, for people who can't open the site">
+      <Icon path={mdiImage} size={18} /> Picture
+    </button>
   </div>
 </section>
+
+<Dialog bind:open={pictureOpen} title="Share as a picture">
+  <p class="muted small">Everything someone needs to copy the build, for people who can't open the site. No player name on it.</p>
+  {#if picture}
+    <img class="picture" src={picture.url} alt="The build: settings, damage and cost, skills, gear and food" />
+    <div class="row">
+      <button class="action" onclick={copyPicture}><Icon path={mdiContentCopy} size={18} /> Copy picture</button>
+      <button class="action ghost" onclick={downloadPicture}><Icon path={mdiDownload} size={18} /> Download</button>
+      {#if canShare}<button class="action ghost" onclick={sharePicture}><Icon path={mdiShareVariant} size={18} /> Share</button>{/if}
+    </div>
+  {:else if !pictureNote}
+    <p class="muted">Drawing…</p>
+  {/if}
+  {#if pictureNote}<p class="small" role="status">{pictureNote}</p>{/if}
+</Dialog>
 
 <Dialog bind:open={saving} title="Save this build">
   {#if justSaved}
@@ -228,4 +285,5 @@
   }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; align-self: center; }
   .chips span { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .picture { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); margin: 8px 0; }
 </style>

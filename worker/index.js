@@ -35,6 +35,18 @@ async function remembered(key, build) {
 
 const iso = (ms) => new Date(ms).toISOString();
 
+/**
+ * A game item's icon from this site, so the build picture can draw it (the
+ * game's image host doesn't allow other sites to read its images).
+ */
+async function itemIcon(request) {
+  const name = new URL(request.url).searchParams.get('icon') ?? '';
+  if (!/^[\w-]{1,64}$/.test(name)) return json({ error: 'Bad icon' }, 400);
+  const res = await fetch(`https://media.warera.io/images/items/${name}.png?v=33`, { cf: { cacheTtl: 86400, cacheEverything: true } });
+  if (!res.ok || !(res.headers.get('Content-Type') ?? '').startsWith('image/')) return json({ error: 'Not found' }, 404);
+  return new Response(res.body, { headers: { 'Content-Type': res.headers.get('Content-Type'), 'Cache-Control': 'private, max-age=86400' } });
+}
+
 async function dataset(env, name) {
   const body = await remembered(name, async () => {
     await ensureSchema(env.DB);
@@ -140,7 +152,8 @@ const routes = {
   '/api/loot-prices': (env) => lootPriceRoute(env),
   '/api/contracts': (env, request) => unitContracts(env, request),
   '/api/point-value': (env) => pointValue(env),
-  '/api/battle-loot': (env) => dataset(env, 'battle-loot'),  '/api/company-employees': (env, request) => companyEmployees(env, request),};
+  '/api/battle-loot': (env) => dataset(env, 'battle-loot'),  '/api/company-employees': (env, request) => companyEmployees(env, request),
+  '/api/item-icon': (env, request) => itemIcon(request),};
 
 export default {
   async fetch(request, env) {
