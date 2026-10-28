@@ -498,6 +498,30 @@ export function bestNet(prep, levels, player, opts, terms = {}) {
 }
 
 /**
+ * The build that makes the most money: every kind of swing that pays for
+ * itself (case drops and income beat ammo, wear and food), none that doesn't;
+ * at the same net, the one with more damage. For the pill's debuff, where cheap
+ * gear's case drops outearn its wear. null when no swing pays.
+ */
+export function mostProfit(prep, levels, player, opts, terms = {}) {
+  const L = ctxOf(prep, levels, player, opts);
+  const rate = ((terms.bounty ?? 0) + (terms.perK ?? 0)) / 1000;
+  const fixed = (terms.flat ?? 0) + (terms.economy ?? 0) - L.pill;
+  let best = null;
+  for (const f of L.foods) for (const d of L.defs) for (const o of L.offsFor(d)) {
+    let net = 0, damage = 0;
+    for (const seg of segmentsOf(L, o, d, f)) {
+      const gain = rate * seg.dmg - seg.cost;
+      if (gain > 0) { net += gain * seg.cap; damage += seg.dmg * seg.cap; }
+    }
+    if (net > 0 && (!best || net > best.net + 1e-9 || (Math.abs(net - best.net) <= 1e-9 && damage > best.damage))) best = { net, damage, o, d, f };
+  }
+  if (!best) return null;
+  const fill = segmentsOf(L, best.o, best.d, best.f).filter((seg) => rate * seg.dmg - seg.cost > 0).map((seg) => ({ seg, x: seg.cap }));
+  return buildOf(L, best.o, best.d, best.f, fill, { ...terms, flat: (terms.flat ?? 0) });
+}
+
+/**
  * Cheapest builds reaching each of `targets` damage (one pass over the
  * options for all targets). Per option the kinds of swing are taken cheapest
  * per damage first (those that earn, i.e. cost below 0, always). Returns one

@@ -36,14 +36,14 @@
   const debuffHours = $derived(settings.pill && settings.windowHours > 8);
   let suggesting = $state(false);
   let suggestNote = $state('');
-  /** Fills the debuff build with the one that pays for itself: the most damage there without losing gold. */
+  /** Fills the debuff build with the one that makes the most money there (cheap gear, case drops). */
   async function suggest() {
     suggesting = true;
     try {
       const s = await suggestDebuff(data.market, planner, settings, incomeTerms(data.market));
       setDebuff(s);
       suggestNote = s.none ? "At −60 % no hit pays for itself at these prices: don't fight after the pill."
-        : `The most damage that still pays for itself in the debuff: about ${s.hits} hits, then stop (more lose gold).`;
+        : `The most profit in the debuff: about ${s.hits} hits, +${s.net.toFixed(1)} G (case drops beat its wear).`;
     } finally {
       suggesting = false;
     }
@@ -113,7 +113,7 @@
       {#if split}
         <button type="button" aria-pressed={editing === 'pill' || !planner.debuff} onclick={() => { editing = 'pill'; open = null; }}>Pill build <small>hours 1–8, +60%</small></button>
         <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>hours 9–{settings.windowHours}, −60%</small></button>
-        <button type="button" class="link" onclick={suggest} disabled={suggesting}>{suggesting ? 'Finding…' : 'Suggest one that pays'}</button>
+        <button type="button" class="link" onclick={suggest} disabled={suggesting}>{suggesting ? 'Finding…' : 'Suggest the most profitable'}</button>
         {#if planner.debuff}<button type="button" class="link" onclick={sameAsPill}>Use the pill build for both</button>{/if}
       {/if}
     </div>

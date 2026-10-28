@@ -4,7 +4,7 @@
  * breakdown, and optimize gear and skills.
  */
 import { priceKey, FIGHT_SKILLS, ECONOMY_SKILLS, ALL_SKILLS } from '../engine/inputs.js';
-import { prepare, strongest, joined, strongestSplit, isSplit, cheapest, buildFrontier, rollPrice, levelCost } from '../combat/optimize.js';
+import { prepare, strongest, mostProfit, joined, strongestSplit, isSplit, cheapest, buildFrontier, rollPrice, levelCost } from '../combat/optimize.js';
 import { WEAR_PER_HIT, SCRAP_BASE, itemPrice, canFight } from '../combat/model.js';
 import { searchLayout } from '../combat/client.js';
 import { incomePlan } from './income.js';
@@ -102,15 +102,16 @@ export async function evaluateBuild(market, planner, settings) {
 }
 
 /**
- * A debuff build for the hours after the pill. At 40 % damage most hits cost
- * more than they bring, so it's the most damage that still pays for itself
- * there (bounty and per-1k loot of `terms`, case drops), and how many hits
- * that is: past them, each hit loses gold. { equipment, food, hits, damage,
- * net }, or { none: true } when no hit pays (don't fight in the debuff).
+ * A debuff build for the hours after the pill: the gear that makes the most
+ * money there. At 40 % damage, cheap gear's case drops (and the bounty and
+ * per-1k loot of `terms`) outearn its wear, so every hit it makes pays; dear
+ * gear's don't. It fights every hit that pays (free health, and food when
+ * that pays too). { equipment, food, hits, damage, net }, or { none: true }
+ * when no hit pays.
  */
 export async function suggestDebuff(market, planner, settings, terms = {}) {
   const opts = { ...fightOptions(settings), splitDebuff: false, phase: 'debuff' };
-  const b = strongest(prepFor(market, { lockedFood: foodSetting(settings) }), planner.skills, playerOf(planner), opts, { bounty: terms.bounty ?? 0, perK: terms.perK ?? 0 }, 0);
+  const b = mostProfit(prepFor(market, { lockedFood: foodSetting(settings) }), planner.skills, playerOf(planner), opts, { bounty: terms.bounty ?? 0, perK: terms.perK ?? 0 });
   if (!b || b.swings < 1) return { none: true };
   return { equipment: toEquipment(market, b.gear), food: b.food ?? 'none', hits: Math.floor(b.swings), damage: b.damage, net: b.net };
 }
@@ -122,7 +123,7 @@ export async function suggestDebuff(market, planner, settings, terms = {}) {
 export async function payingHits(market, planner, settings, terms = {}, debuff = planner.debuff) {
   if (!debuff || !canFight(debuff.gear)) return 0;
   const prep = prepFor(market, { locked: lockedGear(market, debuff.gear), lockedFood: plannedFood(debuff) });
-  const b = strongest(prep, planner.skills, playerOf(planner), { ...fightOptions(settings), splitDebuff: false, phase: 'debuff' }, { bounty: terms.bounty ?? 0, perK: terms.perK ?? 0 }, 0);
+  const b = mostProfit(prep, planner.skills, playerOf(planner), { ...fightOptions(settings), splitDebuff: false, phase: 'debuff' }, { bounty: terms.bounty ?? 0, perK: terms.perK ?? 0 });
   return b ? Math.floor(b.swings) : 0;
 }
 

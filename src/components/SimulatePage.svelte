@@ -53,7 +53,7 @@
     payingHits(data.market, planner, settings, incomeTerms(data.market)).then((n) => { if (planner.debuff && planner.debuff.hits === undefined) planner.debuff.hits = n; });
   });
   const debuffItems = $derived(planner.debuff && planner.debuff.hits !== 0
-    ? [...['weapon', 'ammo', 'helmet', 'chest', 'pants', 'boots', 'gloves'].map((slot) => planner.debuff.gear[slot]).filter(Boolean).map((g) => (typeof g === 'string' ? itemLabel(g) : `${itemLabel(g.code)} ${Object.entries(g.skills ?? {}).map(([k, v]) => statText(k, v)).join('/')}`)),
+    ? [...(planner.debuff.gear.weapon ? [] : ['no weapon (bare hands)']), ...['weapon', 'ammo', 'helmet', 'chest', 'pants', 'boots', 'gloves'].map((slot) => planner.debuff.gear[slot]).filter(Boolean).map((g) => (typeof g === 'string' ? itemLabel(g) : `${itemLabel(g.code)} ${Object.entries(g.skills ?? {}).map(([k, v]) => statText(k, v)).join('/')}`)),
       planner.debuff.food && planner.debuff.food !== 'none' ? itemLabel(planner.debuff.food) : 'no food']
     : []);
   const terms = $derived(incomeTerms(data.market));
@@ -119,7 +119,7 @@
         {#if sameGearHits === 0}Not fighting: at −60 % no hit in your pill gear pays for itself.
         {:else if sameGearHits != null}In your pill gear, <strong>stopping after {sameGearHits} hits</strong> (more lose gold).
         {:else}Working out where your pill gear stops paying…{/if}
-        A cheaper debuff build usually does more there.
+        Cheap debuff gear makes a profit there from case drops.
         <button type="button" class="link" onclick={() => { settings.splitDebuff = true; result = null; }}>Use a debuff build</button>
       </p>
     {/if}
@@ -129,7 +129,7 @@
         {#if planner.debuff.hits === 0}
           Don't fight after the pill: at −60 % no hit pays for itself at these prices.
         {:else}
-          {debuffItems.join(' · ')}{#if planner.debuff.hits != null} · <strong>stop after {planner.debuff.hits} hits</strong> (more lose gold){/if}
+          {debuffItems.join(' · ')}{#if planner.debuff.hits != null} · <strong>{planner.debuff.hits} hits</strong> (every one that pays for itself){/if}
         {/if}
         <button type="button" class="link" onclick={() => navigate('/')}>Change it</button>
       </p>
