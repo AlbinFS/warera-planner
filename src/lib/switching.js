@@ -27,9 +27,12 @@ const bonusOf = (e, source) => (e.bonus ?? []).filter((b) => b.source === source
  * per point); employees: the same team as loaded (eco.svelte.js: their tools);
  * good: the good to switch to; perPoint: G per point by good;
  * spare: tools in the inventory ({ code, percent }); enginePoints: what its
- * engine makes a day; cost: G for the switch. Returns { good, now, after,
- * first, full, total, payback, tools } (G a day; total: over SWITCH_DAYS,
- * the cost taken off; payback: days, or null).
+ * engine makes a day; cost: G for the switch. Worked out day by day: day 1
+ * at the specialization each employee has in the new good (usually 0), day 2
+ * 1 % more, and so on (the old good's growing too, where it isn't full yet).
+ * Returns { good, now, after, first, average, full, total, payback, tools }
+ * (G a day: first is day 1, average over the days weighed; total over them,
+ * the cost taken off; payback: the day the running total reaches 0, or null).
  */
 /**
  * Which companies to switch so the spare tools get used, for the most income:
@@ -95,7 +98,7 @@ export function switchValue(model, { employees = [], good, perPoint, spare = [],
   }
   return {
     good, now: dayValue(0, false), after: dayValue(0, true),
-    first: dayValue(0, true) - dayValue(0, false), full: dayValue(SPEC_MAX, true) - dayValue(SPEC_MAX, false),
+    first: dayValue(0, true) - dayValue(0, false), average: (total + cost) / days, full: dayValue(SPEC_MAX, true) - dayValue(SPEC_MAX, false),
     total, payback, cost,
     tools: [...toolFor.entries()].map(([i, t]) => ({ id: t.id, name: model.team[i].name, percent: t.percent, spare: !t.held })),
   };

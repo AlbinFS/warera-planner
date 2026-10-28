@@ -43,12 +43,13 @@
     What each company would make switched to its most profitable other good, against what it makes now: its own employees and engine,
     inputs at market prices. A switch costs {SWITCH_CONCRETE} concrete (about {fmt(switchCost, 1)} G); employees stay, but their specialization
     starts over in the new good (+1 % a day up to 20 %, the old good's kept) and tools for the old good stop working (tools in your inventory:
-    see Training & tools). Since v0.27 any good can be made anywhere: the game counts no region, climate or deposit in output.
+    see Training & tools). Worked out day by day: day 1 at the specialization each employee already has in the new good
+    (usually 0 %), day 2 a percent more, and so on, so the payback day is when the running total covers the switch. Since v0.27 any good can be made anywhere: the game counts no region, climate or deposit in output.
     Weighed over {SWITCH_DAYS} days.
   </p>
   <div class="scroll">
     <table>
-      <thead><tr><th>Company</th><th>Best switch</th><th class="num">Day 1</th><th class="num">At full specialization</th><th class="num">{SWITCH_DAYS} days, after the cost</th><th class="num">Pays back</th></tr></thead>
+      <thead><tr><th>Company</th><th>Best switch</th><th class="num">Day 1</th><th class="num" title="Specialization grows a percent a day from the first: this is the 30 days' gain, day by day, divided by 30">Average a day</th><th class="num">{SWITCH_DAYS} days, after the cost</th><th class="num">Pays back</th></tr></thead>
       <tbody>
         {#each rows as r (r.company.id)}
           <tr class:keep={!r.best || r.best.total <= 0.005}>
@@ -56,7 +57,7 @@
             {#if r.best && r.best.total > 0.005}
               <td><img src={itemImage(r.best.good, items)} alt="" width="18" height="18" class="mini" /> {itemLabel(r.best.good) || r.best.good}</td>
               <td class="num" class:good={r.best.first > 0.005} class:bad={r.best.first < -0.005}>{signed(r.best.first)} G/day</td>
-              <td class="num" class:good={r.best.full > 0.005}>{signed(r.best.full)} G/day</td>
+              <td class="num" class:good={r.best.average > 0.005} class:bad={r.best.average < -0.005}>{signed(r.best.average)} G/day</td>
               <td class="num good"><strong>{signed(r.best.total, 1)} G</strong></td>
               <td class="num">{r.best.payback ? `day ${r.best.payback}` : `after ${SWITCH_DAYS} days`}</td>
             {:else}

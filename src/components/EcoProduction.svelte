@@ -21,7 +21,6 @@
     const staff = (ecoEmployees[c.id] ?? []).map((e) => employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 }));
     return engineDaily(up, c.engine) + staff.reduce((s, x) => s + x.points, 0);
   }
-  const bestGood = $derived(goods[0]);
 
   const rows = $derived(companies.map((c) => {
     const pp = perPoint[c.good] ?? 0;
@@ -32,13 +31,10 @@
     const room = levelCost('breakRoom', c.breakRoom + 1);
     const storageMax = levelCost('storage', c.storage)?.stats?.maxProduction ?? 0;
     const points = dayPoints(c);
-    // Switching to the best good: same points, more per point.
-    const switchGain = bestGood && bestGood.code !== c.good ? points * (bestGood.perPoint - pp) : 0;
     return {
       ...c, pp, engineNow, engineValue: engineNow * pp, points,
       next, nextGain, nextSteel, paybackDays: nextGain > 0 ? (nextSteel * steel) / nextGain : Infinity,
       room, storageMax, hoursToFull: points > 0 ? Math.max(0, (storageMax - c.stock) / (points / 24)) : Infinity,
-      switchGain,
     };
   }));
   const engineMax = $derived(maxLevel('automatedEngine'));
@@ -84,7 +80,6 @@
               <td class="good">
                 <img src={itemImage(r.good, items)} alt="" width="24" height="24" loading="lazy" />
                 {label(r.good)} <small class="muted">{fmt(r.pp, 4)}/pt</small>
-                {#if r.switchGain > 0.5}<div class="hint">{label(bestGood.code)} would earn {fmt(r.switchGain, 1)} G more a day</div>{/if}
               </td>
               <td class="num">{fmt(r.points, 0)}<div class="muted small">engine {r.engineNow} = {fmt(r.engineValue, 2)} G</div></td>
               <td>
@@ -125,6 +120,5 @@
   tr.top td { background: color-mix(in srgb, var(--good) 8%, transparent); }
   tr.off td { opacity: .6; }
   .tag { font-size: 11px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--good); color: var(--good); }
-  .hint { color: var(--accent); font-size: 12px; white-space: normal; }
   .warnText { color: var(--bad); }
 </style>

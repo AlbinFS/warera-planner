@@ -50,3 +50,18 @@ test('tool switches: the best for income first (not the biggest earner), never m
   assert.equal(none.plan.length, 0);
   assert.equal(none.unused.length, 1);
 });
+
+test('specialization climbs a percent a day from day 1: the average and payback count every day, not the full rate', () => {
+  const team = [emp('A', { tool: null, hasTool: false, bonus: [{ source: 'management', percent: 6 }, { source: 'specialization', percent: 20 }], bonusPercent: 26 })];
+  const model = companyModel(team, place, { perPoint: 0.1, fairWage: 0.6 });
+  const r = switchValue(model, { employees: team, good: 'cookedFish', perPoint: { paper: 0.1, cookedFish: 0.11 }, cost: 1 });
+  // Day d (0-based) at d % specialization against 20 % now: 24 points × (0.11 × (1.06 + d/100) − 0.1 × 1.26).
+  const day = (d) => 24 * (0.11 * (1 + (6 + Math.min(20, d)) / 100) - 0.1 * 1.26);
+  let total = -1, payback = null, run = -1;
+  for (let d = 0; d < SWITCH_DAYS; d++) { total += day(d); run += day(d); if (payback == null && run >= 0) payback = d + 1; }
+  assert.ok(Math.abs(r.first - day(0)) < 1e-9);
+  assert.ok(Math.abs(r.total - total) < 1e-9);
+  assert.ok(Math.abs(r.average - (total + 1) / SWITCH_DAYS) < 1e-9);
+  assert.equal(r.payback, payback);
+  assert.ok(r.average < r.full && r.average > r.first);
+});
