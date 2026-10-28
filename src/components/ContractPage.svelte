@@ -11,6 +11,7 @@
   import { lootFor, battleLoot } from '../lib/fightIncome.svelte.js';
   import { loadContracts } from '../lib/unit.js';
   import GearStrip from './GearStrip.svelte';
+  import { splitActive } from '../lib/compute.js';
 
   let { data } = $props();
 
@@ -86,9 +87,26 @@
     economy: income?.total ?? 0,
   });
 
+  // Deep: a 16 h session whose debuff build's profit pays for better pill gear (all skills searched).
+  const deep = $derived(terms.mode === 'deep');
+  // With a debuff build: skills are chosen for the pill build, the debuff build added as profit (deep: spent on pill gear).
+  // The settings a run uses: the pill's 8 hours, or for deep a 16 h session with its debuff build.
+  const runSettings = $derived({ ...settings, windowHours: deep ? 16 : 8, splitDebuff: deep ? true : settings.splitDebuff });
+  const split = $derived(splitActive(data.market, runSettings));
+  /**
+   * Where a build's net comes from: the pill build, the debuff build (bounty on
+   * its hits, less its cost) and the companies' income per day.
+   */
+  function netParts(p) {
+    const r = evaluate(p, contract);
+    const debuff = p.debuff?.damage ? (contract.bounty * p.debuff.damage) / 1000 - p.debuff.cost : 0;
+    return { debuff, economy: contract.economy, fight: r.net - debuff - contract.economy };
+  }
+
   async function run() {
     error = '';
     if (terms.mode !== 'gear' && !Number.isFinite(maxLoss)) { error = 'Set "Willing to lose" for the skill search: it needs a limit to aim for.'; return; }
+    if (deep && !settings.pill) { error = 'Deep needs the pill on (settings bar): it spends the debuff hours’ profit on the pill hours’ gear.'; return; }
     running = true;
     progress = 0;
     finished = '';
@@ -102,7 +120,7 @@
     const began = Date.now();
     const secs = () => `${Math.round((Date.now() - began) / 1000)} s`;
     // The economy search needs the player's companies; without a player, economy skills are kept.
-    const economySearch = terms.mode === 'economy' && !!planner.player;
+    const economySearch = (terms.mode === 'economy' || deep) && !!planner.player;
     const tick = setInterval(() => (elapsed = Math.round((Date.now() - began) / 1000)), 1000);
     const title = document.title;
     try {
@@ -118,8 +136,8 @@
       if (terms.mode !== 'gear') {
         phase = economySearch ? 'income' : 'skills';
         status = economySearch ? 'Loading your companies for the income model…' : 'Searching skill layouts…';
-        search = await searchSkills(data.market, planner, settings, {
-          terms: { ...contract, economy: startIncome, lootCurve: lootCurve(lootAt) }, maxLoss, economySearch, signal: controller.signal,
+        search = await searchSkills(data.market, planner, runSettings, {
+          terms: { ...contract, economy: startIncome, lootCurve: lootCurve(lootAt) }, maxLoss, economySearch, signal: controller.signal, deep,
           onStep: (s) => {
             search = s;
             phase = 'skills';
@@ -135,7 +153,7 @@
       phase = 'builds';
       document.title = 'Listing builds · optimizing…';
       status = 'Listing builds for these skills…';
-      points = await collectBuilds(data.market, planner, settings, levels, (share) => { progress = share; });
+      points = await collectBuilds(data.market, planner, runSettings, levels, (share) => { progress = share; });
       status = `Done in ${secs()} · ${points.length} exact builds for ${terms.mode === 'gear' ? 'your planned' : 'the suggested'} skills.`;
       finished = status;
     } catch (err) {
@@ -156,7 +174,9 @@
       : frontier(points);
     return list.map((p) => evaluate(p, contract));
   });
-  const allowed = $derived(visible.filter((b) => b.net >= -maxLoss - 1e-9));
+  // The limit is on the pill build (and the companies): the debuff build's profit never pays for dearer pill gear.
+  // Deep: the debuff build's profit counts.
+  const allowed = $derived(visible.filter((b) => b.net - (deep ? 0 : netParts(b).debuff) >= -maxLoss - 1e-9));
   const bestNet = $derived(allowed.reduce((a, b) => (!a || b.net > a.net ? b : a), null));
   const strongest = $derived(allowed.reduce((a, b) => (!a || b.damage > a.damage ? b : a), null));
   const rows = $derived([...allowed].sort((a, b) =>
@@ -202,11 +222,13 @@
       <label class="wide">
         <span>Optimize</span>
         <select bind:value={terms.mode}>
-          <option value="economy">Skills + gear (search economy skills too)</option>
-          <option value="skills">Skills + gear (keep economy skills)</option>
-          <option value="gear">Gear only (planned skills)</option>
+          <option value="gear">1 · Gear only (keeps every skill) · fastest</option>
+          <option value="skills">2 · Gear + fight skills (keeps economy skills)</option>
+          <option value="economy">3 · Gear + all skills (a full reset)</option>
+          <option value="deep">4 · Deep: gear + all skills, debuff profit buys pill gear (16 h) · slowest</option>
         </select>
-        {#if terms.mode === 'economy' && !planner.player}<small class="muted">Load your player to search economy skills; until then they are kept.</small>{/if}
+        {#if deep}<small class="muted">8 h on the pill with the best gear, then 8 h in the debuff with the build that makes most. That profit is spent on the pill gear, so you play the full 16 h.</small>{/if}
+        {#if (terms.mode === 'economy' || deep) && !planner.player}<small class="muted">Load your player to search economy skills; until then they are kept.</small>{/if}
       </label>
       <label><span>Bounty (G per 1k damage)</span><input type="number" step="0.001" min="0" bind:value={terms.bounty} /></label>
       <label><span>Willing to lose (G)</span><input type="number" step="1" min="0" bind:value={terms.lose} placeholder="No limit" /></label>
@@ -219,7 +241,7 @@
       </div>
     </form>
     <p class="hint muted">
-      Net = bounty × damage / 1000 + battle loot + company income − cost, {periodLabel(settings)} (fight window, pill, bonus and food come from the settings bar).
+      Net = bounty × damage / 1000 + battle loot + company income − cost, {periodLabel(runSettings)} (pill, bonus and food come from the settings bar; modes 1–3 fight the pill's 8 hours, deep a 16 h session).
       Battle loot is what {battleLoot.data ? `${fmt(battleLoot.data.battles, 0)} recent real battles` : 'real battles (still being collected)'} gave for each build's own damage, so more damage can pay for itself when it reaches better items.
       Company income is worked out from {planner.player ? 'your companies' : 'your companies (load your player)'} for each skill layout the search tries.
       The skill search starts from the skills on the Overview & MinMax page.
@@ -232,7 +254,7 @@
             {#if phase === 'builds'}Listing builds for {terms.mode === 'gear' ? 'your' : 'the suggested'} skills… {Math.round(progress * 100)}%
             {:else if phase === 'income'}Loading your companies for the income model…
             {:else if stepInfo?.seeding}Finding a starting layout…
-            {:else}Optimizing skills{#if stepInfo}{' · '}step {stepInfo.step + 1}{/if}…{/if}
+            {:else}Optimizing skills{#if split && !deep}{' '}for the pill build{/if}{#if stepInfo}{' · '}step {stepInfo.step + 1}{/if}…{/if}
           </strong>
           <span class="clock num">{elapsed} s</span>
         </div>
@@ -241,6 +263,7 @@
             <span>Best so far <strong class="num">{stepInfo.best ? fmtDamage(stepInfo.best.damage) : 'nothing within the limit'}</strong></span>
             <span><strong class="num">{stepInfo.checked}</strong> layouts checked</span>
             <span>Points <strong class="num">{stepInfo.used} / {stepInfo.budget}</strong></span>
+            {#if stepInfo.trying}<span>Trying economy skills <strong>{Object.entries(stepInfo.trying).filter(([, v]) => v > 0).map(([k, v]) => `${NAMES[k] ?? k} ${v}`).join(', ') || 'none'}</strong></span>{/if}
           </div>
         {/if}
         <div class="bar" class:indeterminate={phase !== 'builds'}><div style:width={phase === 'builds' ? `${Math.round(progress * 100)}%` : null}></div></div>
@@ -256,7 +279,7 @@
     <section class="card" aria-labelledby="layout-title">
       <h2 id="layout-title">Suggested skills</h2>
       <dl class="summary">
-        <div><dt>Most damage within the limit</dt><dd class="num">{search.best ? fmtDamage(search.best.damage) : '–'}</dd>{#if Number.isFinite(maxLoss)}<small class="muted">losing at most {fmt(maxLoss, 0)} G {periodLabel(settings)}</small>{/if}</div>
+        <div><dt>Most damage within the limit</dt><dd class="num">{search.best ? fmtDamage(search.best.damage) : '–'}</dd>{#if Number.isFinite(maxLoss)}<small class="muted">losing at most {fmt(maxLoss, 0)} G {periodLabel(runSettings)}</small>{/if}</div>
         <div><dt>Its net</dt><dd class="num" class:pos={search.best?.net >= 0} class:neg={search.best?.net < 0}>{search.best ? signed(search.best.net) : '–'}</dd></div>
         {#if income}<div><dt>Economy income per day</dt><dd class="num">{fmt(income.total, 1)}</dd><small class="muted">{income.modelled ? 'from your companies, with these skills' : 'no player loaded'}{income.searched ? ` · ${signed(income.change)} from the economy skills` : ''}</small></div>{/if}
         <div><dt>Skill points searched</dt><dd class="num">{search.used} / {search.budget}</dd>{#if totalPoints > search.budget}<small class="muted">{totalPoints - search.budget} more of your {totalPoints} are in kept economy skills</small>{/if}</div>
@@ -291,7 +314,8 @@
       </div>
       <dl class="summary">
         <div><dt>Builds within the limit</dt><dd class="num">{allowed.length} <small class="muted">of {visible.length}</small></dd></div>
-        <div><dt>Most damage within the limit</dt><dd class="num">{strongest ? fmtDamage(strongest.damage) : '–'}</dd></div>
+        <div><dt>Most damage within the limit</dt><dd class="num">{strongest ? fmtDamage(strongest.damage) : '–'}</dd>
+          {#if strongest}{@const parts = netParts(strongest)}<small class="muted">net {signed(strongest.net)} = fighting {signed(parts.fight)}{#if strongest.debuff?.damage}{' · '}debuff build {signed(parts.debuff)}{/if}{#if parts.economy}{' · '}companies {signed(parts.economy)}{/if}</small>{/if}</div>
         <div><dt>Best net</dt><dd class="num">{bestNet ? signed(bestNet.net) : '–'} {#if bestNet}<small class="muted">at {fmtDamage(bestNet.damage)}</small>{/if}</dd></div>
       </dl>
       <div class="scroll">

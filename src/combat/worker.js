@@ -6,12 +6,16 @@
  *     near: damage a layout next to these makes (where the battle loot step starts)
  *     quick: a rough score to screen layouts with (most damage only): one build
  *       all session, the loot at `near` counted once
- * args: { market?, locked, lockedFood, start, player, opts,
+ * args: { market?, locked, lockedFood, start, player, opts, deep?,
  *         objective: { kind: 'damage', terms, limit } | { kind: 'range', targets },
  *           terms.lootCurve: [damage, G] points of battle loot by damage (counted per build),
  *         income?: { plan, config } (economy skills searched: their income counts) }
+ *   With a debuff build (16 h and full days), layouts are scored by the pill
+ *   build alone: the debuff build is profit on top, worked out once the skills
+ *   are chosen. deep: the debuff build's profit may be spent on pill gear
+ *   (the Optimizer's deep mode, a lot slower).
  */
-import { prepare, strongest, bestNet, cheapestMany, FIGHT } from './optimize.js';
+import { prepare, strongest, bestNet, cheapestMany, isSplit, FIGHT } from './optimize.js';
 import { dailyIncome } from '../lib/eco.js';
 
 const ECONOMY = ['production', 'energy', 'companies', 'management', 'leadership'];
@@ -79,7 +83,9 @@ function contextFor(args) {
     };
   }
   const lootAt = objective.terms.lootCurve ? lootFrom(objective.terms.lootCurve) : null;
-  const single = { ...opts, splitDebuff: false };
+  const pillOnly = !args.deep && isSplit(p.config, opts);
+  const single = pillOnly ? { ...opts, phase: 'pill', splitDebuff: false } : { ...opts, splitDebuff: false };
+  const exact = pillOnly ? single : args.deep ? { ...opts, fundDebuff: true } : opts;
   return (l, near = null, quick = false) => {
     const income = incomeChange(l);
     const terms = { ...objective.terms, lootCurve: undefined, economy: (objective.terms.economy ?? 0) + income };
@@ -95,17 +101,17 @@ function contextFor(args) {
     // if the build reaches it, that damage's loot is earned and the steps from 0 are saved.
     if (lootAt && near > 0 && Number.isFinite(limit)) {
       const guess = near * NEAR_SHARE;
-      const at = strongest(p, l, player, opts, { ...terms, flat: (terms.flat ?? 0) + lootAt(guess) }, limit);
+      const at = strongest(p, l, player, exact, { ...terms, flat: (terms.flat ?? 0) + lootAt(guess) }, limit);
       if (at && at.damage >= guess) { r = at; counted = lootAt(guess); }
     }
-    if (!r) r = strongest(p, l, player, opts, terms, limit);
+    if (!r) r = strongest(p, l, player, exact, terms, limit);
     if (r && lootAt) {
       // Battle loot grows with damage: count what this damage earns and go again while that
       // buys more damage. More damage only earns more loot, so each step stays within the limit.
       for (let step = 0; step < 4; step++) {
         const earned = lootAt(r.damage);
         if (earned <= counted + 0.5) break;
-        const next = strongest(p, l, player, opts, { ...terms, flat: (terms.flat ?? 0) + earned }, limit);
+        const next = strongest(p, l, player, exact, { ...terms, flat: (terms.flat ?? 0) + earned }, limit);
         if (!next || next.damage <= r.damage * (1 + 1e-6)) break;
         counted = earned;
         r = next;
@@ -116,7 +122,7 @@ function contextFor(args) {
     // No build keeps this layout within the limit. Still scored, by the best net it can make (below
     // −limit, so under any layout that keeps within it), so a climb from such a start (economy
     // skills at 0, say) moves towards the limit.
-    if (!r) return { infeasible: true, damage: 0, net: bestNet(p, l, player, opts, terms), incomeChange: income };
+    if (!r) return { infeasible: true, damage: 0, net: bestNet(p, l, player, exact, terms), incomeChange: income };
     // Only what the climb and its report read: whole builds would be copied back for every layout.
     return { damage: r.damage, cost: r.cost, net: r.net, income: r.income, loot: r.loot, armor: r.armor, dodge: r.dodge, incomeChange: income };
   };

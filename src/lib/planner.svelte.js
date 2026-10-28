@@ -122,7 +122,8 @@ export function applyState(state, label = 'Shared build') {
   planner.food = state.food;
   // A shared or saved build's debuff build is kept as it is (not re-suggested).
   planner.debuff = state.debuff ? { ...state.debuff, auto: false } : null;
-  Object.assign(settings, state.settings);
+  // A saved or shared build's settings, on the pill's 8 hours like everything else (older ones had a longer window).
+  Object.assign(settings, state.settings, { windowHours: 8 });
 }
 
 // A share link (?b=…) opens that build.

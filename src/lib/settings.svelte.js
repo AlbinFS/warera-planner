@@ -4,7 +4,9 @@
  * bonus in two separate hidden places, which made pages disagree.)
  */
 const KEY = 'settings.v1';
-// splitDebuff: a second build for the pill's debuff (16 h and full-day windows).
+// splitDebuff: a second build for the pill's debuff (16 h and full-day sessions).
+// windowHours: always the pill's 8 hours here; the Simulator and the Optimizer's deep mode run
+// longer sessions on their own copy (there's no site-wide choice any more: it overrode them).
 const DEFAULTS = { battleBonus: 60, pill: true, food: 'any', windowHours: 8, splitDebuff: true };
 
 function load() {
@@ -12,7 +14,7 @@ function load() {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}');
     // The debuff build became the profitable one (2026-10-28): switched on once for everyone.
     if (!localStorage.getItem('settings.debuffOn')) { saved.splitDebuff = true; localStorage.setItem('settings.debuffOn', '1'); }
-    return { ...DEFAULTS, ...saved };
+    return { ...DEFAULTS, ...saved, windowHours: 8 };
   } catch {
     return { ...DEFAULTS };
   }

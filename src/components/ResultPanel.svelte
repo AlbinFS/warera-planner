@@ -108,7 +108,7 @@
     if (picture) URL.revokeObjectURL(picture.url);
     picture = null;
     pictureOpen = true;
-    const debuff = settings.pill && settings.splitDebuff && settings.windowHours > 8 && planner.debuff && planner.debuff.hits !== 0 ? planner.debuff : null;
+    const debuff = settings.pill && settings.splitDebuff && planner.debuff && planner.debuff.hits !== 0 ? planner.debuff : null;
     try {
       const blob = await buildImage({ planner, settings, result: result && !result.error ? result : null, items: data.market.gameConfigItems, debuff });
       picture = { blob, url: URL.createObjectURL(blob) };

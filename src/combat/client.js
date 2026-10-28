@@ -3,7 +3,7 @@
  * score skill layouts in parallel, while the climb over layouts runs here.
  * The market is sent to each worker once; later searches reuse it.
  */
-import { bestLayoutAsync, bestLayoutEconomy, better, configOf, FIGHT } from './optimize.js';
+import { bestLayoutAsync, better, configOf, FIGHT } from './optimize.js';
 
 const SIZE = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 2));
 let pool = null;
@@ -41,14 +41,13 @@ const rangeBetter = (a, b) => !!a && a.cost != null && (!b || b.cost == null || 
 
 /**
  * A skill-layout search (args as worker.js describes, plus searched, budget,
- * zeroed: skills the first start sets to 0, and economy: the economy steps
- * for bestLayoutEconomy).
+ * and zeroed: skills the first start sets to 0).
  * onProgress gets each step; `signal` stops it after the current step.
  */
 export async function searchLayout(market, args, { onProgress, signal } = {}) {
   const workers = getPool();
   const ctx = nextCtx++;
-  const { searched, budget, zeroed, economy, ...context } = JSON.parse(JSON.stringify(args));
+  const { searched, budget, zeroed, ...context } = JSON.parse(JSON.stringify(args));
   const withMarket = market === sentMarket ? context : { ...context, market: JSON.parse(JSON.stringify(market)) };
   sentMarket = market;
   await Promise.all(workers.map((w) => call(w, { op: 'context', ctx, args: withMarket })));
@@ -77,9 +76,7 @@ export async function searchLayout(market, args, { onProgress, signal } = {}) {
     const results = await Promise.all(parts.map((part, w) => (part.length ? call(workers[w], { op: 'score', ctx, layouts: part, near, quick }) : [])));
     return where.map(([w, i]) => results[w][i]);
   };
-  // Economy skills searched for most damage: placed exactly, per number of points (optimize.js).
-  return (economy && args.objective.kind === 'damage' ? bestLayoutEconomy : bestLayoutAsync)(configOf(market), {
-    economy,
+  return bestLayoutAsync(configOf(market), {
     start: args.start, searched, budget, zeroed, playerLevel: args.player.level, scoreMany,
     // Most damage: neighbours are screened with one build all session and the loot counted once.
     scoreQuick: args.objective.kind === 'damage' ? (layouts, hint) => scoreMany(layouts, hint, true) : null,

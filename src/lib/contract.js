@@ -15,7 +15,6 @@ import { prepare, buildFrontier } from '../combat/optimize.js';
 import { searchLayout } from '../combat/client.js';
 import { fightOptions, playerOf, toEquipment, keptPoints } from './compute.js';
 import { incomePlan, incomeOf } from './income.js';
-import { incomeSteps } from './eco.js';
 
 export { evaluate, lootCurve } from './contractMath.js';
 import { evaluate } from './contractMath.js';
@@ -47,7 +46,7 @@ export async function collectBuilds(market, planner, settings, skills, onProgres
   }
   return builds.map((b) => ({
     damage: b.damage, cost: b.cost, food: b.food ?? 'none', equipment: toEquipment(market, b.gear), armor: b.armor, dodge: b.dodge,
-    debuff: b.debuff ? { equipment: toEquipment(market, b.debuff.gear), food: b.debuff.food ?? 'none', hits: Math.floor(b.debuff.swings) } : null,
+    debuff: b.debuff ? { equipment: toEquipment(market, b.debuff.gear), food: b.debuff.food ?? 'none', hits: Math.floor(b.debuff.swings), damage: b.debuff.damage, cost: b.debuff.cost } : null,
   }));
 }
 
@@ -60,11 +59,12 @@ export async function incomeModel(market, planner) {
 /**
  * Skill layout and gear with the most damage while the net stays at or above
  * −maxLoss. options: { terms: { bounty, poolLoot, loot, economy }, maxLoss,
- * economySearch, onStep, signal }. Leadership earns nothing, so searching
- * economy skills sets it to 0 and frees its points.
+ * economySearch, deep, onStep, signal }. Leadership earns nothing, so searching
+ * economy skills sets it to 0 and frees its points. deep: the debuff build's
+ * profit may be spent on the pill build's gear (16 h sessions).
  */
 export async function searchSkills(market, planner, settings, options) {
-  const { terms, maxLoss, economySearch, onStep, signal } = options;
+  const { terms, maxLoss, economySearch, onStep, signal, deep = false } = options;
   if (economySearch && !planner.player) throw new Error('Load a player first: the economy search needs their companies.');
   const searched = economySearch ? [...FIGHT_SKILLS, ...ECONOMY_SKILLS.filter((s) => s !== 'leadership')] : FIGHT_SKILLS;
   const start = { ...planner.skills, ...(economySearch ? { leadership: 0 } : {}) };
@@ -78,22 +78,14 @@ export async function searchSkills(market, planner, settings, options) {
     // A layout no build keeps within the limit (worker.js scores it to climb on) is no answer.
     const best = s.best?.infeasible ? null : s.best;
     return {
-      step: s.steps ?? s.step ?? 0, levels: { ...start, ...s.levels }, checked: s.checked, budget: s.budget, used: s.used,
+      step: s.steps ?? s.step ?? 0, levels: { ...start, ...s.levels }, checked: s.checked, budget: s.budget, used: s.used, trying: s.trying ?? null,
       best: best && { ...evaluate({ damage: best.damage, cost: best.cost }, { ...terms, economy: (terms.economy ?? 0) + (best.incomeChange ?? 0) }), armor: best.armor, dodge: best.dodge },
       incomeChange: best?.incomeChange ?? 0,
     };
   };
-  // Economy skills searched: they start at 0, their points free for fighting, and come back a
-  // number of points at a time, each the layout earning most for them (optimize.js bestLayoutEconomy).
-  // From a full economy spec a joint climb would trade them for fight levels one step at a time.
-  const zeroed = economySearch ? ECONOMY_SKILLS : [];
-  const economy = income ? {
-    skills: searched.filter((s) => ECONOMY_SKILLS.includes(s)),
-    steps: incomeSteps(income.plan, income.config, { skills: searched.filter((s) => ECONOMY_SKILLS.includes(s)), budget, playerLevel: planner.player?.level ?? 1 }),
-  } : null;
   const r = await searchLayout(market, {
-    lockedFood: settings.food === 'any' ? undefined : settings.food, start, searched, budget, zeroed, economy,
-    player: playerOf(planner), opts: fightOptions(settings),
+    lockedFood: settings.food === 'any' ? undefined : settings.food, start, searched, budget,
+    player: playerOf(planner), opts: fightOptions(settings), deep,
     objective: { kind: 'damage', terms: engineTerms, limit: Number.isFinite(maxLoss) ? maxLoss : null }, income,
   }, { onProgress: (s) => onStep?.(report(s)), signal });
   return report(r);

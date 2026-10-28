@@ -608,10 +608,9 @@ export function maxLevel(config, skill, playerLevel) {
   return Math.max(0, ...Object.keys(levels).map(Number).filter((n) => (levels[n]?.unlockAtLevel ?? 0) <= playerLevel));
 }
 
-// Random starts on top of the planned ones. The climb takes small steps, so it can stop a few levels
-// from a better layout: in tests, 4 more starts found a layout 2–5 % stronger in about half the
-// searches with a limit, and closed the gap to within 0.7 %.
-const EXTRA_STARTS = 4;
+// Random starts on top of the planned ones (and kicks, below): none. On the real market (8 h, a
+// limit, economy skills searched) the morning's three starts found as much damage in a ninth of the time.
+const EXTRA_STARTS = 0;
 
 /** Random numbers in [0, 1) from a fixed seed: the same starts, so the same answer, every run. */
 function seeded(seed) {
@@ -696,7 +695,7 @@ export function layoutSpace(config, { start, searched = FIGHT, budget, playerLev
 // 0.1–0.5 s to score exactly and a step has up to ~1,000 neighbours.
 const SCREEN = 24;
 // After the starts: this many kicks of KICK_STEPS random steps from the best, each climbed again.
-const KICKS = 4;
+const KICKS = 0;
 const KICK_STEPS = 4;
 
 /**
@@ -776,41 +775,6 @@ export async function bestLayoutAsync(config, { start, searched = FIGHT, budget,
   return { ...result, steps, checked: scored.size, budget, used: space.used(result.levels) };
 }
 
-/**
- * Most damage with the economy skills searched too. Their points only buy
- * income, gold that eases the limit, so for each number of points the economy
- * layout earning the most is known: economy.steps, [{ levels, points }] by
- * points, each earning more than the one before, the first all at 0. The fight
- * skills are climbed with the economy at 0 first (every start), then with each
- * step's economy in turn from the best so far, while that keeps paying (it
- * stops after two steps that don't). Fight-only climbs have a third of the
- * neighbours, and the economy is placed exactly: a joint climb trades one
- * level at a time and stops on a worse hill.
- */
-export async function bestLayoutEconomy(config, { start, searched, budget, economy, onStep, isBetter = better, ...rest }) {
-  const fight = searched.filter((s) => !economy.skills.includes(s));
-  let steps = 0;
-  let checked = 0;
-  const run = async (step, from, everyStart) => {
-    const r = await bestLayoutAsync(config, {
-      ...rest, isBetter, start: { ...from, ...step.levels }, searched: fight, budget: budget - step.points,
-      ...(everyStart ? {} : { extraStarts: 0, spreads: false, kicks: 0 }),
-      onStep: (s) => onStep?.({ ...s, step: steps + s.step, checked: checked + s.checked, budget, used: s.used + step.points }),
-    });
-    steps += r.steps;
-    checked += r.checked;
-    return { ...r, budget, used: r.used + step.points };
-  };
-  let best = await run(economy.steps[0], start, true);
-  let misses = 0;
-  for (const step of economy.steps.slice(1)) {
-    if (rest.shouldStop?.() || step.points > budget) break;
-    const r = await run(step, best.levels, false);
-    if (isBetter(r.best, best.best)) { best = r; misses = 0; } else if (++misses >= 2) break;
-  }
-  return { ...best, steps, checked };
-}
-
 /*
  * Two builds a day: one for the pill's 8 hours, one for its debuff. The pill
  * build is chosen on its own (its limit, its target); the debuff build is the
@@ -843,9 +807,12 @@ function debuffBuild(prep, levels, player, opts, terms) {
 
 /** Most damage with the pill build's net ≥ −limit, and the debuff build's profit on top. */
 export function strongestSplit(prep, levels, player, opts, terms = {}, limit = Infinity, prepDebuff = null) {
-  const a = strongest(prep, levels, player, phaseOpts(opts, 'pill'), terms, limit);
+  const b = debuffBuild(prepDebuff ?? prep, levels, player, opts, terms);
+  // Deep (opts.fundDebuff): the debuff build's profit is gold the pill build may spend too.
+  const fund = opts.fundDebuff && b ? Math.max(0, b.net) : 0;
+  const a = strongest(prep, levels, player, phaseOpts(opts, 'pill'), terms, limit + fund);
   if (!a) return null;
-  return joined(a, debuffBuild(prepDebuff ?? prep, levels, player, opts, terms), terms);
+  return joined(a, b, terms);
 }
 
 /** Cheapest pill build reaching each target with the debuff build's damage, the debuff build added. */

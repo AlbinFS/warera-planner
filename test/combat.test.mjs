@@ -178,7 +178,7 @@ test('the debuff lasts its own 15.5 h: a full day ends at full strength, and no 
 test('skill search starts: economy skills zeroed in the first, the same random starts every run', () => {
   const skills = { ...config.skills, production: table(30, 3), energy: table(100, 10) };
   const start = { ...layout, production: 8, energy: 8 };
-  const args = { start, searched: [...Object.keys(layout), 'production', 'energy'], budget: 200, playerLevel: 40, zeroed: ['production', 'energy'] };
+  const args = { start, searched: [...Object.keys(layout), 'production', 'energy'], budget: 200, playerLevel: 40, zeroed: ['production', 'energy'], extraStarts: 4 };
   const a = layoutSpace({ skills }, args);
   const b = layoutSpace({ skills }, args);
   assert.equal(a.starts[0].production, 0);
@@ -201,18 +201,6 @@ test('screening neighbours with a rough score that ranks alike finds the same la
   const screened = await bestLayoutAsync({ skills }, { ...args, scoreMany: exact, scoreQuick: rough, screen: 6 });
   assert.equal(screened.best.damage, plain.best.damage);
   assert.ok(screened.checked < plain.checked / 2, `${screened.checked} vs ${plain.checked}`);
-});
-
-test('economy placed by points: fight skills climbed per economy step, the best kept', async () => {
-  const { bestLayoutEconomy } = await import('../src/combat/optimize.js');
-  const skills = { ...Object.fromEntries(Object.keys(layout).map((s) => [s, table(0, 1)])), companies: table(0, 1) };
-  const weight = { attack: 5, precision: 3, criticalChance: 3, criticalDamages: 2, armor: 2, dodge: 2, health: 2, lootChance: 1, hunger: 1 };
-  // Damage from fight skills; companies only help through gold: up to 2 levels lift the damage a lot.
-  const score = async (ls) => ls.map((l) => ({ damage: Object.entries(weight).reduce((t, [s, w]) => t + w * Math.sqrt(l[s] ?? 0), 0) + 6 * Math.min(2, l.companies ?? 0), net: 0 }));
-  const steps = [0, 1, 2, 3].map((n) => ({ levels: { companies: n }, points: (n * (n + 1)) / 2 }));
-  const r = await bestLayoutEconomy({ skills }, { start: { ...layout, companies: 4 }, searched: [...Object.keys(layout), 'companies'], budget: 60, playerLevel: 40, economy: { skills: ['companies'], steps }, scoreMany: score });
-  assert.equal(r.levels.companies, 2);
-  assert.ok(r.used <= 60);
 });
 
 test('a layout no build keeps within the limit is told how far off it is', () => {

@@ -5,7 +5,7 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
-  import { splitActive, suggestDebuff } from '../lib/compute.js';
+  import { suggestDebuff } from '../lib/compute.js';
   import { setDebuff } from '../lib/planner.svelte.js';
   import { incomeTerms } from '../lib/fightIncome.svelte.js';
   import { GEAR_SLOTS, SLOT_NAMES, itemLabel } from '../lib/market.js';
@@ -29,18 +29,20 @@
   });
   const { catalog, priceOf, itemPrice } = $derived(data);
 
-  // With a debuff build, either build can be edited; the debuff one starts as a copy of the pill one.
-  const split = $derived(splitActive(data.market, settings));
+  // With the pill, the 8 hours after it (a 16 h session) can have their own build: either can be edited,
+  // the debuff one starting as a copy of the pill one.
+  const split = $derived(settings.pill && settings.splitDebuff);
+  const session = $derived({ ...settings, windowHours: 16 });
   let editing = $state('pill');
   const target = $derived(split && editing === 'debuff' && planner.debuff ? planner.debuff : planner);
-  const debuffHours = $derived(settings.pill && settings.windowHours > 8);
+  const debuffHours = $derived(settings.pill);
   let suggesting = $state(false);
   let suggestNote = $state('');
   /** Fills the debuff build with the one that makes the most money there (cheap gear, case drops). */
   async function suggest() {
     suggesting = true;
     try {
-      const s = await suggestDebuff(data.market, planner, settings, incomeTerms(data.market));
+      const s = await suggestDebuff(data.market, planner, session, incomeTerms(data.market));
       setDebuff(s);
       suggestNote = s.none ? "At −60 % no hit pays for itself at these prices: don't fight after the pill."
         : `The most profit in the debuff: about ${s.hits} hits, +${s.net.toFixed(1)} G (case drops beat its wear).`;
@@ -111,12 +113,12 @@
       <label class="switch"><input type="checkbox" role="switch" bind:checked={settings.splitDebuff} /> Separate debuff build</label>
       {#if split}
         <button type="button" aria-pressed={editing === 'pill' || !planner.debuff} onclick={() => { editing = 'pill'; open = null; }}>Pill build <small>hours 1–8, +60%</small></button>
-        <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>hours 9–{settings.windowHours}, −60%</small></button>
+        <button type="button" aria-pressed={editing === 'debuff' && !!planner.debuff} onclick={editDebuff}>Debuff build <small>hours 9–16, −60%</small></button>
         <button type="button" class="link" onclick={suggest} disabled={suggesting}>{suggesting ? 'Finding…' : 'Suggest the most profitable'}</button>
         {#if planner.debuff}<button type="button" class="link" onclick={sameAsPill}>Use the pill build for both</button>{/if}
       {/if}
     </div>
-    {#if !split}<p class="hint muted">The {settings.windowHours - 8} hours after the pill are fought in this gear. Turn on a separate debuff build to fight them in cheaper gear.</p>
+    {#if !split}<p class="hint muted">The 8 hours after the pill (a 16 h session) are fought in this gear. Turn on a separate debuff build to fight them in cheaper gear.</p>
     {:else if editing === 'debuff' && planner.debuff}<p class="hint muted">Editing the debuff build (worn after the pill). {suggestNote}</p>
       <label class="hits">Hits in the debuff <input type="number" min="0" step="10" value={planner.debuff.hits ?? ''} placeholder="all"
         oninput={(e) => { const v = e.currentTarget.value; planner.debuff.auto = false; planner.debuff.hits = v === '' ? null : Math.max(0, Math.floor(Number(v) || 0)); }} />
@@ -137,7 +139,7 @@
   {#if split && planner.debuff}
     {@const other = editing === 'debuff' ? planner : planner.debuff}
     <div class="other">
-      <span>{editing === 'debuff' ? 'Pill build, hours 1–8' : `Debuff build, hours 9–${settings.windowHours}`}</span>
+      <span>{editing === 'debuff' ? 'Pill build, hours 1–8' : 'Debuff build, hours 9–16'}</span>
       <GearStrip equipment={other.gear} food={other.food} {items} />
       <button type="button" class="link" onclick={() => (editing === 'debuff' ? (editing = 'pill') : editDebuff())}>Edit</button>
     </div>

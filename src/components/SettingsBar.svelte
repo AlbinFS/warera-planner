@@ -2,7 +2,7 @@
   /** The fight settings every page uses, in one visible bar. */
   import { settings, FOODS } from '../lib/settings.svelte.js';
   import Icon from './Icon.svelte';
-  import { mdiPill, mdiFire, mdiClockOutline, mdiFoodDrumstick, mdiSwapHorizontal } from '@mdi/js';
+  import { mdiPill, mdiFire, mdiFoodDrumstick } from '@mdi/js';
 </script>
 
 <section class="bar" aria-label="Fight settings">
@@ -19,25 +19,6 @@
     <input type="number" min="0" max="500" step="5" bind:value={settings.battleBonus} />
     <span class="unit">%</span>
   </label>
-
-  <div class="field" role="group" aria-label="Fight window" title="8 h: full health and hunger, fighting through one pill's 8 hours. 16 h: a play session (8 h asleep): the pill's 8 hours, then 8 hours in its −60% debuff on regen. Full day: 24 hours: the debuff (15.5 h) included, then half an hour at full strength.">
-    <Icon path={mdiClockOutline} size={18} color="var(--c-defense)" />
-    <span>Fight for</span>
-    <span class="seg">
-      <button type="button" aria-pressed={settings.windowHours === 8} onclick={() => (settings.windowHours = 8)}>8 hours</button>
-      <button type="button" aria-pressed={settings.windowHours === 16} onclick={() => (settings.windowHours = 16)}>16 hours</button>
-      <button type="button" aria-pressed={settings.windowHours === 24} onclick={() => (settings.windowHours = 24)}>A full day</button>
-    </span>
-  </div>
-
-  {#if settings.pill && settings.windowHours > 8}
-    <label class="toggle" title="Wear one build for the pill's 8 hours and a second, cheaper one in its debuff. The optimizers then pick both.">
-      <Icon path={mdiSwapHorizontal} size={18} color="var(--c-defense)" />
-      <span>Debuff build</span>
-      <input type="checkbox" role="switch" bind:checked={settings.splitDebuff} />
-      <span class="state">{settings.splitDebuff ? 'Own' : 'Same'}</span>
-    </label>
-  {/if}
 
   <label class="field" title="Which food the optimizers may use. Your planned food is set in the gear section.">
     <Icon path={mdiFoodDrumstick} size={18} color="var(--c-life)" />
