@@ -2,7 +2,7 @@
  * Eco page state: the player's companies and their employees (both from the
  * API) and eco settings (kept in this browser).
  */
-import { cached, cachedBatch } from './warera.js';
+import { cached, cachedBatch, getApiKey } from './warera.js';
 
 const SETTINGS_KEY = 'eco.settings.v2';
 // Employees used to be typed in and kept here; they come from the game now.
@@ -36,7 +36,9 @@ export const ecoEmployees = $state({}); // companyId → [employee]
 const SPARE_TOOLS_KEY = 'eco.spareTools.v1';
 export const spareTools = $state(load(SPARE_TOOLS_KEY, { list: [] }));
 // Why the employees couldn't be loaded, if they couldn't ('' when they were).
-export const employeesStatus = $state({ error: '' });
+export const employeesStatus = $state({ error: '', needsKey: false });
+// Bumped when the visitor adds or removes their API key, so the Eco page loads again.
+export const apiKeyState = $state({ version: 0 });
 
 $effect.root(() => {
   $effect(() => { const s = JSON.stringify(ecoSettings); try { localStorage.setItem(SETTINGS_KEY, s); } catch {} });
@@ -52,8 +54,13 @@ export async function loadCompanies(playerId) {
     // Each company's hired manager, if any (public): their pay and bonus.
     cachedBatch(ids.map((companyId) => ['manager.getByCompanyId', { companyId }]), 5 * 60 * 1000).catch(() => ids.map(() => null)),
     loadEmployees(ids).then(
-      () => { employeesStatus.error = ''; },
-      (err) => { employeesStatus.error = `Couldn't load your employees from the game (${err.message}); income is counted without them.`; },
+      () => { employeesStatus.error = ''; employeesStatus.needsKey = false; },
+      (err) => {
+        employeesStatus.needsKey = !!err.needsKey;
+        employeesStatus.error = err.needsKey
+          ? 'Add your WarEra API key (the key button at the top) to load your employees: the game only shares them with a key. Income is counted without them until then.'
+          : `Couldn't load your employees from the game (${err.message}); income is counted without them.`;
+      },
     ),
   ]);
   return companies.map((c, i) => ({
@@ -83,21 +90,22 @@ function managerOf(m) {
 export const words = (code) => String(code ?? '').replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).replace(/ ([A-Z])/g, (_, c) => ` ${c.toLowerCase()}`);
 
 /**
- * Employees from the game, through the site (the API needs a key for them).
- * The model reads what the game's card shows: production, bonus % (Management
- * included) and payroll per day (the API's wage is per hour); the rest is
- * shown on the Employees tab.
+ * Employees from the game. The API only shares them with a key, so they are
+ * read with the visitor's own key, straight from this browser (the site's
+ * server key is kept for its own price job). The model reads what the game's
+ * card shows: production, bonus % (Management included) and payroll per day
+ * (the API's wage is per hour); the rest is shown on the Employees tab.
  */
 async function loadEmployees(ids) {
-  for (let i = 0; i < ids.length; i += 20) {
-    const chunk = ids.slice(i, i + 20);
-    const res = await fetch(`/api/company-employees?ids=${chunk.join(',')}`);
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-    for (const id of chunk) {
-      if (Array.isArray(body.companies?.[id])) ecoEmployees[id] = body.companies[id].map(fromGame);
-    }
+  if (!getApiKey()) {
+    const err = new Error('no API key');
+    err.needsKey = true;
+    throw err;
   }
+  const pages = await cachedBatch(ids.map((companyId) => ['employee.getCompanyEmployees', { companyId }]), 60 * 1000);
+  ids.forEach((id, i) => {
+    if (Array.isArray(pages[i])) ecoEmployees[id] = pages[i].map(fromGame);
+  });
 }
 
 const stat = (e, k) => ({

@@ -1,5 +1,5 @@
 <script>
-  /** The visitor's own WarEra API key: optional, kept in this browser, sent only to the official API. */
+  /** The visitor's own WarEra API key: kept in this browser, sent only to the official API. */
   import Dialog from './Dialog.svelte';
   import { getApiKey, setApiKey } from '../lib/warera.js';
 
@@ -44,9 +44,10 @@
   }
 </script>
 
-<Dialog bind:open title="Your WarEra API key (optional)">
-  <p>Everything works without one. With your own key the site can also:</p>
+<Dialog bind:open title="Your WarEra API key">
+  <p>Most of the site works without one. With your own key it can also:</p>
   <ul>
+    <li>load <strong>your employees</strong> on the Eco page (the game only shares them with a key);</li>
     <li>use <strong>your real job salary</strong> (from your recent wages) in the income estimates, instead of a default;</li>
     <li>load bigger pages like the <strong>Unit</strong> page without running into the official API's limit for anonymous visitors.</li>
   </ul>

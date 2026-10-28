@@ -4,7 +4,7 @@
    * which upgrades pay back, and employees (from the game).
    */
   import { planner } from '../lib/planner.svelte.js';
-  import { ecoSettings, ecoEmployees, loadCompanies } from '../lib/eco.svelte.js';
+  import { ecoSettings, ecoEmployees, loadCompanies, apiKeyState } from '../lib/eco.svelte.js';
   import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import { staffModels } from '../lib/income.js';
@@ -37,6 +37,8 @@
 
   $effect(() => {
     const id = planner.player?.id;
+    // A new API key loads again (employees need one).
+    apiKeyState.version;
     if (!id) return;
     loading = true;
     loadCompanies(id).then((c) => { companies = c; error = ''; }).catch((err) => (error = err.message)).finally(() => (loading = false));

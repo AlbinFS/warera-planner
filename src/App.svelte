@@ -15,6 +15,7 @@
   import SimulatePage from './components/SimulatePage.svelte';
   import BreakpointPanel from './components/BreakpointPanel.svelte';
   import { getApiKey } from './lib/warera.js';
+  import { apiKeyState } from './lib/eco.svelte.js';
   import Dialog from './components/Dialog.svelte';
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
@@ -84,7 +85,7 @@
   </button>
   <a class="key signout" href="/auth/logout" title="Sign out on this device (frees one of your code's device slots)" aria-label="Sign out"><Icon path={mdiLogout} size={18} /></a>
 </header>
-<ApiKeyDialog bind:open={keyOpen} onchange={() => (hasKey = !!getApiKey())} />
+<ApiKeyDialog bind:open={keyOpen} onchange={() => { hasKey = !!getApiKey(); apiKeyState.version++; }} />
 <SettingsBar />
 
 {#if !data}
