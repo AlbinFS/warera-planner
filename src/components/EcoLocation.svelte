@@ -5,7 +5,9 @@
    * bonus, attacks, and the traits that care where they work), what a move
    * costs (every employee −10 happiness for 7 days) and how soon it pays back.
    * In a core region your country has lost: how soon it would have to be
-   * retaken for waiting to beat moving.
+   * retaken for waiting to beat moving. The employees' income tax goes to
+   * whoever holds the region, so the options come by holder: your country,
+   * your allies (to back them), and the best of the rest.
    */
   import { ecoEmployees } from '../lib/eco.svelte.js';
   import { companyModel, placeOf, placeValue, fairWageOf } from '../lib/hiring.js';
@@ -29,8 +31,23 @@
   const days = (d) => (d < 1 ? 'under a day' : `about ${fmt(d, d < 10 ? 1 : 0)} days`);
   // Gains below this a day are noise.
   const MIN_GAIN = 0.01;
-  const SHOWN = 3;
   const NAMES_SHOWN = 4;
+  // Options shown in each part: your country, every ally (the best region of each), anyone else.
+  const SHOWN = { home: 2, ally: Infinity, other: 2 };
+  const SECTIONS = [
+    { id: 'home', label: 'Held by your country' },
+    { id: 'ally', label: 'Held by your allies (they get the tax)' },
+    { id: 'other', label: 'Anywhere else' },
+  ];
+  // Who holds a region, to your country: yours, an ally, at war with you, or neither.
+  function relation(holder) {
+    const me = countries[home];
+    if (!holder || !me) return 'other';
+    if (holder === home) return 'home';
+    if (me.allies?.includes(holder)) return 'ally';
+    return me.warsWith?.includes(holder) ? 'enemy' : 'other';
+  }
+  const TAG = { ally: 'ally', enemy: 'at war with you' };
 
   function plan(c) {
     const team = ecoEmployees[c.id] ?? [];
@@ -53,15 +70,24 @@
       }
       g.regions.push(r.name);
     }
-    const options = [...groups.values()].filter((g) => g.gain > MIN_GAIN).sort((a, b) => b.gain - a.gain || a.moveCost - b.moveCost).slice(0, SHOWN);
-    for (const g of options) g.regions.sort();
+    const ranked = [...groups.values()].sort((a, b) => b.gain - a.gain || a.moveCost - b.moveCost);
+    for (const g of ranked) { g.regions.sort(); g.relation = relation(g.place.country); }
+    const bestOf = new Set();
+    const sections = {
+      // Your country's and your allies' regions even when they don't pay: you may want to back them anyway.
+      home: ranked.filter((g) => g.relation === 'home').slice(0, SHOWN.home),
+      // One row per ally, their best region.
+      ally: ranked.filter((g) => g.relation === 'ally' && !bestOf.has(g.place.country) && bestOf.add(g.place.country)).slice(0, SHOWN.ally),
+      other: ranked.filter((g) => (g.relation === 'other' || g.relation === 'enemy') && g.gain > MIN_GAIN).slice(0, SHOWN.other),
+    };
+    const options = ranked.filter((g) => g.gain > MIN_GAIN);
     // Lost to another country: what staying costs a day until it's retaken.
     const occupied = region && region.country !== region.initialCountry;
     const retaken = occupied && region.initialCountry === home
       ? placeValue(model, { country: home, tax: countries[home]?.taxes?.income ?? 0, attacked: 0 }).worth - now
       : null;
     const best = options[0] ?? null;
-    return { company: c, team, region, here, now, options, best, occupied, retaken, payback: best ? best.moveCost / best.gain : null, wait: best && retaken > MIN_GAIN ? best.moveCost / retaken : null };
+    return { company: c, team, region, here, now, sections, best, occupied, retaken, payback: best ? best.moveCost / best.gain : null, wait: best && retaken > MIN_GAIN ? best.moveCost / retaken : null };
   }
   const plans = $derived(Object.keys(regions).length ? companies.filter((c) => !c.disabled && (ecoEmployees[c.id] ?? []).length).map(plan) : []);
   const empty = $derived(companies.filter((c) => !c.disabled && !(ecoEmployees[c.id] ?? []).length).length);
@@ -75,7 +101,8 @@
   <p class="intro muted">
     Where each company's employees make the most. A region changes their happiness by its country's income tax (−1 per 1 %) and −5 while it's attacked,
     gives +5 % in a core region of your country (even one another country holds now), and matters to Patriot, Homesick, Expat, Tax-shy and Statist.
-    Moving costs every employee 10 happiness for 7 days, counted below as gold. Battles to come can't be foreseen: a region on the front line may be attacked.
+    Moving costs every employee 10 happiness for 7 days, counted below as gold. Their income tax goes to whoever holds the region:
+    your allies' regions are listed even when they make less, if you'd rather back them. Battles to come can't be foreseen: a region on the front line may be attacked.
   </p>
 </section>
 
@@ -91,7 +118,7 @@
     </div>
 
     <p class="where">
-      <span>Now in <strong>{p.region?.name ?? 'an unknown region'}</strong>, held by {@render flag(p.region?.country)} {countryName(p.region?.country)}</span>
+      <span>Now in <strong>{p.region?.name ?? 'an unknown region'}</strong>, held by {@render flag(p.region?.country)} {countryName(p.region?.country)}{#if TAG[relation(p.region?.country)]} <small class="tag" data-rel={relation(p.region?.country)}>{TAG[relation(p.region?.country)]}</small>{/if}</span>
       · income tax {fmt(p.here.tax, 1)}% · {p.here.core ? 'core region (+5 %)' : 'not a core region of your country'}{#if p.here.attacked} · <span class="bad">attacked (−{fmt(p.here.attacked, 0)} happiness)</span>{/if}
       · <strong class="num">{fmt(p.now, 2)} G/day</strong> <span class="muted small">from the employees, before wages</span>
     </p>
@@ -110,27 +137,32 @@
         </strong>
         <span class="small">The move costs once about {fmt(p.best.moveCost, 2)} G (every employee −10 happiness for 7 days), paid back in {days(p.payback)}{p.company.freeMoves ? '' : ', plus the move\'s price'}.</span>
       </div>
-      <table>
-        <thead><tr><th>Where to</th><th>Tax</th><th>Core</th><th class="num">Gain a day</th><th class="num">Move cost</th><th class="num">Pays back</th></tr></thead>
-        <tbody>
-          {#each p.options as g, i (i)}
-            <tr>
-              <td>
-                {@render flag(g.place.country)} <strong>{countryName(g.place.country)}</strong>{#if g.place.country !== g.place.homeCountry} <span class="muted small">(held, {countryName(g.place.homeCountry)}'s region)</span>{/if}<br />
-                <span class="muted small">{g.regions.slice(0, NAMES_SHOWN).join(', ')}{g.regions.length > NAMES_SHOWN ? ` and ${g.regions.length - NAMES_SHOWN} more` : ''}</span>
-              </td>
-              <td class="num">{fmt(g.place.tax, 1)}%</td>
-              <td>{g.place.core ? '+5 %' : '–'}</td>
-              <td class="num good">{signed(g.gain)} G</td>
-              <td class="num">{fmt(g.moveCost, 2)} G</td>
-              <td class="num">{days(g.moveCost / g.gain)}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
     {:else}
       <p class="verdict stay"><strong>Stay:</strong> no other region makes these employees more.</p>
     {/if}
+    <table>
+      <thead><tr><th>Where to</th><th class="num">Tax</th><th>Core</th><th class="num">Gain a day</th><th class="num">Move cost</th><th class="num">Pays back</th></tr></thead>
+      {#each SECTIONS as sec (sec.id)}
+        {#if p.sections[sec.id].length}
+          <tbody>
+            <tr class="section"><th colspan="6">{sec.label}</th></tr>
+            {#each p.sections[sec.id] as g, i (i)}
+              <tr class:loses={g.gain <= MIN_GAIN}>
+                <td>
+                  {@render flag(g.place.country)} <strong>{countryName(g.place.country)}</strong>{#if TAG[g.relation] && sec.id !== 'ally'} <small class="tag" data-rel={g.relation}>{TAG[g.relation]}</small>{/if}{#if g.place.country !== g.place.homeCountry} <span class="muted small">(holds {countryName(g.place.homeCountry)}'s region)</span>{/if}<br />
+                  <span class="muted small">{g.regions.slice(0, NAMES_SHOWN).join(', ')}{g.regions.length > NAMES_SHOWN ? ` and ${g.regions.length - NAMES_SHOWN} more` : ''}</span>
+                </td>
+                <td class="num">{fmt(g.place.tax, 1)}%</td>
+                <td>{g.place.core ? '+5 %' : '–'}</td>
+                <td class="num" class:good={g.gain > MIN_GAIN} class:bad={g.gain < -MIN_GAIN}>{signed(g.gain)} G</td>
+                <td class="num">{fmt(g.moveCost, 2)} G</td>
+                <td class="num">{g.gain > MIN_GAIN ? days(g.moveCost / g.gain) : 'never'}</td>
+              </tr>
+            {/each}
+          </tbody>
+        {/if}
+      {/each}
+    </table>
   </section>
 {/each}
 
@@ -155,6 +187,11 @@
   th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
   th { font-size: 12px; color: var(--muted); font-weight: 600; }
   th.num { text-align: right; }
+  tr.section th { padding-top: 12px; color: var(--text); text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
+  tr.loses td { color: var(--muted); }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .tag[data-rel='ally'] { border-color: var(--good); color: var(--good); }
+  .tag[data-rel='enemy'] { border-color: var(--bad); color: var(--bad); }
   @media (max-width: 600px) {
     table { display: block; overflow-x: auto; }
   }
