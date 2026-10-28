@@ -31,6 +31,35 @@ const bonusOf = (e, source) => (e.bonus ?? []).filter((b) => b.source === source
  * first, full, total, payback, tools } (G a day; total: over SWITCH_DAYS,
  * the cost taken off; payback: days, or null).
  */
+/**
+ * Which companies to switch so the spare tools get used, for the most income:
+ * the best switch first (each company's best good, with as many of the tools
+ * as it has employees for), then the next with the tools left, while a switch
+ * still pays over the days weighed. options(company, tools) → switchValue
+ * results for that company with those tools. Only switches that use a tool.
+ */
+export function toolSwitchPlan(companies, tools, options) {
+  let left = [...tools];
+  const plan = [];
+  const used = new Set();
+  while (left.length) {
+    let best = null;
+    for (const c of companies) {
+      if (used.has(c.id)) continue;
+      for (const o of options(c, left)) {
+        if (!o.tools.some((t) => t.spare) || o.total <= 0) continue;
+        if (!best || o.total > best.total) best = { company: c, ...o };
+      }
+    }
+    if (!best) break;
+    plan.push(best);
+    used.add(best.company.id);
+    const taken = new Set(best.tools.filter((t) => t.spare).map((t) => t.id));
+    left = left.filter((t) => !taken.has(t.id));
+  }
+  return { plan, unused: left };
+}
+
 export function switchValue(model, { employees = [], good, perPoint, spare = [], enginePoints = 0, cost = 0, days = SWITCH_DAYS }) {
   const oldGood = model.place.good;
   const kind = toolKindFor(good);
@@ -68,6 +97,6 @@ export function switchValue(model, { employees = [], good, perPoint, spare = [],
     good, now: dayValue(0, false), after: dayValue(0, true),
     first: dayValue(0, true) - dayValue(0, false), full: dayValue(SPEC_MAX, true) - dayValue(SPEC_MAX, false),
     total, payback, cost,
-    tools: [...toolFor.entries()].map(([i, t]) => ({ name: model.team[i].name, percent: t.percent, spare: !t.held })),
+    tools: [...toolFor.entries()].map(([i, t]) => ({ id: t.id, name: model.team[i].name, percent: t.percent, spare: !t.held })),
   };
 }

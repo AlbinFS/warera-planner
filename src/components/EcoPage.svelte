@@ -19,6 +19,7 @@
   import EcoAlerts from './EcoAlerts.svelte';
   import EcoManagers from './EcoManagers.svelte';
   import EcoLocation from './EcoLocation.svelte';
+  import EcoSwitch from './EcoSwitch.svelte';
   import Icon from './Icon.svelte';
   import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant, mdiAccountPlus, mdiHammerWrench, mdiMapMarkerRadius } from '@mdi/js';
 
@@ -126,6 +127,7 @@
       <EcoPlayground {plan} {config} market={data.market} />
     {:else if tab === 'production'}
       <EcoProduction {companies} {goods} {perPoint} {config} prices={data.market.itemPrices} />
+      <EcoSwitch {companies} {perPoint} {items} upgrades={data.upgrades} prices={data.market.itemPrices} managementPercent={2 * currentManagementValue} />
       <EcoManagers {companies} {perPoint} {items} />
     {:else if tab === 'employees'}
       <EcoEmployees {companies} {perPoint} {pointValue} {items} {estimateNote} />

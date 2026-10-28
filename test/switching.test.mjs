@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { companyModel } from '../src/lib/hiring.js';
-import { switchValue, SWITCH_DAYS } from '../src/lib/switching.js';
+import { switchValue, toolSwitchPlan, SWITCH_DAYS } from '../src/lib/switching.js';
 
 const place = { good: 'paper', raw: false, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
 // Production 4, Management 6 %, specialized 20 % in paper, a 10 % flask.
@@ -34,4 +34,19 @@ test('a better-paying good pays for the switch, and says when', () => {
   assert.ok(r.first > 0);
   assert.ok(r.payback >= 1 && r.payback <= SWITCH_DAYS);
   assert.ok(r.total > 0);
+});
+
+test('tool switches: the best for income first (not the biggest earner), never more than the tools fill', () => {
+  // Each company: one employee, so one tool each. Net over the days weighed, the switch's cost off.
+  const companies = [{ id: 'top', net: 2 }, { id: 'small', net: 3 }, { id: 'third', net: 1 }];
+  const options = (c, left) => [{ good: 'cookedFish', total: c.net, tools: left.slice(0, 1).map((t) => ({ ...t, spare: true })) }];
+  const two = toolSwitchPlan(companies, [{ id: 'p1' }, { id: 'p2' }], options);
+  assert.deepEqual(two.plan.map((o) => o.company.id), ['small', 'top']);
+  assert.equal(two.unused.length, 0);
+  const one = toolSwitchPlan(companies, [{ id: 'p1' }], options);
+  assert.deepEqual(one.plan.map((o) => o.company.id), ['small']);
+  // A switch that loses money isn't suggested, and its tool stays unused.
+  const none = toolSwitchPlan([{ id: 'x', net: -1 }], [{ id: 'p1' }], options);
+  assert.equal(none.plan.length, 0);
+  assert.equal(none.unused.length, 1);
 });

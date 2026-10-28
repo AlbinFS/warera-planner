@@ -7,7 +7,7 @@
    */
   import { ecoEmployees, spareTools } from '../lib/eco.svelte.js';
   import { employeeDay, engineDaily } from '../lib/eco.js';
-  import { switchValue, SWITCH_CONCRETE, SWITCH_DAYS } from '../lib/switching.js';
+  import { switchValue, toolSwitchPlan, SWITCH_CONCRETE, SWITCH_DAYS } from '../lib/switching.js';
   import { companyModel, hireValue, bestHires, placeOf, fairWageOf, daysLeftOf } from '../lib/hiring.js';
   import { assignTools, trainingPlan, toolKindFor, toolKind, TOOL_KINDS, TOOL_GOODS, DAYS_UNKNOWN } from '../lib/staffing.js';
   import { trainingCards } from '../lib/training.js';
@@ -111,14 +111,14 @@
   // Spare tools no company can use: would switching a company to a good they fit pay?
   const idleKinds = $derived([...new Set(tools.idle.filter((t) => spare.some((s) => s.id === t.id)).map((t) => toolKind(t.code)))]);
   const switchCost = $derived(SWITCH_CONCRETE * (prices.concrete ?? 0));
+  // Per kind: the switches the spare tools can fill, best for your income first (what the company makes
+  // after, against what it makes now, the switch's cost taken off). No more switches than the tools fill.
   const switches = $derived(idleKinds.map((kind) => {
-    const options = active.flatMap((c) => TOOL_GOODS[kind].filter((g) => g !== c.good && Number.isFinite(perPoint[g])).map((good) => {
-      const args = { employees: ecoEmployees[c.id] ?? [], good, perPoint, enginePoints: engineDaily(upgrades, c.engine), cost: switchCost };
-      const r = switchValue(models[c.id], { ...args, spare });
-      // How much of it the spare tools are: the same switch without them.
-      return { company: c, ...r, fromTools: r.total - switchValue(models[c.id], { ...args, spare: [] }).total };
-    })).sort((a, b) => b.total - a.total);
-    return { kind, options: options.slice(0, 6), goods: TOOL_GOODS[kind].map((g) => ({ good: g, perPoint: perPoint[g] })) };
+    const kindTools = spare.filter((t) => toolKind(t.code) === kind && tools.idle.some((i) => i.id === t.id));
+    const staffed = active.filter((c) => (ecoEmployees[c.id] ?? []).length);
+    const options = (c, left) => TOOL_GOODS[kind].filter((g) => g !== c.good && Number.isFinite(perPoint[g])).map((good) =>
+      switchValue(models[c.id], { employees: ecoEmployees[c.id] ?? [], good, perPoint, spare: left, enginePoints: engineDaily(upgrades, c.engine), cost: switchCost }));
+    return { kind, count: kindTools.length, ...toolSwitchPlan(staffed, kindTools, options) };
   }));
 
   function addTool() {
@@ -277,42 +277,35 @@
     <p class="muted small">Not used: {tools.idle.map((t) => `${kindLabel(toolKind(t.code))} +${t.percent}%`).join(', ')}: no employee makes a good it fits.</p>
   {/if}
   {#each switches as s (s.kind)}
-    <h3>Switch a company to use the {kindLabel(s.kind).toLowerCase()}?</h3>
+    {@const kind = kindLabel(s.kind).toLowerCase()}
+    <h3>Use your spare {kind}{s.count === 1 ? '' : 's'}: switch a company?</h3>
     <p class="muted small">
-      A {kindLabel(s.kind).toLowerCase()} works in {s.goods.map((g) => `${itemLabel(g.good) || g.good} (${Number.isFinite(g.perPoint) ? `${fmt(g.perPoint, 3)} G a point` : 'no price'})`).join(', ')}.
-      Switching costs {SWITCH_CONCRETE} concrete (about {fmt(switchCost, 1)} G). Employees stay, but their specialization starts over in the new good
-      (+1 % a day up to 20 %; the old good's is kept), tools for the old good stop working, and the engine makes the new good.
-      Weighed over {SWITCH_DAYS} days, inputs at market prices.
+      No company makes a good {s.count === 1 ? 'it fits' : 'they fit'} ({TOOL_GOODS[s.kind].map((g) => itemLabel(g) || g).join(', ')}).
+      Each line is a company to switch so {s.count === 1 ? 'the tool is' : 'the tools are'} used, picked for your income: what the company makes after,
+      against what it makes now, the {SWITCH_CONCRETE} concrete (about {fmt(switchCost, 1)} G) taken off. Specialization starts over in the new good
+      (+1 % a day up to 20 %, the old good's kept) and tools for the old good stop working. No more switches than your tools fill.
     </p>
-    {#if s.options.length}
+    {#if s.plan.length}
       <div class="scroll">
         <table>
-          <thead><tr><th>Switch</th><th class="num">Day 1</th><th class="num">At full specialization</th><th class="num">{SWITCH_DAYS} days, after the cost</th><th class="num" title="How much of the {SWITCH_DAYS} days' gain the spare tools make; the rest is the good itself">Of it, the tool</th><th class="num">Pays back</th></tr></thead>
+          <thead><tr><th>Switch</th><th>Tool to</th><th class="num">Day 1</th><th class="num">At full specialization</th><th class="num">{SWITCH_DAYS} days, after the cost</th><th class="num">Pays back</th></tr></thead>
           <tbody>
-            {#each s.options as o (o.company.id + o.good)}
+            {#each s.plan as o (o.company.id)}
               <tr>
-                <td>
-                  <strong>{o.company.name}</strong> <span class="muted">{itemLabel(o.company.good) || o.company.good} → {itemLabel(o.good) || o.good}</span>
-                  {#if o.tools.length}<br /><small class="muted">{o.tools.map((t) => `${t.name} +${t.percent}%`).join(', ')}</small>{/if}
-                </td>
+                <td><strong>{o.company.name}</strong> <span class="muted">{itemLabel(o.company.good) || o.company.good} → {itemLabel(o.good) || o.good}</span></td>
+                <td>{o.tools.filter((t) => t.spare).map((t) => `${t.name} (+${t.percent}%)`).join(', ')}</td>
                 <td class="num" class:good={o.first > 0.005} class:bad={o.first < -0.005}>{signed(o.first)} G/day</td>
                 <td class="num" class:good={o.full > 0.005} class:bad={o.full < -0.005}>{signed(o.full)} G/day</td>
-                <td class="num" class:good={o.total > 0.005} class:bad={o.total < -0.005}><strong>{signed(o.total, 1)} G</strong></td>
-                <td class="num">{signed(o.fromTools, 1)} G</td>
-                <td class="num">{o.payback ? `day ${o.payback}` : 'not within ' + SWITCH_DAYS + ' days'}</td>
+                <td class="num good"><strong>{signed(o.total, 1)} G</strong></td>
+                <td class="num">{o.payback ? `day ${o.payback}` : `after ${SWITCH_DAYS} days`}</td>
               </tr>
             {/each}
           </tbody>
         </table>
       </div>
-      {#if s.options[0].total > 0.005}
-        <p class="small">Best: switch <strong>{s.options[0].company.name}</strong> to <strong>{itemLabel(s.options[0].good) || s.options[0].good}</strong>: {signed(s.options[0].total, 1)} G over {SWITCH_DAYS} days{s.options[0].payback ? `, paid back by day ${s.options[0].payback}` : ''}, {signed(s.options[0].fromTools, 1)} G of it from the tool.
-          Gains are at today's prices: selling much more of one good can push its price down.</p>
-      {:else}
-        <p class="small">No switch pays within {SWITCH_DAYS} days: keep the {kindLabel(s.kind).toLowerCase()} for later, or sell it.</p>
-      {/if}
+      {#if s.unused.length}<p class="muted small">{s.unused.length} {kind}{s.unused.length === 1 ? '' : 's'} left over: no other switch pays.</p>{/if}
     {:else}
-      <p class="muted small">No prices for these goods yet.</p>
+      <p class="small">No switch pays within {SWITCH_DAYS} days: keep the {kind}{s.count === 1 ? '' : 's'} for later, or sell {s.count === 1 ? 'it' : 'them'}.</p>
     {/if}
   {/each}
 </section>
