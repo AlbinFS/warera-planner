@@ -8,12 +8,15 @@
   import Icon from './Icon.svelte';
   import { mdiMagnify, mdiClose, mdiAccountGroup } from '@mdi/js';
 
-  let { kinds = ['players', 'units'], placeholder = 'Search', value = $bindable(''), onpick, busy = false } = $props();
+  // current: the name already loaded (it isn't searched for, so no suggestions come up for it).
+  let { kinds = ['players', 'units'], placeholder = 'Search', value = $bindable(''), onpick, busy = false, current = null } = $props();
 
   let results = $state([]);
   let open = $state(false);
   let active = $state(-1);
   let loading = $state(false);
+  // Suggestions only show while the box is being typed in, never on their own when a page opens.
+  let focused = $state(false);
   let seq = 0;
   let countries = {};
   // The name just picked: filling it into the box shouldn't search again.
@@ -23,7 +26,7 @@
   $effect(() => {
     const text = value.trim();
     const id = ++seq;
-    if (text.length < 2 || text === pickedName) { results = []; return; }
+    if (text.length < 2 || text === pickedName || (current && text.toLowerCase() === current.toLowerCase())) { results = []; open = false; return; }
     pickedName = null;
     const timer = setTimeout(() => search(text, id), 250);
     return () => clearTimeout(timer);
@@ -52,7 +55,7 @@
         flag: countries[m.country]?.code, unit: m,
       }));
       results = [...users, ...units];
-      open = true;
+      open = focused;
       active = results.length ? 0 : -1;
     } catch {
       if (id === seq) results = [];
@@ -90,8 +93,8 @@
   <span class="field">
     <Icon path={mdiMagnify} size={18} />
     <input bind:value {placeholder} autocomplete="off" spellcheck="false" role="combobox" aria-expanded={open && results.length > 0}
-      aria-controls="search-results" aria-autocomplete="list" onkeydown={key} onfocus={() => (open = results.length > 0)}
-      onblur={() => setTimeout(() => (open = false), 150)} />
+      aria-controls="search-results" aria-autocomplete="list" onkeydown={key} onfocus={() => { focused = true; open = results.length > 0; }}
+      onblur={() => { focused = false; setTimeout(() => (open = false), 150); }} />
     {#if busy || loading}<span class="spin" aria-label="Searching"></span>{/if}
     {#if value}<button class="clear" type="button" onclick={() => { value = ''; results = []; }} aria-label="Clear"><Icon path={mdiClose} size={16} /></button>{/if}
   </span>

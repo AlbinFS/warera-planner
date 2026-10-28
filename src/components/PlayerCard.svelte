@@ -7,9 +7,20 @@
   let name = $state(planner.player?.username ?? lastPlayerName());
   let country = $state(null);
 
+  // Loading the player again resets the skills and gear planned for them: ask first.
+  const isLoaded = (username) => !!planner.player && !planner.player.shared && planner.player.username?.toLowerCase() === username?.trim().toLowerCase();
+  const confirmReload = () => confirm(`Load ${planner.player.username} again? This resets the skills and gear you've planned to what they have in the game.`);
+
   async function load(username) {
+    if (isLoaded(username) && !confirmReload()) return;
     await loadByName(username);
     if (planner.player?.username) name = planner.player.username;
+  }
+  async function pick(r) {
+    // Picking the player already loaded changes nothing.
+    if (isLoaded(r.name)) { name = planner.player.username; return; }
+    await loadUser(r.user);
+    name = planner.player?.username ?? name;
   }
 
   // The player's country, for the flag.
@@ -47,7 +58,7 @@
   {/if}
   <form onsubmit={(e) => { e.preventDefault(); load(name); }}>
     <SearchBox kinds={['players']} placeholder="WarEra username" bind:value={name} busy={playerStatus.loading}
-      onpick={(r) => loadUser(r.user).then(() => (name = planner.player?.username ?? name))} />
+      current={planner.player?.shared ? null : planner.player?.username} onpick={pick} />
     <button disabled={playerStatus.loading}>{playerStatus.loading ? 'Loading…' : planner.player ? 'Load' : 'Load my build'}</button>
   </form>
   {#if playerStatus.error}<p class="error" role="alert">{playerStatus.error}</p>{/if}
