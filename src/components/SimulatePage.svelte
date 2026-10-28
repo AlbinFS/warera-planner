@@ -73,7 +73,7 @@
 <div class="page">
   <section class="card">
     <h2><Icon path={mdiDice5} size={20} /> Simulator</h2>
-    <p class="muted">Plays the build on the Planner hit by hit, many times, so you see what luck does: misses (half damage), crits, dodges and case drops are rolled every swing.
+    <p class="muted">Plays the build on the Overview & MinMax page hit by hit, many times, so you see what luck does: misses (half damage), crits, dodges and case drops are rolled every swing.
       Pill: <strong>{settings.pill ? 'on' : 'off'}</strong> and bonus <strong>{settings.battleBonus}%</strong>, from the settings bar.</p>
     <div class="tabs" role="tablist" aria-label="How long">
       {#each SESSIONS as s (s.id)}
@@ -85,7 +85,7 @@
       {#if session !== '8' && settings.pill}{withDebuffBuild ? ' The debuff hours are fought in your debuff build.' : ' The debuff hours are fought in the same gear: turn on "Debuff build" in the settings bar for a cheaper set.'}{/if}
     </p>
     <p class="muted small">
-      {fmt(RUNS, 0)} fights. Income from Hits and costs on the Planner: bounty <strong>{fmt(terms.bounty, 3)}</strong> G per 1k,
+      {fmt(RUNS, 0)} fights. Income from Hits and costs on Overview & MinMax: bounty <strong>{fmt(terms.bounty, 3)}</strong> G per 1k,
       battle loot <strong>{fightIncome.lootMode === 'auto' ? (battleLoot.data ? `from ${fmt(battleLoot.data.battles, 0)} real battles, for each fight's damage` : 'from real battles (still being collected)') : fightIncome.lootMode === 'items' ? `${fmt(terms.flat, 1)} G a fight` : `${fmt(terms.perK, 3)} G per 1k`}</strong>,
       company profit <strong>{companyProfit.value != null ? `${fmt(companyProfit.value, 1)} G a day` : 'none (load your player)'}</strong>.
       <button type="button" class="link" onclick={() => navigate('/')}>Change</button>
@@ -178,7 +178,7 @@
       </div>
     </section>
   {:else}
-    <section class="card"><p class="muted">Set up the build on the Planner and pick how long to fight.</p></section>
+    <section class="card"><p class="muted">Set up the build on the Overview & MinMax page and pick how long to fight.</p></section>
   {/if}
 </div>
 

@@ -178,7 +178,7 @@
   <section class="card guide" aria-label="How it works">
     <h2>Find the best build for a contract</h2>
     <ol>
-      <li><strong>Load your player</strong> below. The search starts from the skills set on the Planner page, economy skills included.</li>
+      <li><strong>Load your player</strong> below. The search starts from the skills set on the Overview & MinMax page, economy skills included.</li>
       <li><strong>Enter the contract:</strong> what it pays per 1k damage, the loot you expect (per 1k damage or as items per fight), and how much you're willing to lose.</li>
       <li><strong>Press Optimize.</strong> You get the skills and gear with the most damage that stays within your loss.</li>
       <li><strong>Pick a build</strong> from the list and press "Use in planner" to fine-tune it.</li>
@@ -222,7 +222,7 @@
       Net = bounty × damage / 1000 + battle loot + company income − cost, {periodLabel(settings)} (fight window, pill, bonus and food come from the settings bar).
       Battle loot is what {battleLoot.data ? `${fmt(battleLoot.data.battles, 0)} recent real battles` : 'real battles (still being collected)'} gave for each build's own damage, so more damage can pay for itself when it reaches better items.
       Company income is worked out from {planner.player ? 'your companies' : 'your companies (load your player)'} for each skill layout the search tries.
-      The skill search starts from the skills in the planner.
+      The skill search starts from the skills on the Overview & MinMax page.
     </p>
     {#if running}
       <div class="running" role="status" aria-live="polite">
@@ -312,7 +312,7 @@
                 <td class="num" class:pos={b.net >= 0} class:neg={b.net < 0}>{signed(b.net)}</td>
                 <td class="num">{fmt(b.breakEven, 3)}</td>
                 <td class="gear"><GearStrip equipment={b.equipment} food={b.food} items={data.market.gameConfigItems} /></td>
-                <td><button class="secondary small" onclick={() => useInPlanner(b)}>Use in planner</button></td>
+                <td><button class="secondary small" onclick={() => useInPlanner(b)}>Use in Overview</button></td>
               </tr>
             {:else}
               <tr><td colspan="7" class="muted">No build stays within {fmt(maxLoss)} G lost at these terms. Raise the bounty or the amount you are willing to lose.</td></tr>

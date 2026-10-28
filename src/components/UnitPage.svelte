@@ -314,7 +314,7 @@
       </section>
     {/if}
   {:else if !error}
-    <p class="muted">{planner.player ? 'Loading your unit…' : 'Load your player on the planner, or find a unit by name.'}</p>
+    <p class="muted">{planner.player ? 'Loading your unit…' : 'Load your player on the Overview & MinMax page, or find a unit by name.'}</p>
   {/if}
 </div>
 

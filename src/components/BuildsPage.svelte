@@ -24,7 +24,7 @@
   let editName = $state('');
 
   const stateFor = (id) => (id === CURRENT ? planner : stateOf(saved.builds.find((b) => b.id === id)));
-  const nameFor = (id) => (id === CURRENT ? 'Planner build (now)' : saved.builds.find((b) => b.id === id)?.name ?? '');
+  const nameFor = (id) => (id === CURRENT ? 'Overview build (now)' : saved.builds.find((b) => b.id === id)?.name ?? '');
 
   function pick(id) {
     if (picked.includes(id)) picked = picked.filter((x) => x !== id);
@@ -74,14 +74,14 @@
 <div class="page">
   <section class="card intro">
     <h2>Saved builds</h2>
-    <p class="muted">Save builds from the planner with <strong>Save</strong>. They stay in this browser. Tick two builds (or your current planner build) to compare them side by side.</p>
+    <p class="muted">Save builds from the Overview & MinMax page with <strong>Save</strong>. They stay in this browser. Tick two builds (or your current planner build) to compare them side by side.</p>
   </section>
 
   <section class="list" aria-label="Builds">
     <article class="build current" class:picked={picked.includes(CURRENT)}>
       <label class="pick"><input type="checkbox" checked={picked.includes(CURRENT)} onchange={() => pick(CURRENT)} /> Compare</label>
-      <h3>Planner build (now)</h3>
-      <p class="muted small">Whatever is in the planner right now.</p>
+      <h3>Overview build (now)</h3>
+      <p class="muted small">Whatever is on the Overview & MinMax page right now.</p>
       <GearStrip equipment={planner.gear} food={planner.food} {items} />
     </article>
 
@@ -107,7 +107,7 @@
         </div>
       </article>
     {:else}
-      <p class="muted empty">No saved builds yet. In the planner, press <strong>Save</strong> to keep a build here.</p>
+      <p class="muted empty">No saved builds yet. On the Overview & MinMax page, press <strong>Save</strong> to keep a build here.</p>
     {/each}
   </section>
 

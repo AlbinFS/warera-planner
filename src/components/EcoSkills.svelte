@@ -110,8 +110,8 @@
         {/each}
       </tbody>
     </table>
-    <p><button class="primary" onclick={() => { for (const s of ECO_SKILLS) planner.skills[s] = best.levels[s]; applied = true; }}>Put these in the planner</button>
-      {#if applied}<span class="muted small"> Done: the Planner page and the Skill playground now use them.</span>{/if}</p>
+    <p><button class="primary" onclick={() => { for (const s of ECO_SKILLS) planner.skills[s] = best.levels[s]; applied = true; }}>Put these in Overview & MinMax</button>
+      {#if applied}<span class="muted small"> Done: the Overview & MinMax page and the Skill playground now use them.</span>{/if}</p>
 
     <h3>Where the money comes from (best skills)</h3>
     <ul class="parts">

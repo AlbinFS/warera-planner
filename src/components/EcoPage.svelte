@@ -101,7 +101,7 @@
   <section class="card intro">
     <h2>Eco mode</h2>
     <p class="muted">For players who earn from their companies instead of fighting. Built for the v0.27 update (employees). Prices are today's market; the value of 1 production point is <strong>{pointValue.toFixed(4)} G</strong> ({ecoSettings.pointValue > 0 ? 'your number' : estimateNote}).</p>
-    {#if !planner.player}<p class="warn">Load your player on the planner first: the eco tools use your level, skills and companies.</p>{/if}
+    {#if !planner.player}<p class="warn">Load your player on the Overview & MinMax page first: the eco tools use your level, skills and companies.</p>{/if}
     {#if error}<p class="error">{error}</p>{/if}
   </section>
 

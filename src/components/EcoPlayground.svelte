@@ -92,7 +92,7 @@
       <button class="ghost" onclick={() => (ecoSettings.extraCompanies = 0)}>Only the ones I own</button></p>
   {/if}
   <button class="ghost" onclick={reset}><Icon path={mdiRestore} size={16} /> Back to my skills</button>
-  <span class="muted small">Same skills as the Planner page: changes here show there too.</span>
+  <span class="muted small">Same skills as the Overview & MinMax page: changes here show there too.</span>
 </section>
 
 <div class="cols">
@@ -118,7 +118,7 @@
     <ul>
       {#each FIGHT_SKILLS as s (s)}{@render row(fight, s, SKILLS[s])}{/each}
     </ul>
-    <p class="muted small">Fight skills earn no gold here; they use points eco could have. Damage uses the gear and food in the planner.</p>
+    <p class="muted small">Fight skills earn no gold here; they use points eco could have. Damage uses the gear and food on the Overview & MinMax page.</p>
   </section>
 </div>
 

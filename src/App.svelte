@@ -46,8 +46,8 @@
   restoreLastPlayer();
 
   const PAGES = [
-    { path: '/', label: 'Planner', icon: mdiShieldSword, hint: 'Your build: damage, cost, and how to improve it' },
-    { path: '/contract', label: 'Contract', icon: mdiFileDocumentOutline, hint: 'The best build for a bounty contract' },
+    { path: '/', label: 'Overview & MinMax', icon: mdiShieldSword, hint: 'Your build: damage, cost, and how to improve it' },
+    { path: '/contract', label: 'Optimizer', icon: mdiFileDocumentOutline, hint: 'The best skills and gear for a bounty contract and the gold you want to spend' },
     { path: '/simulate', label: 'Simulate', icon: mdiDice5, hint: 'Play the planned build hit by hit: the spread of damage and profit' },
     { path: '/eco', label: 'Eco', icon: mdiCashMultiple, hint: 'Eco mode: skills, production, upgrades and employees' },
     { path: '/unit', label: 'Unit', icon: mdiAccountGroup, hint: "Your military unit's damage right now, and its contracts" },
