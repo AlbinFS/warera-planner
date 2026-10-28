@@ -68,9 +68,16 @@
     ...plan.filter((p) => p.verdict === 'replace' || (p.worker.profit < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new', value: p.replace * p.days, day: p.replace, days: p.days })),
     ...hires.filter((h) => h.value > 0).map((h) => ({ kind: 'Hire', who: 'new employee', where: h.company, what: 'fill a free slot', value: h.value * DAYS_UNKNOWN, day: h.value, days: DAYS_UNKNOWN })),
   ].filter((a) => a.value > 0.005).sort((a, b) => b.value - a.value));
-  // The best cards that come up often enough to plan on (1 % or more of hands): a two-habit card is
-  // worth the most but each is a 1-in-10,000 draw.
-  const likely = (list) => list.filter((c) => c.chance >= 0.01 && c.total > 0);
+  // What to pick: the cards most likely to be in a hand (by your Leadership and their Luck), in the
+  // order to pick them, then the rare ones worth more than all of those: take them if dealt.
+  const LIKELY = 6;
+  const likely = (list) => [...list].sort((a, b) => b.chance - a.chance || b.total - a.total).slice(0, LIKELY).sort((a, b) => b.total - a.total);
+  const rareBetter = (list) => {
+    const top = Math.max(...likely(list).map((c) => c.total));
+    const seen = new Set(likely(list));
+    // Likeliest first: a rare habit you'll meet now and then before a two-habit card you almost never will.
+    return list.filter((c) => !seen.has(c) && c.total > top).sort((a, b) => b.chance - a.chance || b.total - a.total).slice(0, 4);
+  };
   // Open an employee's card list below.
   let openCards = $state(null);
   function showCards(id) {
@@ -80,7 +87,13 @@
 
   const VERDICT = $derived({ train: 'Train', replace: 'Replace', trained: 'Already trained', done: 'Done training', skip: selfWork ? 'Self-work instead' : "Don't train" });
   // Cards shown per employee: the best dozen; Wild Card always (it can bring a bad trait).
-  const shown = (list) => [...list.slice(0, 12), ...list.slice(12).filter((c) => c.card === 'wildCard')];
+  // Every card but most two-habit ones (hundreds of them, each a 1-in-10,000 draw): their best five.
+  const shown = (list) => {
+    const pairs = list.filter((c) => c.card === 'habitPair');
+    const keep = new Set(pairs.slice(0, 5));
+    return list.filter((c) => c.card !== 'habitPair' || keep.has(c));
+  };
+  const otherPairs = (list) => list.filter((c) => c.card === 'habitPair').slice(5);
   const RARITY_SHORT = { common: 'C', uncommon: 'U', rare: 'R', epic: 'E', legendary: 'L' };
 
   // Tools.
@@ -142,7 +155,8 @@
             <td class="num">{#if p.left}{signed(perDay(p.perSession, p.days), 2)} G a day<br /><small class="muted">{fmt(p.perSession, 1)} G in all</small>{:else}–{/if}</td>
             <td class="picks">
               {#if cards[p.worker.id]}
-                {#each likely(cards[p.worker.id].cards).slice(0, 3) as c, i (i)}<span>{c.label} <small class="muted">{signed(c.perDay, 2)}/day</small></span>{/each}
+                {#each likely(cards[p.worker.id].cards) as c, i (i)}<span>{i + 1}. {c.label} <small class="muted">{signed(c.perDay, 2)}/day · {fmt(c.chance * 100, 0)}%</small></span>{/each}
+                {#if rareBetter(cards[p.worker.id].cards).length}<span class="rare">Rarer but better, take if dealt: {rareBetter(cards[p.worker.id].cards).map((c) => `${c.label} (${c.chance >= 0.001 ? fmt(c.chance * 100, 1) : '<0.1'}%)`).join(' · ')}</span>{/if}
                 <button class="link" onclick={() => showCards(p.worker.id)}>All cards</button>
               {:else}<span class="muted">–</span>{/if}
             </td>
@@ -154,8 +168,9 @@
   <p class="muted small">
     Hover the verdict for why. "Already trained": trained today, so not again until 00:00 UTC; they come last until then.
     Per point: at the market price of the company's good (what selling it earns), and at the game's point value, as its profit tooltip
-    counts it. Best cards: the three best that come up in at least 1 in 100 hands. When you train, pick whichever of your three
-    comes highest in their full list ("All cards"); a rarer card above these (two habits at once, say) is better still.
+    counts it. Pick order: the {LIKELY} cards most likely to be in your hand (the % is the chance it's among your three, with your
+    Leadership and their Luck), best first; then rare cards worth more than all of them, to take if you're dealt one. Anything else:
+    "All cards".
   </p>
 </section>
 
@@ -186,7 +201,7 @@
           </tbody>
         </table>
       </div>
-      {#if r.cards.length > shown(r.cards).length}<p class="muted small">{r.cards.length - shown(r.cards).length} other cards (habits) are worth {signed(r.cards[12]?.total ?? 0, 1)} G or less.</p>{/if}
+      {#if otherPairs(r.cards).length}{@const rest = otherPairs(r.cards)}<p class="muted small">{rest.length} other two-habit cards (legendary, each about a 1-in-10,000 draw): worth {signed(rest.at(-1).perDay, 2)} to {signed(rest[0].perDay, 2)} G a day.</p>{/if}
     </details>
   {/each}
 </section>
@@ -269,6 +284,7 @@
   tr.bad-row td:first-child { color: var(--bad); }
   .picks { font-size: 12px; }
   .picks span { display: block; white-space: nowrap; }
+  .picks .rare { white-space: normal; color: var(--accent); margin-top: 2px; }
   .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
   .rarity { display: inline-block; min-width: 18px; text-align: center; font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 4px; border: 1px solid var(--line); }
   .rarity[data-rarity='uncommon'] { color: var(--good); border-color: var(--good); }
