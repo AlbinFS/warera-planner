@@ -24,6 +24,7 @@
   import { saved } from './lib/saved.svelte.js';
   import { restoreLastPlayer } from './lib/planner.svelte.js';
   import { trackCompanyProfit } from './lib/fightIncome.svelte.js';
+  import { trackDebuff } from './lib/debuffAuto.svelte.js';
 
   // Raw: market data never changes after loading, and the workers need plain objects.
   let data = $state.raw(null);
@@ -42,7 +43,7 @@
     try { localStorage.setItem('warera.theme', dark ? 'dark' : 'light'); } catch {}
   }
 
-  loadMarket().then((d) => { data = d; trackCompanyProfit(d.market); }).catch((err) => (loadError = err.message));
+  loadMarket().then((d) => { data = d; trackCompanyProfit(d.market); trackDebuff(d.market); }).catch((err) => (loadError = err.message));
   restoreLastPlayer();
 
   const PAGES = [

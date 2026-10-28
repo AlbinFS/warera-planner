@@ -5,8 +5,8 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
-  import { splitActive, suggestDebuff, payingHits } from '../lib/compute.js';
-  import { setDebuff, playerStatus } from '../lib/planner.svelte.js';
+  import { splitActive, suggestDebuff } from '../lib/compute.js';
+  import { setDebuff } from '../lib/planner.svelte.js';
   import { incomeTerms } from '../lib/fightIncome.svelte.js';
   import { GEAR_SLOTS, SLOT_NAMES, itemLabel } from '../lib/market.js';
   import { STATS, RARITY_COLORS, statText, itemImage, rarityOf } from '../lib/visual.js';
@@ -53,19 +53,13 @@
     editing = 'debuff';
     open = null;
   }
+  // One build all session: the separate debuff build switched off (it would be suggested again otherwise).
   function sameAsPill() {
-    planner.debuff = null;
+    settings.splitDebuff = false;
     editing = 'pill';
     suggestNote = '';
   }
-  // Turning the switch on with no debuff build yet fills in the suggested one.
-  // Only once the player (their skills) has loaded: a suggestion for default skills is wrong.
-  $effect(() => { if (split && !planner.debuff && !suggesting && planner.player && !playerStatus.loading) suggest(); });
-  // A debuff build saved before it had a hit count: keep its gear, stop where its hits stop paying.
-  $effect(() => {
-    if (!planner.debuff || planner.debuff.hits !== undefined || !planner.player || playerStatus.loading) return;
-    payingHits(data.market, planner, settings, incomeTerms(data.market)).then((n) => { if (planner.debuff && planner.debuff.hits === undefined) planner.debuff.hits = n; });
-  });
+
   const items = $derived(data.market.gameConfigItems);
 
   let open = $state(null); // slot being edited
@@ -80,8 +74,12 @@
     return { code: g?.code ?? null, stats: g?.skills ?? {}, price: g ? priceOf(g.code, g.skills) : null };
   }
 
+  /** Editing the debuff build by hand stops it being re-suggested (Suggest turns that back on). */
+  const handEdit = () => { if (target === planner.debuff) planner.debuff.auto = false; };
+
   /** Choosing another item keeps each stat where it can, clamped to the new item's range. */
   function choose(slot, code) {
+    handEdit();
     if (slot === 'food') { target.food = code ?? 'none'; return; }
     if (slot === 'ammo') { target.gear.ammo = code; return; }
     if (!code) { target.gear[slot] = null; return; }
@@ -94,6 +92,7 @@
   }
 
   function setStat(slot, stat, raw, [lo, hi]) {
+    handEdit();
     const v = Math.round(Number(raw));
     if (Number.isFinite(v)) target.gear[slot].skills[stat] = Math.min(hi, Math.max(lo, v));
   }
@@ -120,7 +119,7 @@
     {#if !split}<p class="hint muted">The {settings.windowHours - 8} hours after the pill are fought in this gear. Turn on a separate debuff build to fight them in cheaper gear.</p>
     {:else if editing === 'debuff' && planner.debuff}<p class="hint muted">Editing the debuff build (worn after the pill). {suggestNote}</p>
       <label class="hits">Hits in the debuff <input type="number" min="0" step="10" value={planner.debuff.hits ?? ''} placeholder="all"
-        oninput={(e) => { const v = e.currentTarget.value; planner.debuff.hits = v === '' ? null : Math.max(0, Math.floor(Number(v) || 0)); }} />
+        oninput={(e) => { const v = e.currentTarget.value; planner.debuff.auto = false; planner.debuff.hits = v === '' ? null : Math.max(0, Math.floor(Number(v) || 0)); }} />
         <small class="muted">then stop. Empty: as many as health and food allow.</small></label>
     {:else if suggestNote}<p class="hint muted">{suggestNote} See it under Debuff build.</p>{/if}
   {/if}

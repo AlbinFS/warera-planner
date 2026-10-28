@@ -8,8 +8,8 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { settings } from '../lib/settings.svelte.js';
-  import { lockedGear, suggestDebuff, payingHits } from '../lib/compute.js';
-  import { setDebuff, playerStatus } from '../lib/planner.svelte.js';
+  import { lockedGear, payingHits } from '../lib/compute.js';
+  import { playerStatus } from '../lib/planner.svelte.js';
   import { statText } from '../lib/visual.js';
   import { simulate, quantile, histogram } from '../combat/simulate.js';
   import { fmt, fmtDamage } from '../lib/format.js';
@@ -32,14 +32,7 @@
     { id: '24', label: '24 hours', hint: 'A full day: the pill’s 8 hours, its −60% debuff for 15.5 more, then half an hour at full strength, on regen.' },
   ];
   const withDebuffBuild = $derived(session !== '8' && settings.pill && settings.splitDebuff && !!planner.debuff);
-  // "Debuff build" on but none set yet: suggest one (the one that pays for itself) before a run uses the pill gear.
-  let suggesting = $state(false);
-  $effect(() => {
-    // Only once the player (their skills) has loaded: a suggestion for default skills is wrong.
-    if (!settings.pill || !settings.splitDebuff || planner.debuff || suggesting || !planner.player || playerStatus.loading) return;
-    suggesting = true;
-    suggestDebuff(data.market, planner, settings, incomeTerms(data.market)).then((s) => { if (s) setDebuff(s); }).finally(() => (suggesting = false));
-  });
+
   // Without a debuff build: how many hits in the pill gear still pay for themselves after the pill.
   let sameGearHits = $state(null);
   $effect(() => {
@@ -47,11 +40,7 @@
     const gear = planner.gear, food = planner.food;
     payingHits(data.market, planner, settings, incomeTerms(data.market), { gear, food }).then((n) => (sameGearHits = n));
   });
-  // A debuff build saved before it had a hit count: keep its gear, stop where its hits stop paying.
-  $effect(() => {
-    if (!planner.debuff || planner.debuff.hits !== undefined || !planner.player || playerStatus.loading) return;
-    payingHits(data.market, planner, settings, incomeTerms(data.market)).then((n) => { if (planner.debuff && planner.debuff.hits === undefined) planner.debuff.hits = n; });
-  });
+
   const debuffItems = $derived(planner.debuff && planner.debuff.hits !== 0
     ? [...(planner.debuff.gear.weapon ? [] : ['no weapon (bare hands)']), ...['weapon', 'ammo', 'helmet', 'chest', 'pants', 'boots', 'gloves'].map((slot) => planner.debuff.gear[slot]).filter(Boolean).map((g) => (typeof g === 'string' ? itemLabel(g) : `${itemLabel(g.code)} ${Object.entries(g.skills ?? {}).map(([k, v]) => statText(k, v)).join('/')}`)),
       planner.debuff.food && planner.debuff.food !== 'none' ? itemLabel(planner.debuff.food) : 'no food']

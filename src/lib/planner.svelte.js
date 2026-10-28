@@ -101,12 +101,13 @@ export function applyBuild(equipment, foodCode, debuff = null) {
 /**
  * Puts an optimizer build (equipment + food) in as the debuff build, with the
  * hits to stop at (null: every hit the bars allow). { none: true }: no
- * fighting in the debuff (the pill gear kept, 0 hits).
+ * fighting in the debuff (the pill gear kept, 0 hits). It is kept up to date
+ * (debuffAuto.svelte.js) until edited by hand.
  */
 export function setDebuff(debuff) {
   planner.debuff = debuff.none
-    ? { gear: structuredClone($state.snapshot(planner.gear)), food: 'none', hits: 0 }
-    : { gear: gearFrom(debuff.equipment), food: debuff.food ?? 'none', hits: debuff.hits ?? null };
+    ? { gear: structuredClone($state.snapshot(planner.gear)), food: 'none', hits: 0, auto: true }
+    : { gear: gearFrom(debuff.equipment), food: debuff.food ?? 'none', hits: debuff.hits ?? null, auto: true };
 }
 
 /**
@@ -119,7 +120,8 @@ export function applyState(state, label = 'Shared build') {
   planner.skills = state.skills;
   planner.gear = state.gear;
   planner.food = state.food;
-  planner.debuff = state.debuff ?? null;
+  // A shared or saved build's debuff build is kept as it is (not re-suggested).
+  planner.debuff = state.debuff ? { ...state.debuff, auto: false } : null;
   Object.assign(settings, state.settings);
 }
 
