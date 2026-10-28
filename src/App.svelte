@@ -14,6 +14,7 @@
   import EcoPage from './components/EcoPage.svelte';
   import SimulatePage from './components/SimulatePage.svelte';
   import InvitesPage from './components/InvitesPage.svelte';
+  import ComparisonsPage from './components/ComparisonsPage.svelte';
   import BreakpointPanel from './components/BreakpointPanel.svelte';
   import { getApiKey } from './lib/warera.js';
   import { apiKeyState } from './lib/eco.svelte.js';
@@ -21,7 +22,7 @@
   import Icon from './components/Icon.svelte';
   import { loadMarket } from './lib/market.js';
   import { route, navigate } from './lib/route.svelte.js';
-  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout, mdiWeatherNight, mdiWeatherSunny, mdiDice5, mdiTicketConfirmation } from '@mdi/js';
+  import { mdiShieldSword, mdiFileDocumentOutline, mdiBookmarkMultiple, mdiAccountGroup, mdiKeyVariant, mdiCashMultiple, mdiLogout, mdiWeatherNight, mdiWeatherSunny, mdiDice5, mdiTicketConfirmation, mdiCompareHorizontal } from '@mdi/js';
   import { saved } from './lib/saved.svelte.js';
   import { restoreLastPlayer } from './lib/planner.svelte.js';
   import { trackCompanyProfit } from './lib/fightIncome.svelte.js';
@@ -62,6 +63,7 @@
     { path: '/eco', label: 'Eco', icon: mdiCashMultiple, hint: 'Eco mode: skills, production, upgrades and employees' },
     { path: '/unit', label: 'Unit', icon: mdiAccountGroup, hint: "Your military unit's damage right now, and its contracts" },
     { path: '/builds', label: 'Saved builds', icon: mdiBookmarkMultiple, hint: 'Your saved builds, and side-by-side comparison' },
+    { path: '/comparisons', label: 'Other tool comparisons', icon: mdiCompareHorizontal, hint: 'Why other WarEra tools can show different numbers for the same build' },
   ];
   const INVITES = { path: '/invites', label: 'Invites', icon: mdiTicketConfirmation, hint: 'Invite players: create and revoke your codes' };
   const pages = $derived(manager ? [...PAGES, INVITES] : PAGES);
@@ -119,6 +121,8 @@
 {:else if page === '/unit'}
   <UnitPage {data} />
   <footer><DataStatus /></footer>
+{:else if page === '/comparisons'}
+  <ComparisonsPage />
 {:else if page === '/invites'}
   <InvitesPage {manager} onchange={loadManager} />
 {:else if page === '/builds'}
