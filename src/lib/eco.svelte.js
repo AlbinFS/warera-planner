@@ -146,6 +146,7 @@ function fromGame(e) {
     potential: e.potential ?? null,
     potentialMax: e.potentialMax ?? null,
     trainingsToday: e.trainingsToday ?? 0,
+    lastTrainedAt: e.lastTrainedAt ?? null,
     trainingsPerDay: e.trainingsPerDay ?? 0,
     specializations: e.specializations ?? {},
     retireAt: e.retireAskAt ?? null,

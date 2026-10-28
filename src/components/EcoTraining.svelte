@@ -16,7 +16,7 @@
   import { itemLabel } from '../lib/market.js';
   import TraitChip from './TraitChip.svelte';
 
-  let { companies, perPoint, items, managementPercent = 0, toolboxValue = 0, leadership = 0, selfWorkValue = 0, selfWork = true } = $props();
+  let { companies, perPoint, items, managementPercent = 0, toolboxValue = 0, leadership = 0, selfWorkValue = 0, selfWork = true, pointValue = null } = $props();
 
   let countries = $state.raw({});
   let regions = $state.raw({});
@@ -50,7 +50,7 @@
     for (const nationality of nationalities) for (const gender of ['male', 'female']) best = Math.max(best, hireValue(model, { nationality, gender, trait: null }, { replace: w.index }).value);
     return best;
   }
-  const plan = $derived(trainingPlan(workers, fairWage, replaceValue, { sessionOf: (w) => cards[w.id]?.session ?? 0, selfWork: selfWorkNow }));
+  const plan = $derived(trainingPlan(workers, fairWage, replaceValue, { sessionOf: (w) => cards[w.id]?.session ?? 0, selfWork: selfWorkNow, pointValue }));
 
   // Free slots: hiring a typical candidate there.
   const hires = $derived(active.filter((c) => (ecoEmployees[c.id] ?? []).length < (c.breakRoom ?? 1)).map((c) => {
@@ -67,7 +67,7 @@
     ...hires.filter((h) => h.value > 0).map((h) => ({ kind: 'Hire', who: 'new employee', where: h.company, what: 'fill a free slot', value: h.value * DAYS_UNKNOWN })),
   ].filter((a) => a.value > 0.005).sort((a, b) => b.value - a.value));
 
-  const VERDICT = $derived({ train: 'Train', replace: 'Replace', done: 'Done training', skip: selfWork ? 'Self-work instead' : "Don't train" });
+  const VERDICT = $derived({ train: 'Train', replace: 'Replace', trained: 'Already trained', done: 'Done training', skip: selfWork ? 'Self-work instead' : "Don't train" });
   // Cards shown per employee: the best dozen; Wild Card always (it can bring a bad trait).
   const shown = (list) => [...list.slice(0, 12), ...list.slice(12).filter((c) => c.card === 'wildCard')];
   const RARITY_SHORT = { common: 'C', uncommon: 'U', rare: 'R', epic: 'E', legendary: 'L' };
@@ -116,16 +116,16 @@
   </p>
   <div class="scroll">
     <table>
-      <thead><tr><th>Employee</th><th>Company</th><th class="num" title="G per day one more Production point adds, after its wage">Per Production point</th><th class="num">Profit now</th><th class="num" title="Days until they ask to retire">Days left</th><th class="num">Trainings left</th><th>Do</th><th class="num" title="What the next 10 energy on them adds in all (the best of a hand, on average)">Next session</th></tr></thead>
+      <thead><tr><th>Employee</th><th>Company</th><th class="num" title="G a day one more Production point adds, after its wage: at the market price of the company's good, and (second) at the game's point value, which its profit tooltip uses">Per Production point</th><th class="num">Profit now</th><th class="num" title="Days until they ask to retire">Days left</th><th class="num">Trainings left</th><th>Do</th><th class="num" title="What the next 10 energy on them adds in all (the best of a hand, on average)">Next session</th></tr></thead>
       <tbody>
         {#each plan as p (p.worker.id)}
           <tr>
             <td>{p.worker.name}{#each p.worker.traits as t (t)} <TraitChip code={t} />{/each}</td>
             <td><img src={itemImage(p.worker.good, items)} alt="" width="16" height="16" class="mini" /> {p.worker.company.name}</td>
-            <td class="num" class:good={p.margin > 0} class:bad={p.margin < 0}>{signed(p.margin, 3)}</td>
+            <td class="num"><span class:good={p.margin > 0} class:bad={p.margin < 0}>{signed(p.margin, 3)}</span>{#if p.gameMargin != null}<br /><small class="muted" title="At the game's point value ({fmt(pointValue, 4)} G), as its profit tooltip counts it">{signed(p.gameMargin, 3)} in game</small>{/if}</td>
             <td class="num" class:good={p.worker.profit > 0} class:bad={p.worker.profit < 0}>{signed(p.worker.profit)}</td>
             <td class="num">{fmt(p.days, 0)}</td>
-            <td class="num">{p.left}{#if (p.worker.trainingsToday ?? 0) >= (p.worker.trainingsPerDay ?? 1) && p.left} <small class="muted" title="Trained today">✓</small>{/if}</td>
+            <td class="num">{p.left}</td>
             <td><span class="verdict" data-verdict={p.verdict} title={p.why}>{VERDICT[p.verdict]}</span></td>
             <td class="num">{p.left ? `${signed(p.perSession, 1)} G` : '–'}</td>
           </tr>
@@ -133,7 +133,11 @@
       </tbody>
     </table>
   </div>
-  <p class="muted small">Hover the verdict for why. ✓: trained today. Profit and per point are G a day; the session is G in all.</p>
+  <p class="muted small">
+    Hover the verdict for why. "Already trained": trained today, so not again until 00:00 UTC; they come last until then.
+    Per point: at the market price of the company's good (what selling it earns), and at the game's point value, as its profit tooltip
+    counts it. Profit and per point are G a day; the session is G in all.
+  </p>
 </section>
 
 <section class="card">
@@ -239,7 +243,7 @@
   [data-verdict='negotiate'] { color: var(--accent); border-color: var(--accent); }
   [data-kind='Replace'], [data-verdict='replace'] { color: var(--bad); border-color: var(--bad); }
   [data-kind='Hire'] { color: var(--info); border-color: var(--info); }
-  [data-verdict='done'], [data-verdict='skip'] { color: var(--muted); }
+  [data-verdict='done'], [data-verdict='skip'], [data-verdict='trained'] { color: var(--muted); }
   details { border-top: 1px solid var(--line); padding: 6px 0; }
   summary { cursor: pointer; font-size: 13px; }
   table.cards { margin: 6px 0; }

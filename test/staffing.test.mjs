@@ -84,3 +84,19 @@ test('a Greedy employee earns less per trained point: their wage per point is 20
   const [greedy] = trainingPlan([{ ...base, traits: ['greedy'] }], 0.6);
   assert.ok(Math.abs(plain.margin - greedy.margin - 0.6 * 0.2) < 1e-9);
 });
+
+test('trained today: the API\'s count only holds on the day of the last training (UTC); they go last until 00:00 UTC', async () => {
+  const { trainedToday, doneForToday } = await import('../src/lib/staffing.js');
+  const now = Date.parse('2026-10-28T13:50:00Z');
+  assert.equal(trainedToday({ trainingsToday: 1, lastTrainedAt: '2026-10-27T14:16:00Z' }, now), 0);
+  assert.equal(trainedToday({ trainingsToday: 1, lastTrainedAt: '2026-10-28T00:19:00Z' }, now), 1);
+  assert.equal(doneForToday({ trainingsToday: 1, trainingsPerDay: 2, lastTrainedAt: '2026-10-28T00:19:00Z' }, now), false);
+  const base = { company: 'c', perPoint: 0.1, production: 4, bonusPercent: 20, potential: 1, potentialMax: 6, daysLeft: 30, wageExpectation: 0.8, payroll: 1.92, profit: 1, trainingsPerDay: 1 };
+  const plan = trainingPlan([
+    { ...base, id: 'done', name: 'done', trainingsToday: 1, lastTrainedAt: '2026-10-28T09:00:00Z', perPoint: 0.2 },
+    { ...base, id: 'free', name: 'free', trainingsToday: 1, lastTrainedAt: '2026-10-27T09:00:00Z' },
+  ], 0.6, () => 0, { now, pointValue: 0.0971 });
+  assert.deepEqual(plan.map((p) => [p.worker.id, p.verdict]), [['free', 'train'], ['done', 'trained']]);
+  // At the game's point value one more point earns less than at this good's price.
+  assert.ok(plan[0].gameMargin < plan[0].margin);
+});

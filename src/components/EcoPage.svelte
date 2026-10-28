@@ -130,7 +130,7 @@
     {:else if tab === 'hiring'}
       <EcoHiring {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} />
     {:else}
-      <EcoTraining {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} {selfWorkValue} selfWork={ecoSettings.selfWork} />
+      <EcoTraining {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} {selfWorkValue} selfWork={ecoSettings.selfWork} {pointValue} />
     {/if}
   {/if}
 </div>

@@ -139,6 +139,22 @@ export function bestAssignment(gains) {
   return out;
 }
 
+// Trainings reset at 00:00 UTC (the game counts a day as UTC milliseconds ÷ 86,400,000).
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Trainings an employee has had today. The API's trainingsToday isn't reset
+ * at midnight: it counts only when the last training was today (UTC).
+ */
+export function trainedToday(e, now = Date.now()) {
+  const last = e.lastTrainedAt ? Date.parse(e.lastTrainedAt) : NaN;
+  return Number.isFinite(last) && Math.floor(last / DAY_MS) === Math.floor(now / DAY_MS) ? (e.trainingsToday ?? 1) : 0;
+}
+/** Whether they can't train again until tomorrow, 00:00 UTC. */
+export const doneForToday = (e, now = Date.now()) => trainedToday(e, now) >= Math.max(1, e.trainingsPerDay ?? 1);
+/** When the next day's trainings open (00:00 UTC). */
+export const nextTrainingDay = (now = Date.now()) => (Math.floor(now / DAY_MS) + 1) * DAY_MS;
+
 /**
  * Who to train, and who to replace. workers: [{ id, name, company, perPoint,
  * production, bonusPercent, payroll, wageExpectation, potential,
@@ -146,16 +162,21 @@ export function bestAssignment(gains) {
  * per day; replaceValue(worker) → G a day a typical replacement would add
  * (hiring.js). options: sessionOf(worker) → what a session is worth, G in all
  * (training.js; without it, an average Production drill); selfWork: G that
- * 10 energy of self-work makes. Each: { worker, margin, left, days, verdict,
- * perSession (G in all for the next 10 energy), replace (G a day), why }.
+ * 10 energy of self-work makes; pointValue: the game's value of a point (its
+ * profit tooltip uses it; the plan values output at the good's market price).
+ * Trained today (doneForToday) is 'trained', after everyone who can train now.
+ * Each: { worker, margin, gameMargin, left, days, verdict, perSession (G in
+ * all for the next 10 energy), replace (G a day), why }.
  */
-export function trainingPlan(workers, fairWage, replaceValue = () => 0, { sessionOf = null, selfWork = 0 } = {}) {
+export function trainingPlan(workers, fairWage, replaceValue = () => 0, { sessionOf = null, selfWork = 0, pointValue = null, now = Date.now() } = {}) {
+  const order = { train: 0, replace: 0, skip: 1, trained: 2, done: 3 };
   return workers.map((w) => {
     const expectation = w.wageExpectation ?? 1;
     const outputPerPoint = 6 * (1 + w.bonusPercent / 100) * w.perPoint;
     // Greedy is paid 20 % more per point, Modest 15 % less.
     const markup = (w.traits?.includes('greedy') ? 1.2 : 1) * (w.traits?.includes('modest') ? 0.85 : 1);
     const margin = outputPerPoint - fairWage * expectation * markup;
+    const gameMargin = pointValue == null ? null : 6 * (1 + w.bonusPercent / 100) * pointValue - fairWage * expectation * markup;
     const floorMargin = outputPerPoint - fairWage * WAGE_FLOOR * markup;
     const left = Math.max(0, (w.potentialMax ?? 0) - (w.potential ?? 0));
     const days = w.daysLeft ?? DAYS_UNKNOWN;
@@ -169,6 +190,10 @@ export function trainingPlan(workers, fairWage, replaceValue = () => 0, { sessio
     } else if (left === 0) {
       verdict = 'done';
       why = 'no training left';
+    } else if (doneForToday(w, now)) {
+      verdict = 'trained';
+      const hours = Math.max(0, (nextTrainingDay(now) - now) / 3600e3);
+      why = `trained today: next training at 00:00 UTC, in ${hours < 1 ? `${Math.round(hours * 60)} min` : `${Math.floor(hours)} h ${Math.round((hours % 1) * 60)} min`} (a session is worth about ${session.toFixed(1)} G)`;
     } else if (session > selfWork + 0.005) {
       verdict = 'train';
       why = `a session is worth about ${session.toFixed(1)} G over the ${Math.round(days)} days they have left${selfWork > 0 ? `, more than self-work's ${selfWork.toFixed(1)} G` : ''}`;
@@ -176,8 +201,8 @@ export function trainingPlan(workers, fairWage, replaceValue = () => 0, { sessio
       verdict = 'skip';
       why = session > 0 ? `self-work makes more with the energy (${selfWork.toFixed(1)} G against ${session.toFixed(1)} G)` : 'no card pays: their Production barely pays its own wage';
     }
-    return { worker: w, margin, left, days, verdict, perSession: session, replace, why };
-  }).sort((a, b) => b.perSession - a.perSession);
+    return { worker: w, margin, gameMargin, left, days, verdict, perSession: session, replace, why };
+  }).sort((a, b) => order[a.verdict] - order[b.verdict] || b.perSession - a.perSession);
 }
 
 export { ENERGY_PER_ACTION, DRILL_AVERAGE, DAYS_UNKNOWN };

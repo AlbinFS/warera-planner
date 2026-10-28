@@ -6,6 +6,7 @@
    */
   import { ecoEmployees, ecoSettings, employeesStatus, words } from '../lib/eco.svelte.js';
   import { employeeDay } from '../lib/eco.js';
+  import { trainedToday } from '../lib/staffing.js';
   import { fmt } from '../lib/format.js';
   import { itemImage } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
@@ -147,7 +148,7 @@
             <p class="facts muted small">
               {[
                 e.potential != null && `Potential ${e.potential} of ${e.potentialMax}`,
-                `Trained today ${e.trainingsToday ?? 0} of ${e.trainingsPerDay ?? 0}`,
+                `Trained today ${trainedToday(e)} of ${e.trainingsPerDay ?? 0}`,
                 ...Object.entries(e.specializations ?? {}).map(([good, days]) => `${itemLabel(good) || words(good)} specialist, ${days} d`),
                 e.retireAt && `may retire ${date(e.retireAt)}`,
               ].filter(Boolean).join(' · ')}
