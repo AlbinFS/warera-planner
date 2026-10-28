@@ -51,9 +51,15 @@ export function merge(total, battle, sign) {
   return total;
 }
 
-const SCHEMA = `CREATE TABLE IF NOT EXISTS loot_battles (
-  id TEXT PRIMARY KEY, ended_at INTEGER NOT NULL, damage INTEGER NOT NULL, kept INTEGER NOT NULL, counts TEXT
-)`;
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS loot_battles (
+     id TEXT PRIMARY KEY, ended_at INTEGER NOT NULL, damage INTEGER NOT NULL, kept INTEGER NOT NULL, counts TEXT
+   )`,
+  // The job runs every minute and D1 counts every row a query scans (5M a day free): the window's
+  // oldest and the small battles to forget are found through this, not by reading the table.
+  `CREATE INDEX IF NOT EXISTS loot_battles_kept_ended ON loot_battles (kept, ended_at)`,
+];
+let schemaReady = false;
 
 async function readState(db, name, fallback) {
   const row = await db.prepare('SELECT body FROM datasets WHERE name = ?').bind(name).first();
@@ -93,10 +99,14 @@ async function battleCounts(api, battle, rarityOf) {
  * queue: [{ id, endedAt, damage, rounds }] }.
  */
 export async function refreshBattleLoot(db, api, now, { rarityOf, perRun = 2 } = {}) {
-  await db.prepare(SCHEMA).run();
+  if (!schemaReady) {
+    await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+    schemaReady = true;
+  }
   const state = await readState(db, 'battle-loot-state', { newest: null, cursor: null, backfilled: false, queue: [] });
   const total = await readState(db, 'battle-loot', { battles: 0, rounds: {}, round: {}, battle: {} });
-  const { n } = await db.prepare('SELECT count(*) AS n FROM loot_battles WHERE kept = 1').first();
+  // Battles in the window: the totals keep the count (added and taken off with the rows, in one batch).
+  const n = total.battles ?? 0;
   const meta = (b) => ({ id: b._id, endedAt: Date.parse(b.endedAt ?? b.updatedAt), damage: (b.attacker?.damages ?? 0) + (b.defender?.damages ?? 0), rounds: b.rounds ?? [] });
 
   // Newly finished battles, every few minutes; older ones while the window isn't full.

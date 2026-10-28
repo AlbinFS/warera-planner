@@ -55,6 +55,11 @@ const SCHEMA = [
      body TEXT NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS contracts_winner ON contracts (winner, created_at)`,
+  // D1's free plan reads at most 5M rows a day, and every row a query scans counts. The job runs
+  // every minute, so each of its lookups needs an index (whole-table scans used up the limit).
+  `CREATE INDEX IF NOT EXISTS contracts_created ON contracts (created_at)`,
+  `CREATE INDEX IF NOT EXISTS contracts_status_updated ON contracts (status, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS raw_days_day ON raw_days (day)`,
   `CREATE TABLE IF NOT EXISTS datasets (name TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS equipment (
      code TEXT PRIMARY KEY,
@@ -261,7 +266,8 @@ export async function runJob(env, now = Date.now()) {
  * as bids come in and when it is won). The first run backfills a few pages.
  */
 async function refreshContracts(db, api, now) {
-  const { n } = await db.prepare('SELECT count(*) AS n FROM contracts').first();
+  // Whether there are any yet (one row read; a count would read them all, every minute).
+  const empty = !(await db.prepare('SELECT 1 FROM contracts LIMIT 1').first());
   // Only new or changed contracts are written (D1's free plan allows 100k row writes a day).
   const save = async (items) => {
     if (!items.length) return;
@@ -289,7 +295,7 @@ async function refreshContracts(db, api, now) {
   const items = [...new Map([...(active?.items ?? []), ...(won?.items ?? [])].map((c) => [c._id, c])).values()];
   await save(items);
 
-  if (n === 0 && won?.nextCursor) {
+  if (empty && won?.nextCursor) {
     let cursor = won.nextCursor;
     for (let page = 1; page < CONTRACT_BACKFILL_PAGES && cursor; page++) {
       const more = await api.call('mercenaryContractAuction.getPaginatedAuctions', { status: 'won', limit: CONTRACT_PAGE, cursor });
