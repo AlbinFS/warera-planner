@@ -157,7 +157,7 @@ export async function costBreakdown(market, planner, settings, evaluated) {
   const total = rows.reduce((s, r) => s + r.amount, 0);
   return {
     total, rows: rows.filter((r) => Math.abs(r.amount) >= 0.005), other: Math.abs(b.cost - total) >= 0.05 ? b.cost - total : 0,
-    hits: b.swings, hitsArePillPhase: false, perAttack: b.perSwing, foodEaten: b.foodEaten, cases, phases: b.phases,
+    hits: b.swings, hitsArePillPhase: false, perAttack: b.swings ? b.damage / b.swings : 0, foodEaten: b.foodEaten, cases, phases: b.phases,
     split: b.debuff ? { pill: b.swings - b.debuff.swings, debuff: b.debuff.swings } : null,
   };
 }

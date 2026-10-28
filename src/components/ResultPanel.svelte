@@ -117,7 +117,7 @@
           <span title="Hits in the fight">{fmt(result.details.swings, 0)} hits</span>
           <span title="Armor: less health lost per hit (breakpoints in whole percents)">ARM {result.details.armor}%</span>
           <span title="Dodge: chance a hit costs no health">DDG {result.details.dodge}%</span>
-          <span title="Average damage per hit">{fmt(result.details.perSwing, 0)} / hit</span>
+          <span title="Average damage per hit, the pill and the debuff included (damage ÷ hits)">{fmt(result.details.swings ? result.damage / result.details.swings : 0, 0)} / hit</span>
         </div>
       {/if}
     {/if}

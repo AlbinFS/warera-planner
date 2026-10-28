@@ -119,7 +119,7 @@
           {#if fightIncome.lootMode === 'items'}
             <input class="short" type="number" step="0.5" min="0" bind:value={fightIncome.lootItems} aria-label="Loot items" />
             <select bind:value={fightIncome.lootRarity} aria-label="Loot rarity">{#each RARITIES as r (r)}<option value={r} disabled={!prices[r]}>{r}</option>{/each}</select>
-          {:else}
+          {:else if fightIncome.lootMode === 'perK'}
             <input class="short" type="number" step="0.001" min="0" bind:value={fightIncome.lootPerK} aria-label="Loot, G per 1k damage" />
           {/if}
         </span>
