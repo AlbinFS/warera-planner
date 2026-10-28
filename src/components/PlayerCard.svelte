@@ -7,12 +7,9 @@
   let name = $state(planner.player?.username ?? lastPlayerName());
   let country = $state(null);
 
-  // Loading the player again resets the skills and gear planned for them: ask first.
   const isLoaded = (username) => !!planner.player && !planner.player.shared && planner.player.username?.toLowerCase() === username?.trim().toLowerCase();
-  const confirmReload = () => confirm(`Load ${planner.player.username} again? This resets the skills and gear you've planned to what they have in the game.`);
 
   async function load(username) {
-    if (isLoaded(username) && !confirmReload()) return;
     await loadByName(username);
     if (planner.player?.username) name = planner.player.username;
   }
