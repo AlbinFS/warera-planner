@@ -7,6 +7,7 @@
  */
 import { runJob, ensureSchema, readDataset } from './job.js';
 import { lootPrices } from './prices.js';
+import { WareraApi } from './warera.js';
 import { handleAuthRoute, currentSession, signInRequired } from './auth.js';
 
 // How old data may get before it is flagged stale (the job refreshes far more often).
@@ -81,6 +82,23 @@ async function lootPriceRoute(env) {
   return body ? json(body, 200, 60) : json({ error: 'No trades stored yet for loot prices.' }, 503);
 }
 
+/**
+ * Employees of up to 20 companies (?ids=a,b,…), from the official API with the
+ * site's key, for visitors who haven't added their own (the procedure needs
+ * one; with their own key the browser asks the API directly).
+ */
+async function companyEmployees(env, request) {
+  const ids = (new URL(request.url).searchParams.get('ids') ?? '').split(',').filter((id) => /^[a-f0-9]{24}$/.test(id));
+  if (!ids.length || ids.length > 20) return json({ error: 'Give ?ids= with 1 to 20 company ids.' }, 400);
+  const api = new WareraApi(env);
+  if (!api.key) return json({ error: 'No API key on the server.' }, 503);
+  const body = await remembered(`employees:${ids.join(',')}`, async () => {
+    const pages = await api.batch('employee.getCompanyEmployees', ids.map((companyId) => ({ companyId })));
+    return JSON.stringify({ companies: Object.fromEntries(ids.map((id, i) => [id, pages[i]])) });
+  });
+  return json(body, 200, 60);
+}
+
 /** A unit's recent contracts (won or currently led), newest first. */
 async function unitContracts(env, request) {
   const mu = new URL(request.url).searchParams.get('mu');
@@ -122,7 +140,7 @@ const routes = {
   '/api/loot-prices': (env) => lootPriceRoute(env),
   '/api/contracts': (env, request) => unitContracts(env, request),
   '/api/point-value': (env) => pointValue(env),
-  '/api/battle-loot': (env) => dataset(env, 'battle-loot'),};
+  '/api/battle-loot': (env) => dataset(env, 'battle-loot'),  '/api/company-employees': (env, request) => companyEmployees(env, request),};
 
 export default {
   async fetch(request, env) {

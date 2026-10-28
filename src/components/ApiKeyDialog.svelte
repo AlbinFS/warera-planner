@@ -47,7 +47,7 @@
 <Dialog bind:open title="Your WarEra API key">
   <p>Most of the site works without one. With your own key it can also:</p>
   <ul>
-    <li>load <strong>your employees</strong> on the Eco page (the game only shares them with a key);</li>
+    <li>load <strong>your employees</strong> on the Eco page with your own key, instead of the site's shared one;</li>
     <li>use <strong>your real job salary</strong> (from your recent wages) in the income estimates, instead of a default;</li>
     <li>load bigger pages like the <strong>Unit</strong> page without running into the official API's limit for anonymous visitors.</li>
   </ul>
