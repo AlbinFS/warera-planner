@@ -58,14 +58,25 @@
     return { company: c, value: best?.value ?? 0 };
   }));
 
-  // One list for the next energy: every action is 10 energy. G in all: a session over the days the
-  // employee has left, a replacement over the days the one leaving would have stayed, a hire over a typical stay.
+  // One list for the next energy: every action is 10 energy. Ranked by G in all (a session over the days
+  // the employee has left, a replacement over the days the one leaving would have stayed, a hire over a
+  // typical stay), shown as G a day (what the game's daily profit moves by) and over how many days.
+  const perDay = (total, days) => (days > 0 ? total / days : 0);
   const actions = $derived([
-    ...plan.filter((p) => p.verdict === 'train').map((p) => ({ kind: 'Train', who: p.worker.name, where: p.worker.company, what: `the best of the hand (often ${cards[p.worker.id]?.cards[0]?.label ?? 'a Drill'})`, value: p.perSession })),
+    ...plan.filter((p) => p.verdict === 'train').map((p) => ({ kind: 'Train', who: p.worker.name, where: p.worker.company, what: `pick the best card you're offered (often ${cards[p.worker.id]?.cards[0]?.label ?? 'a Drill'})`, value: p.perSession, day: perDay(p.perSession, p.days), days: p.days })),
     // Anyone losing money can also be replaced: listed when a typical candidate would do better.
-    ...plan.filter((p) => p.verdict === 'replace' || (p.worker.profit < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new', value: p.replace * p.days })),
-    ...hires.filter((h) => h.value > 0).map((h) => ({ kind: 'Hire', who: 'new employee', where: h.company, what: 'fill a free slot', value: h.value * DAYS_UNKNOWN })),
+    ...plan.filter((p) => p.verdict === 'replace' || (p.worker.profit < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new', value: p.replace * p.days, day: p.replace, days: p.days })),
+    ...hires.filter((h) => h.value > 0).map((h) => ({ kind: 'Hire', who: 'new employee', where: h.company, what: 'fill a free slot', value: h.value * DAYS_UNKNOWN, day: h.value, days: DAYS_UNKNOWN })),
   ].filter((a) => a.value > 0.005).sort((a, b) => b.value - a.value));
+  // The best cards that come up often enough to plan on (1 % or more of hands): a two-habit card is
+  // worth the most but each is a 1-in-10,000 draw.
+  const likely = (list) => list.filter((c) => c.chance >= 0.01 && c.total > 0);
+  // Open an employee's card list below.
+  let openCards = $state(null);
+  function showCards(id) {
+    openCards = id;
+    requestAnimationFrame(() => document.getElementById(`cards-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
 
   const VERDICT = $derived({ train: 'Train', replace: 'Replace', trained: 'Already trained', done: 'Done training', skip: selfWork ? 'Self-work instead' : "Don't train" });
   // Cards shown per employee: the best dozen; Wild Card always (it can bring a bad trait).
@@ -87,10 +98,11 @@
 <section class="card">
   <h2>What to spend your next energy on</h2>
   <p class="muted small">
-    Training, hiring and rerolling a company's candidates ("Reroll all") each take a flat 10 energy. Ranked by what each adds in all:
-    a training session over the days the employee has left before retiring (they age a year a day and ask to retire at 65),
-    a replacement over the days the one leaving would have stayed, a new hire over a typical {DAYS_UNKNOWN} days.
-    {#if selfWork}Self-work makes <strong>{fmt(selfWorkValue, 1)} G</strong> per 10 energy: anything below that isn't worth the energy.{/if}
+    Training, hiring and rerolling a company's candidates ("Reroll all") each take a flat 10 energy. Each shows what it adds
+    <strong>a day</strong> (what your daily profit moves by) and for how many days: a training lasts until the employee retires (they
+    age a year a day and ask at 65), a new hire about {DAYS_UNKNOWN} days. They're ranked by the total, since 10 energy now pays for all
+    those days. Training is an average over the cards you might be offered; one pick can add more or less.
+    {#if selfWork}Self-work makes <strong>{fmt(selfWorkValue, 1)} G</strong> per 10 energy, once: a training is worth it when its total beats that.{/if}
   </p>
   {#if actions.length}
     <ol class="actions">
@@ -98,7 +110,7 @@
         <li>
           <span class="kind" data-kind={a.kind}>{a.kind}</span>
           <span><strong>{a.who}</strong> <span class="muted">· {a.where.name} ({itemLabel(a.where.good) || a.where.good})</span> · {a.what}</span>
-          <span class="num good">{signed(a.value, 1)} G</span>
+          <span class="num good" title="{fmt(a.value, 1)} G in all">{signed(a.day, 2)} G a day <small class="muted">· {fmt(a.value, 1)} G over {fmt(a.days, 0)} days</small></span>
         </li>
       {/each}
     </ol>
@@ -116,7 +128,7 @@
   </p>
   <div class="scroll">
     <table>
-      <thead><tr><th>Employee</th><th>Company</th><th class="num" title="G a day one more Production point adds, after its wage: at the market price of the company's good, and (second) at the game's point value, which its profit tooltip uses">Per Production point</th><th class="num">Profit now</th><th class="num" title="Days until they ask to retire">Days left</th><th class="num">Trainings left</th><th>Do</th><th class="num" title="What the next 10 energy on them adds in all (the best of a hand, on average)">Next session</th></tr></thead>
+      <thead><tr><th>Employee</th><th>Company</th><th class="num" title="G a day one more Production point adds, after its wage: at the market price of the company's good, and (second) at the game's point value, which its profit tooltip uses">Per Production point</th><th class="num">Profit now</th><th class="num" title="Days until they ask to retire">Days left</th><th class="num">Trainings left</th><th>Do</th><th class="num" title="What the next training adds a day, on average over the cards you may be offered, and in all until they retire">Next session</th><th>Best cards to pick</th></tr></thead>
       <tbody>
         {#each plan as p (p.worker.id)}
           <tr>
@@ -127,7 +139,13 @@
             <td class="num">{fmt(p.days, 0)}</td>
             <td class="num">{p.left}</td>
             <td><span class="verdict" data-verdict={p.verdict} title={p.why}>{VERDICT[p.verdict]}</span></td>
-            <td class="num">{p.left ? `${signed(p.perSession, 1)} G` : '–'}</td>
+            <td class="num">{#if p.left}{signed(perDay(p.perSession, p.days), 2)} G a day<br /><small class="muted">{fmt(p.perSession, 1)} G in all</small>{:else}–{/if}</td>
+            <td class="picks">
+              {#if cards[p.worker.id]}
+                {#each likely(cards[p.worker.id].cards).slice(0, 3) as c, i (i)}<span>{c.label} <small class="muted">{signed(c.perDay, 2)}/day</small></span>{/each}
+                <button class="link" onclick={() => showCards(p.worker.id)}>All cards</button>
+              {:else}<span class="muted">–</span>{/if}
+            </td>
           </tr>
         {/each}
       </tbody>
@@ -136,7 +154,8 @@
   <p class="muted small">
     Hover the verdict for why. "Already trained": trained today, so not again until 00:00 UTC; they come last until then.
     Per point: at the market price of the company's good (what selling it earns), and at the game's point value, as its profit tooltip
-    counts it. Profit and per point are G a day; the session is G in all.
+    counts it. Best cards: the three best that come up in at least 1 in 100 hands. When you train, pick whichever of your three
+    comes highest in their full list ("All cards"); a rarer card above these (two habits at once, say) is better still.
   </p>
 </section>
 
@@ -149,7 +168,7 @@
   </p>
   {#each workers.filter((w) => cards[w.id]) as w (w.id)}
     {@const r = cards[w.id]}
-    <details>
+    <details id="cards-{w.id}" open={openCards === w.id}>
       <summary><strong>{w.name}</strong> <span class="muted">· {w.company.name} · {r.left} {r.left === 1 ? 'training' : 'trainings'} left · {fmt(r.days, 0)} days · a session ≈ {signed(r.session, 1)} G</span></summary>
       <div class="scroll">
         <table class="cards">
@@ -248,6 +267,9 @@
   summary { cursor: pointer; font-size: 13px; }
   table.cards { margin: 6px 0; }
   tr.bad-row td:first-child { color: var(--bad); }
+  .picks { font-size: 12px; }
+  .picks span { display: block; white-space: nowrap; }
+  .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
   .rarity { display: inline-block; min-width: 18px; text-align: center; font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 4px; border: 1px solid var(--line); }
   .rarity[data-rarity='uncommon'] { color: var(--good); border-color: var(--good); }
   .rarity[data-rarity='rare'] { color: var(--info); border-color: var(--info); }
