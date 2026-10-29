@@ -27,8 +27,10 @@ const MANAGER_WEEKLY = 5;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 // Devices a manager's code allows (the admin's own codes can allow up to 5).
 const MANAGER_DEVICES = 2;
-// last_seen is written at most this often per session (D1 writes are limited).
-const SEEN_EVERY_MS = 60 * 60 * 1000;
+// last_seen is written at most this often per session (D1 writes are limited); the site
+// checks in every 2 minutes while a tab is open, so "online" is seen within the last 5.
+const SEEN_EVERY_MS = 2 * 60 * 1000;
+const ONLINE_MS = 5 * 60 * 1000;
 
 export const AUTH_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS invites (
@@ -131,17 +133,21 @@ async function playerSession(env, request) {
   if (!token) return null;
   const hash = await sha256(token);
   const hit = memo.get(hash);
-  if (hit && Date.now() - hit.at < 60 * 1000) return hit.session;
-  const row = await env.DB.prepare(
-    `SELECT s.token_hash, s.player_id, s.last_seen FROM sessions s JOIN invites i ON i.code_hash = s.code_hash
-     WHERE s.token_hash = ? AND s.revoked = 0 AND i.revoked = 0`,
-  ).bind(hash).first();
-  const session = row ? { tokenHash: row.token_hash, playerId: row.player_id } : null;
-  memo.set(hash, { at: Date.now(), session });
-  if (row && Date.now() - row.last_seen > SEEN_EVERY_MS) {
-    await env.DB.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').bind(Date.now(), hash).run();
+  let entry = hit && Date.now() - hit.at < 60 * 1000 ? hit : null;
+  if (!entry) {
+    const row = await env.DB.prepare(
+      `SELECT s.token_hash, s.player_id, s.last_seen FROM sessions s JOIN invites i ON i.code_hash = s.code_hash
+       WHERE s.token_hash = ? AND s.revoked = 0 AND i.revoked = 0`,
+    ).bind(hash).first();
+    entry = { at: Date.now(), session: row ? { tokenHash: row.token_hash, playerId: row.player_id } : null, seen: Math.max(row?.last_seen ?? 0, hit?.seen ?? 0) };
+    memo.set(hash, entry);
   }
-  return session;
+  // Last seen (for the admin's "Online right now"), also between database reads.
+  if (entry.session && Date.now() - entry.seen > SEEN_EVERY_MS) {
+    entry.seen = Date.now();
+    await env.DB.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').bind(entry.seen, hash).run();
+  }
+  return entry.session;
 }
 
 /** Finds a player by exact username: { _id, username } or null. */
@@ -254,7 +260,14 @@ async function adminApi(env, request, action) {
     const { results: managers } = await db.prepare('SELECT * FROM managers ORDER BY added_at').all();
     const since = Date.now() - WEEK_MS;
     const nameOf = Object.fromEntries(managers.map((m) => [m.player_id, m.player_name]));
+    // Who's online: a device seen in the last few minutes, by player (newest first).
+    const now = Date.now();
+    const live = sessions.filter((s) => !s.revoked && now - s.last_seen < ONLINE_MS);
+    const playerOf = Object.fromEntries(invites.map((i) => [i.code_hash, i]));
+    const online = live.map((s) => ({ player: playerOf[s.code_hash]?.player_name ?? null, label: playerOf[s.code_hash]?.label ?? '', device: s.device, last_seen: s.last_seen }))
+      .sort((a, b) => b.last_seen - a.last_seen);
     return jsonResponse({
+      now, onlineMinutes: ONLINE_MS / 60000, online,
       invites: invites.map((i) => ({
         ...i, created_by_name: i.created_by ? nameOf[i.created_by] ?? 'a former manager' : null,
         devices: sessions.filter((s) => s.code_hash === i.code_hash && !s.revoked).map((s) => ({ id: s.token_hash.slice(0, 16), device: s.device, created_at: s.created_at, last_seen: s.last_seen })),

@@ -56,6 +56,9 @@
   }
   loadManager();
 
+  // While the tab is open and in view, check in every 2 minutes: the admin's "Online right now".
+  setInterval(() => { if (!document.hidden) fetch('/api/health', { cache: 'no-store' }).catch(() => {}); }, 2 * 60 * 1000);
+
   const PAGES = [
     { path: '/', label: 'Overview & MinMax', icon: mdiShieldSword, hint: 'Your build: damage, cost, and how to improve it' },
     { path: '/contract', label: 'Optimizer', icon: mdiFileDocumentOutline, hint: 'The best skills and gear for a bounty contract and the gold you want to spend' },

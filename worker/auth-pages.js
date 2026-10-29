@@ -25,6 +25,8 @@ const STYLE = `
   .row label { margin: 0; flex: 1; min-width: 160px; }
   .revoked { opacity: .45; }
   .scroll { overflow-x: auto; }
+  .online { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--good); margin-right: 7px; vertical-align: middle; box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent); }
   [hidden] { display: none !important; }
 `;
 
@@ -92,6 +94,11 @@ export const ADMIN_PAGE = page('Admin', `
     <p class="error" id="err"></p>
   </form>
   <div id="panel" hidden>
+    <section class="card" id="onlinebox">
+      <h2 style="margin-top:0">Online right now <span class="muted" id="onlinecount"></span></h2>
+      <div id="online"></div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Active on the site in the last <span id="onlinemin">5</span> minutes (an open tab checks in every 2 minutes). This page updates every minute.</p>
+    </section>
     <form class="card row" id="create">
       <label>Who it's for (a note only you see) <input name="label" maxlength="80"></label>
       <label style="max-width:120px;flex:none">Devices <input name="maxDevices" type="number" min="1" max="5" value="2"></label>
@@ -103,7 +110,7 @@ export const ADMIN_PAGE = page('Admin', `
     </section>
     <section class="card scroll">
       <table>
-        <thead><tr><th>Note</th><th>Player</th><th>Devices</th><th>Created</th><th>By</th><th></th></tr></thead>
+        <thead><tr><th>Note</th><th>Player</th><th>Last online</th><th>Devices</th><th>Created</th><th>By</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </section>
@@ -126,6 +133,13 @@ export const ADMIN_PAGE = page('Admin', `
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const when = (ms) => new Date(ms).toLocaleString();
+// "just now", "12 min ago", "3 h ago", "2 days ago" (the full time on hover).
+function ago(ms, now = Date.now()) {
+  const m = Math.max(0, Math.round((now - ms) / 60000));
+  const text = m < 2 ? 'just now' : m < 60 ? m + ' min ago' : m < 48 * 60 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' days ago';
+  return '<span title="' + esc(when(ms)) + '">' + text + '</span>';
+}
+const dot = '<span class="dot" title="Online now"></span>';
 async function api(action, body) {
   const res = await fetch('/admin/api/' + action, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   const data = await res.json().catch(() => ({}));
@@ -134,11 +148,20 @@ async function api(action, body) {
   return data;
 }
 async function refresh() {
-  const { invites, managers } = await api('list');
+  const { invites, managers, online, now, onlineMinutes } = await api('list');
   $('login').hidden = true; $('panel').hidden = false;
+  $('onlinemin').textContent = onlineMinutes;
+  const players = [...new Set(online.map((o) => o.player || o.label || '?'))];
+  $('onlinecount').textContent = '(' + players.length + ')';
+  $('online').innerHTML = online.length ? '<ul class="online">' + online.map((o) => '<li>' + dot + '<strong>' + esc(o.player || 'not used yet') + '</strong>'
+      + (o.label ? ' <span class="muted">' + esc(o.label) + '</span>' : '') + ' <span class="muted">· ' + esc(o.device) + ' · ' + ago(o.last_seen, now) + '</span></li>').join('') + '</ul>'
+    : '<p class="muted" style="margin:0">Nobody right now.</p>';
+  const lastOf = (i) => Math.max(0, ...i.devices.map((d) => d.last_seen));
+  const isOnline = (t) => now - t < onlineMinutes * 60000;
   $('rows').innerHTML = invites.map((i) => '<tr class="' + (i.revoked ? 'revoked' : '') + '">'
     + '<td>' + esc(i.label || '–') + '</td>'
     + '<td>' + (i.player_name ? esc(i.player_name) : '<span class="muted">not used yet</span>') + '</td>'
+    + '<td>' + (lastOf(i) ? (isOnline(lastOf(i)) ? dot + '<strong>online</strong>' : ago(lastOf(i), now)) : '<span class="muted">–</span>') + '</td>'
     + '<td>' + (i.devices.length ? i.devices.map((d) => esc(d.device) + ' <span class="muted">· last seen ' + when(d.last_seen) + '</span> '
         + (i.revoked ? '' : '<button class="ghost" data-remove="' + d.id + '" data-code="' + i.code_hash + '">Remove</button>')).join('<br>') : '<span class="muted">none</span>')
     + ' <span class="muted">(' + i.devices.length + ' / ' + i.max_devices + ')</span></td>'
@@ -188,4 +211,6 @@ $('mrows').addEventListener('change', async (e) => {
   await api('set-weekly', { playerId: i.dataset.weekly, weekly: Number(i.value) }); refresh();
 });
 refresh().catch(() => {});
+// Keep "Online right now" current (not while the tab is hidden, nor while typing in a field).
+setInterval(() => { if (!document.hidden && !$('panel').hidden && !document.activeElement?.matches('input')) refresh().catch(() => {}); }, 60000);
 `);
