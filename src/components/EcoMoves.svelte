@@ -44,7 +44,7 @@
   {#if moves.length}
     <ul class="moves">
       {#each moves.slice(0, 8) as m, k (k)}
-        {@render result(m, m.swap == null ? `Move ${m.name}` : `Swap ${m.name} ↔ ${m.swapName}`, m.from, m.to)}
+        {@render result(m, m.swap == null ? `Move ${m.name} to ${m.to.name}` : `Swap ${m.name} (${m.from.name}) ↔ ${m.swapName} (${m.to.name})`, m.from, m.to)}
       {/each}
     </ul>
     {#if moves.length > 8}<p class="muted small">{moves.length - 8} more moves pay less.</p>{/if}
@@ -82,7 +82,7 @@
   </div>
   {#if checked}
     <ul class="moves">
-      {@render result(checked, full ? `Swap ${picked.a.model.team[picked.index].name} ↔ ${target.model.team[Number(swapWith)].name}` : `Move ${picked.a.model.team[picked.index].name}`, picked.a, target)}
+      {@render result(checked, full ? `Swap ${picked.a.model.team[picked.index].name} (${picked.a.name}) ↔ ${target.model.team[Number(swapWith)].name} (${target.name})` : `Move ${picked.a.model.team[picked.index].name} to ${target.name}`, picked.a, target)}
     </ul>
   {/if}
 </section>
@@ -102,10 +102,10 @@
     {#if m.changes.length}
       <ul class="parts">
         {#each m.changes as c, i (i)}
-          <li><span>{c.name || '(no name)'} <small class="muted">{c.company === 'moved' ? '(moved)' : c.company === 'moved back' ? '(moved back)' : c.company === 'a' ? `in ${sideName(from)}` : `in ${sideName(toSide)}`}</small></span><span class="num" class:good={c.change > 0} class:bad={c.change < 0}>{signed(c.change)}</span></li>
+          <li><span>{c.name || '(no name)'} <small class="muted">{c.company === 'moved' ? `moves to ${sideName(toSide)}` : c.company === 'moved back' ? `moves to ${sideName(from)}` : c.company === 'a' ? `stays in ${sideName(from)}` : `stays in ${sideName(toSide)}`}</small></span><span class="num" class:good={c.change > 0} class:bad={c.change < 0}>{signed(c.change)}</span></li>
         {/each}
       </ul>
-      <p class="muted small note">G a day from day 21 on, each at their company's value per point.</p>
+      <p class="muted small note">What each one makes more or less, in G a day from day 21 on, at their company's value per point.</p>
     {/if}
   </li>
 {/snippet}
