@@ -5,7 +5,7 @@
    * potential and training, and what each is worth to their company: their
    * own output plus what they do for their coworkers (hiring.js employeeWorth).
    */
-  import { ecoEmployees, ecoSettings, employeesStatus, words } from '../lib/eco.svelte.js';
+  import { ecoEmployees, employeesStatus, words } from '../lib/eco.svelte.js';
   import { employeeDay } from '../lib/eco.js';
   import { trainedToday } from '../lib/staffing.js';
   import { employeeWorth } from '../lib/hiring.js';
@@ -26,10 +26,14 @@
     return m && i < m.team.length ? employeeWorth(m, i) : null;
   };
 
-  // The card's bonus already includes Management, so nothing is swapped here.
-  const day = (e, c) => employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 });
-  // The game's own estimate values output at the market value of a point.
-  const gameEstimate = (d) => d.points * pointValue - d.wage;
+  // The card's bonus already includes Management, so nothing is swapped here. Points: the game's own
+  // estimate where it gives one (what its "Estimated profit" counts), else from Production and bonus.
+  const day = (e, c) => {
+    const d = employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 });
+    if (e.pointsPerDay == null) return d;
+    const value = e.pointsPerDay * (perPoint[c.good] ?? 0);
+    return { ...d, points: e.pointsPerDay, value, profit: value - d.wage };
+  };
   const signed = (n, digits = 2) => `${n >= 0 ? '+' : ''}${fmt(n, digits)}`;
   const worthTip = (w) => `Own output ${signed(w.own)}, for coworkers ${signed(w.others)}${Math.abs(w.toolboxes) > 0.005 ? `, toolboxes ${signed(w.toolboxes)}` : ''}, wage ${signed(-w.wage)} (G a day)`;
   const daysAgo = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400000));
@@ -42,10 +46,10 @@
     const w = worthOf(c, i);
     // Potential: trainings used of the most they can take; sorted by how many are left.
     const left = e.potentialMax != null ? Math.max(0, e.potentialMax - (e.potential ?? 0)) : -1;
-    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, potential: left, used: e.potential, max: e.potentialMax, points: d.points, payroll: d.wage, profit: gameEstimate(d), goodsProfit: d.profit, breakEven: d.points * pointValue,
-      others: w ? w.others + w.toolboxes : 0, value: w ? w.value : gameEstimate(d), worth: w };
+    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, potential: left, used: e.potential, max: e.potentialMax, points: d.points, payroll: d.wage, profit: d.profit, breakEven: d.value,
+      others: w ? w.others + w.toolboxes : 0, value: w ? w.value : d.profit, worth: w };
   })));
-  const COLS = { company: 'Company', name: 'Name', production: 'Production', potential: 'Potential', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit (game)', goodsProfit: 'Profit (goods)', others: 'For coworkers', value: 'Value to company' };
+  const COLS = { company: 'Company', name: 'Name', production: 'Production', potential: 'Potential', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit', others: 'For coworkers', value: 'Value to company' };
   let sortKey = $state('value');
   let sortDesc = $state(true);
   function sortBy(k) {
@@ -58,37 +62,49 @@
     return sortDesc ? -o : o;
   }));
 
-  const totals = $derived(companies.reduce((acc, c) => {
-    for (const e of ecoEmployees[c.id] ?? []) {
-      const d = day(e, c);
-      acc.count++; acc.points += d.points; acc.wage += d.wage; acc.profit += d.profit; acc.game += gameEstimate(d);
+  // The game's "Estimated profit": each good's points at its market value per point (a manufactured
+  // good's minus the raws it uses), minus the day's payroll (employees and hired managers).
+  const estimate = $derived.by(() => {
+    const goods = {};
+    let wage = 0;
+    let count = 0;
+    for (const c of companies) {
+      for (const e of ecoEmployees[c.id] ?? []) {
+        const d = day(e, c);
+        const g = (goods[c.good] ??= { good: c.good, points: 0, perPoint: perPoint[c.good] ?? 0 });
+        g.points += d.points;
+        wage += d.wage;
+        count++;
+      }
     }
-    return acc;
-  }, { count: 0, points: 0, wage: 0, profit: 0, game: 0 }));
-  // The goods' own value per point, averaged over the points (one number when every company makes the same good).
-  const goodsPerPoint = $derived(totals.points > 0 ? (totals.profit + totals.wage) / totals.points : 0);
+    const list = Object.values(goods).map((g) => ({ ...g, value: g.points * g.perPoint })).sort((a, b) => b.value - a.value);
+    const managers = companies.reduce((t, c) => t + (c.manager && !c.manager.inactive ? c.manager.wageDay : 0), 0);
+    const output = list.reduce((t, g) => t + g.value, 0);
+    return { goods: list, count, points: list.reduce((t, g) => t + g.points, 0), wage, managers, output, profit: output - wage - managers };
+  });
 </script>
 
 <section class="card">
   <p class="muted intro">Your employees as the game has them, loaded with your companies. Profit is what a day of their production is worth minus a day of their wage.</p>
   {#if employeesStatus.error}<p class="bad">{employeesStatus.error}</p>{/if}
-  <label class="pv">
-    <span>Value of 1 production point (G): the number after × in any employee's "Estimated profit" tooltip in the game</span>
-    <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={pointValue.toFixed(4)} />
-    {#if !(ecoSettings.pointValue > 0)}<small class="muted">Using {fmt(pointValue, 4)}, {estimateNote}; type the game's current one if it has changed.</small>{/if}
-  </label>
   <dl class="big">
-    <div><dt>Employees</dt><dd class="num">{totals.count}</dd></div>
-    <div><dt>Points per day</dt><dd class="num">{fmt(totals.points, 0)}</dd></div>
-    <div><dt>Payroll per day</dt><dd class="num">{fmt(totals.wage, 2)} G</dd></div>
-    <div><dt>Profit per day (game)</dt><dd class="num" class:good={totals.game >= 0} class:bad={totals.game < 0}>{fmt(totals.game, 2)} G</dd><small class="muted">as the game shows it: {fmt(pointValue, 4)} G a point</small></div>
-    <div><dt>Profit per day (at your goods' prices)</dt><dd class="num" class:good={totals.profit >= 0} class:bad={totals.profit < 0}>{fmt(totals.profit, 2)} G</dd><small class="muted">{fmt(goodsPerPoint, 4)} G a point on average</small></div>
+    <div><dt>Employees</dt><dd class="num">{estimate.count}</dd></div>
+    <div><dt>Points per day</dt><dd class="num">{fmt(estimate.points, 0)}</dd></div>
+    <div><dt>Payroll per day</dt><dd class="num">{fmt(estimate.wage + estimate.managers, 2)} G</dd>{#if estimate.managers > 0}<small class="muted">{fmt(estimate.managers, 2)} G of it hired managers</small>{/if}</div>
+    <div><dt>Estimated profit per day</dt><dd class="num" class:good={estimate.profit >= 0} class:bad={estimate.profit < 0}>{signed(estimate.profit)} G</dd><small class="muted">as the game works it out</small></div>
   </dl>
-  <p class="muted small why">
-    <strong>Why two numbers:</strong> the game values every production point the same ({fmt(pointValue, 4)} G, from raw-material trades), whatever the company makes.
-    The second one uses what each company's good sells for today, minus the materials it uses, per point. That is what you earn if you sell the goods at market price;
-    if you use them yourself or sell cheaper, the game's number is the safer one. The difference here: {fmt(totals.points, 0)} points × {signed(goodsPerPoint - pointValue, 4)} G = {signed(totals.profit - totals.game)} G a day.
-  </p>
+  <table class="est">
+    <caption class="muted small">Like the game's "Estimated profit": a day of production at market value, minus the day's payroll. Manufactured goods are valued minus the raws they use.</caption>
+    <thead><tr><th>Good</th><th class="num">Points</th><th class="num">G a point</th><th class="num">Worth</th></tr></thead>
+    <tbody>
+      {#each estimate.goods as g (g.good)}
+        <tr><td><img src={itemImage(g.good, items)} alt="" width="18" height="18" class="mini" /> {itemLabel(g.good) || g.good}</td><td class="num">{fmt(g.points, 2)}</td><td class="num">× {fmt(g.perPoint, 4)}</td><td class="num">{fmt(g.value, 2)}</td></tr>
+      {/each}
+      <tr class="pay"><td>Payroll{#if estimate.managers > 0} <small class="muted">(employees {fmt(estimate.wage, 2)} + managers {fmt(estimate.managers, 2)})</small>{/if}</td><td></td><td></td><td class="num bad">−{fmt(estimate.wage + estimate.managers, 2)}</td></tr>
+      <tr class="sum"><td><strong>Profit</strong></td><td></td><td></td><td class="num"><strong class:good={estimate.profit >= 0} class:bad={estimate.profit < 0}>{signed(estimate.profit)}</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="muted small why">The values per point are the game's own (its market value of each good, refreshed every few minutes); a good it has none for is valued at today's prices.</p>
 </section>
 
 {#if all.length > 1}
@@ -113,8 +129,7 @@
               <td class="num">{fmt(r.points, 1)}</td>
               <td class="num">{fmt(r.payroll, 2)}</td>
               <td class="num" title="Payroll at which this employee would make exactly nothing">{fmt(r.breakEven, 2)}</td>
-              <td class="num"><strong class:good={r.profit >= 0} class:bad={r.profit < 0}>{signed(r.profit)}</strong></td>
-              <td class="num" title="At what {itemLabel(r.good) || r.good} sells for, minus its materials, per point"><strong class:good={r.goodsProfit >= 0} class:bad={r.goodsProfit < 0}>{signed(r.goodsProfit)}</strong></td>
+              <td class="num" title="At {itemLabel(r.good) || r.good}'s market value per point, minus payroll"><strong class:good={r.profit >= 0} class:bad={r.profit < 0}>{signed(r.profit)}</strong></td>
               <td class="num" title={r.worth ? worthTip(r.worth) : ''}><span class:good={r.others > 0.005} class:bad={r.others < -0.005} class:muted={Math.abs(r.others) <= 0.005}>{signed(r.others)}</span></td>
               <td class="num" title={r.worth ? worthTip(r.worth) : ''}><strong class:good={r.value >= 0} class:bad={r.value < 0}>{signed(r.value)}</strong></td>
             </tr>
@@ -122,7 +137,7 @@
         </tbody>
       </table>
     </div>
-    <p class="muted small">Break-even payroll: the most an employee could be paid per day before they cost more than they make (at the game's point value). Far below it is a keeper; above it, train their wage down or replace them.</p>
+    <p class="muted small">Break-even payroll: the most an employee could be paid per day before they cost more than they make (at their good's market value per point). Far below it is a keeper; above it, train their wage down or replace them.</p>
     <p class="muted small"><strong>Value to company</strong>: what the company makes a day with them against without them, minus their wage, at what its good sells for. It counts what they do for their coworkers (<strong>For coworkers</strong>: a Comic's +10 happiness for everyone, a Xenophobe's drag on foreigners, Girl Power, Luck traits' toolboxes, …), so someone who makes little themselves can be worth the most. Not counted: training help (a Trainer's extra training) and anything that takes weeks.</p>
   </section>
 {/if}
@@ -140,9 +155,8 @@
       <div class="emps">
         {#each list as e (e.id ?? e.name)}
           {@const d = day(e, c)}
-          {@const g = gameEstimate(d)}
           {@const w = worthOf(c, list.indexOf(e))}
-          <article class="emp" class:losing={g < 0}>
+          <article class="emp" class:losing={d.profit < 0}>
             <header>
               <strong>{e.name || '(no name)'}</strong>
               <span class="muted small">{[e.age && `${e.age} y`, e.hiredAt && `hired ${daysAgo(e.hiredAt) ? `${daysAgo(e.hiredAt)} d ago` : 'today'}`].filter(Boolean).join(' · ')}</span>
@@ -158,8 +172,7 @@
             <dl class="money">
               <div><dt>Points / day</dt><dd class="num">{fmt(d.points, 1)}</dd></div>
               <div><dt>Payroll / day</dt><dd class="num">{fmt(d.wage, 2)}</dd></div>
-              <div><dt title="Points × the value of 1 production point − payroll, as the game shows it">Profit (game)</dt><dd class="num" class:good={g >= 0} class:bad={g < 0}>{signed(g)}</dd></div>
-              <div><dt title="Points × what {itemLabel(c.good) || c.good} sells for per point − payroll">At {itemLabel(c.good) || c.good}'s price</dt><dd class="num" class:good={d.profit >= 0} class:bad={d.profit < 0}>{signed(d.profit)}</dd></div>
+              <div><dt title="Points × {itemLabel(c.good) || c.good}'s market value per point ({fmt(perPoint[c.good] ?? 0, 4)} G) − payroll, as the game works it out">Profit</dt><dd class="num" class:good={d.profit >= 0} class:bad={d.profit < 0}>{signed(d.profit)}</dd></div>
             </dl>
             {#if w}
               <details class="worth">
@@ -198,7 +211,7 @@
           </article>
         {/each}
       </div>
-      {#if list.some((e) => gameEstimate(day(e, c)) < 0)}<p class="bad small">Red: costs more than they make. Train their wage down (Negotiation), give them a tool, raise their happiness, or replace them.</p>{/if}
+      {#if list.some((e) => day(e, c).profit < 0)}<p class="bad small">Red: costs more than they make. Train their wage down (Negotiation), give them a tool, raise their happiness, or replace them.</p>{/if}
     {:else}
       <p class="muted small">No employees.</p>
     {/if}
@@ -213,7 +226,11 @@
   .big dt { color: var(--muted); font-size: 12px; }
   .big dd { margin: 2px 0 0; font-size: 22px; font-weight: 700; }
   .big small { font-size: 11px; }
-  .why { margin: 10px 0 0; max-width: 760px; line-height: 1.45; }
+  .why { margin: 6px 0 0; max-width: 760px; line-height: 1.45; }
+  .est { max-width: 520px; margin-top: 12px; }
+  .est caption { text-align: left; caption-side: top; padding-bottom: 6px; }
+  .est tr.pay td { border-top: 2px solid var(--line); }
+  .est tr.sum td { border-bottom: 0; }
   .good { color: var(--good); }
   .bad { color: var(--bad); }
   .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }

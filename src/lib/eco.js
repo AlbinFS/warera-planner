@@ -77,6 +77,37 @@ export function trainingsFromEmployees(employees) {
 /** Trainings a day for the income model: the number typed in, else the employees'. */
 export const trainingsPerDayOf = (setting, employees) => (setting === null || setting === undefined || setting === '' ? trainingsFromEmployees(employees) : Math.max(0, Number(setting) || 0));
 
+/**
+ * The game's own value of a production point per good, as its "Estimated
+ * profit" counts it (its web app, 2026-10-29): gameStat.getPpMoneyValueByItem
+ * gives each item's value per point of everything that goes into it; a
+ * manufactured good is worth that over all its points, minus its inputs'
+ * worth, per its own points (cooked fish: (0.1093 × 80 − 0.0924 × 40) ÷ 40).
+ * A good without a value (or with an input without one) keeps the game's own.
+ */
+export function gamePointValues(items, byItem) {
+  const total = (code) => {
+    const it = items[code];
+    if (!it?.productionPoints) return 0;
+    return Object.entries(it.productionNeeds ?? {}).reduce((t, [c, n]) => t + (n ?? 0) * total(c), it.productionPoints);
+  };
+  const out = {};
+  for (const [code, value] of Object.entries(byItem ?? {})) {
+    const it = items[code];
+    const needs = Object.entries(it?.productionNeeds ?? {});
+    if (!it?.productionPoints || !needs.length || needs.some(([c]) => !byItem[c])) { out[code] = value; continue; }
+    const inputs = needs.reduce((t, [c, n]) => t + (n ?? 0) * byItem[c] * total(c), 0);
+    out[code] = (value * total(code) - inputs) / it.productionPoints;
+  }
+  return out;
+}
+
+/** Value per production point by good: the game's (gamePointValues) where it has one, else from today's prices (goodsProfit). */
+export function pointValues(items, prices, byItem) {
+  const fromPrices = Object.fromEntries(goodsProfit(items, prices).map((g) => [g.code, g.perPoint]));
+  return { ...fromPrices, ...gamePointValues(items, byItem) };
+}
+
 /** Profit per production point for every good: (price − inputs) ÷ PP. */
 export function goodsProfit(items, prices) {
   const out = [];

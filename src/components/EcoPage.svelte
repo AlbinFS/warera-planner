@@ -6,7 +6,7 @@
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies, apiKeyState } from '../lib/eco.svelte.js';
   import { maxRank } from '../lib/prestige.js';
-  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf } from '../lib/eco.js';
+  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf, pointValues } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import { staffModels } from '../lib/income.js';
   import { leadershipValues } from '../lib/training.js';
@@ -102,17 +102,23 @@
     refreshing = false;
   }
 
-  // The point value: the game's own number unless a newer one is typed in.
-  // The point value: what your employees' wages say the game uses now, else its value on Oct 27.
+  // The game's own values of a production point: overall (gameStat.getPpMoneyValue) and per good
+  // (getPpMoneyValueByItem, what its "Estimated profit" uses), refreshed with the page.
+  let gameValue = $state(null);
+  let gameByItem = $state.raw(null);
+  cached('gameStat.getPpMoneyValue', null, 5 * 60 * 1000).then((v) => (gameValue = typeof v === 'number' ? v : null)).catch(() => {});
+  cached('gameStat.getPpMoneyValueByItem', null, 5 * 60 * 1000).then((v) => (gameByItem = v ?? null)).catch(() => {});
+  // The point value: the game's own number unless a newer one is typed in; without it, what the employees' wages say.
   const fromWages = $derived(pointValueFromWages(Object.values(ecoEmployees).flat()));
-  const estimate = $derived(fromWages ?? GAME_POINT_VALUE);
-  const estimateNote = $derived(fromWages ? "the game's current value, read from your employees' wages" : GAME_POINT_VALUE_NOTE);
+  const estimate = $derived(gameValue ?? fromWages ?? GAME_POINT_VALUE);
+  const estimateNote = $derived(gameValue ? "the game's current value" : fromWages ? "the game's current value, read from your employees' wages" : GAME_POINT_VALUE_NOTE);
   const pointValue = $derived(ecoSettings.pointValue > 0 ? ecoSettings.pointValue : estimate);
   const goods = $derived(goodsProfit(items, data.market.itemPrices));
   // The game's own levels and prestige ranks (each rank one more level).
   const ownRank = (s) => planner.player?.own?.prestige?.[s] ?? 0;
   const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0, ownRank('management')));
-  const perPoint = $derived(Object.fromEntries(goods.map((g) => [g.code, g.perPoint])));
+  // Each good's value per point as the game counts it, today's prices where it has none.
+  const perPoint = $derived(pointValues(items, data.market.itemPrices, gameByItem));
 
   // The employees as the hiring and training models see them; what a toolbox is worth to them.
   const staffing = $derived(staffModels(companies, ecoEmployees, { perPoint, managementPercent: 2 * currentManagementValue, regions, countries, items }));

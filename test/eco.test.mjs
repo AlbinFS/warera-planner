@@ -46,3 +46,15 @@ test('economy steps: the best-earning layout per number of points, each earning 
   // One point: a third company earns more than +2 % on the two running.
   assert.deepEqual(steps[1].levels, { companies: 1, management: 0 });
 });
+
+test('the game values a manufactured good\'s point minus its inputs, from its value per point of everything', async () => {
+  const { gamePointValues, pointValues } = await import('../src/lib/eco.js');
+  const items = { fish: { productionPoints: 40 }, cookedFish: { productionPoints: 40, productionNeeds: { fish: 1 } }, wood: { productionPoints: 40 } };
+  const v = gamePointValues(items, { cookedFish: 0.1093, fish: 0.0924, wood: 0.0943 });
+  assert.equal(Math.round(v.cookedFish * 1e4) / 1e4, 0.1262);
+  assert.equal(v.wood, 0.0943);
+  // Goods the game has no value for keep the one from prices.
+  const all = pointValues({ ...items, bread: { type: 'product', productionPoints: 10 } }, { bread: 2 }, { wood: 0.0943 });
+  assert.equal(all.bread, 0.2);
+  assert.equal(all.wood, 0.0943);
+});

@@ -125,6 +125,8 @@ function fromGame(e) {
     production: stat(e, 'production').total,
     bonusPercent: Math.round((e.productionBonus?.total ?? 0) * 100) / 100,
     payroll: Math.round((e.wage ?? 0) * 24 * 1000) / 1000,
+    // The game's own estimate of their points a day (its "Estimated profit" counts these), when it gives one.
+    pointsPerDay: e.estimate?.production != null ? e.estimate.production * 24 : null,
     age: e.age,
     gender: e.gender ?? null,
     nationality: e.nationality ?? null,

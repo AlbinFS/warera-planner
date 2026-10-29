@@ -32,7 +32,10 @@ const API_DOWN = "Can't reach the official WarEra API right now. It may be down;
 async function call(procedure, input = {}) {
   let res;
   try {
-    res = await fetch(API + procedure, { method: 'POST', headers: headers(), body: JSON.stringify(input) });
+    // input null: a procedure that takes none (a POST, even an empty one, is refused), as a GET.
+    res = input == null
+      ? await fetch(API + procedure, { headers: headers() })
+      : await fetch(API + procedure, { method: 'POST', headers: headers(), body: JSON.stringify(input) });
   } catch {
     // The browser only says "Failed to fetch": the API is unreachable, or down
     // and answering without CORS headers.
