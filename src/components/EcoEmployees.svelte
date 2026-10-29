@@ -14,6 +14,7 @@
   import { itemLabel } from '../lib/market.js';
   import Icon from './Icon.svelte';
   import TraitChip from './TraitChip.svelte';
+  import EcoMoves from './EcoMoves.svelte';
   import { mdiPickaxe, mdiClover, mdiTie, mdiEmoticonOutline } from '@mdi/js';
 
   let { companies, perPoint, pointValue, items, estimateNote = "from today's prices", models = [] } = $props();
@@ -125,6 +126,8 @@
     <p class="muted small"><strong>Value to company</strong>: what the company makes a day with them against without them, minus their wage, at what its good sells for. It counts what they do for their coworkers (<strong>For coworkers</strong>: a Comic's +10 happiness for everyone, a Xenophobe's drag on foreigners, Girl Power, Luck traits' toolboxes, …), so someone who makes little themselves can be worth the most. Not counted: training help (a Trainer's extra training) and anything that takes weeks.</p>
   </section>
 {/if}
+
+{#if running.length > 1}<EcoMoves {companies} {models} {items} />{/if}
 
 {#each companies.filter((c) => !c.disabled) as c (c.id)}
   {@const list = ecoEmployees[c.id] ?? []}

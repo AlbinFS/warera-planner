@@ -239,7 +239,8 @@ export function toolboxesPerDay(luck, traits = []) {
 function pointsOf(e, fx) {
   const shield = Math.min(1, Math.max(0, (e.resp + fx.resp) / 10));
   const lossFactor = (1 - shield) * (e.traits.includes('loyal') ? 0.5 : 1);
-  const happiness = Math.max(0, Math.min(100, e.happinessBase + fx.gain + fx.loss * lossFactor));
+  // passingLoss: a loss for a while (a move's −5 for 7 days, moving.js), shielded like the rest.
+  const happiness = Math.max(0, Math.min(100, e.happinessBase + fx.gain + (fx.loss + (e.passingLoss ?? 0)) * lossFactor));
   const prod = Math.max(1, e.prodBase + fx.prod);
   return (prod / OUTPUT_DIVISOR) * HOURS * (1 + (e.bonusBase + fx.percent + happiness - 50) / 100);
 }
@@ -383,6 +384,9 @@ function asCoworker(e) {
 function teamPoints(team, place) {
   return team.map((e) => pointsOf(e, effects(e, team.filter((c) => c !== e), place)));
 }
+
+/** Each one's points a day in a team at a place, in the team's order (moving.js). */
+export const teamPointsEach = (team, place) => teamPoints(team, place);
 
 /** Production points a day of a whole team at a place (switching.js: the same team making another good). */
 export const teamPointsAt = (team, place) => teamPoints(team, place).reduce((s, x) => s + x, 0);
