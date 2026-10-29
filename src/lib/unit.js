@@ -1,8 +1,10 @@
 /**
  * Military unit planning from public data: every member's damage available
- * right now (live health and hunger bars, worn gear, pill state), a cautious
- * "reached 95% of the time" figure from simulating their luck, and the unit's
- * mercenary contracts with their minimum damage.
+ * right now (live health and hunger bars, worn gear, pill state), what it
+ * would be if they took the pill now, what a fresh 8 h pill session gives
+ * them (full bars and 8 hours of regen), a cautious "reached 95% of the time"
+ * figure from simulating their luck, and the unit's mercenary contracts with
+ * their minimum damage. (The game doesn't say when a pill or its debuff ends.)
  */
 import { cached, cachedBatch } from './warera.js';
 import { skillValue, ALL_SKILLS, SLOTS } from '../engine/inputs.js';
@@ -67,10 +69,15 @@ const gearOf = (equipment) => Object.fromEntries(SLOTS.map((slot) => {
   return [slot, typeof it === 'string' ? it : { code: it.code, skills: { ...it.skills } }];
 }));
 
+/** The pill's damage bonus (+60 %), from the game config. */
+export const pillMultiplier = (market) => 1 + (market.gameConfigItems?.cocain?.flatStats?.percentAttack ?? 60) / 100;
+
 /**
  * Damage a member can do now: the optimizer's strongest result for their worn
  * gear (food chosen for them unless fixed) with their current bars as one
- * fight. Also the inputs the luck simulation needs.
+ * fight. Also the inputs the luck simulation needs, what taking the pill now
+ * would make it (pilledNow; null in the debuff, when they can't), what an 8 h
+ * pill session from full bars gives (session), and hours until bars are full.
  */
 export async function memberDamage(market, member, settings) {
   const { user, equipment } = member;
@@ -80,19 +87,30 @@ export async function memberDamage(market, member, settings) {
   const health = Math.max(0, user.skills?.health?.currentBarValue ?? 0);
   const foodCount = Math.max(0, Math.floor(user.skills?.hunger?.currentBarValue ?? 0));
   const gear = gearOf(equipment);
-  const base = { pill, health, foodCount, food: null, gear, levels };
-  if (health <= 0 && foodCount < 1) return { ...base, damage: 0, perAttempt: 0, attempts: 0 };
+  const h = user.skills?.health ?? {};
+  const f = user.skills?.hunger ?? {};
+  // Hours until both bars are full (each regains its hourly regen).
+  const untilFull = (bar) => (bar.hourlyBarRegen > 0 ? Math.max(0, ((bar.total ?? bar.value ?? 0) - (bar.currentBarValue ?? 0)) / bar.hourlyBarRegen) : 0);
+  const base = { pill, health, foodCount, food: null, gear, levels, fullIn: Math.max(untilFull(h), untilFull(f)), session: 0, pilledNow: pill.kind === 'debuff' ? null : 0 };
 
-  // Their worn gear, their current bars as one fight, at their pill state; food chosen unless fixed.
+  // Their worn gear; food chosen unless fixed.
   const worn = { ...gear, ammo: typeof gear.ammo === 'string' ? gear.ammo : gear.ammo?.code ?? null };
   const prep = prepare(market, { locked: lockedGear(market, worn), lockedFood: settings.food === 'any' ? undefined : settings.food });
   const player = { level: user.leveling?.level ?? 1, militaryRankPercent: user.skills?.attack?.militaryRankPercent ?? 0, prestige };
-  const opts = { battleBonusPercent: Number(settings.battleBonus) || 0, supply: { health, foodMax: foodCount }, multiplier: pill.multiplier };
+  const bonus = Number(settings.battleBonus) || 0;
+  // A fresh pill session: full bars and 8 hours of regen, the pill on (the Overview's 8 h window).
+  base.session = strongest(prep, levels, player, { battleBonusPercent: bonus, pill: true, hours: 8 })?.damage ?? 0;
+  if (health <= 0 && foodCount < 1) return { ...base, damage: 0, perAttempt: 0, attempts: 0 };
+
+  // Their current bars as one fight, at their pill state.
+  const opts = { battleBonusPercent: bonus, supply: { health, foodMax: foodCount }, multiplier: pill.multiplier };
   const r = strongest(prep, levels, player, opts);
   if (!r && worn.weapon?.code && worn.weapon.code !== 'knife' && !worn.ammo) return { ...base, damage: 0, perAttempt: 0, attempts: 0, error: 'Their gun has no ammo.' };
   if (!r) return { ...base, damage: 0, perAttempt: 0, attempts: 0, error: 'Their gear can’t fight.' };
 
   const multiplier = pill.multiplier * (1 + opts.battleBonusPercent / 100);
+  // Taking the pill now: the same fight at +60 % (damage scales with it, the build doesn't change).
+  const pilledNow = pill.kind === 'debuff' ? null : pill.kind === 'buff' ? r.damage : r.damage * pillMultiplier(market) / pill.multiplier;
   // r.perSwing is per swing before the pill (its phase applies it); the simulation wants it before the bonus too.
   const perAttempt = r.perSwing / (1 + opts.battleBonusPercent / 100);
   const value = (s) => skillValue(market.gameConfigSkills[s], levels[s], prestige[s]);
@@ -101,6 +119,7 @@ export async function memberDamage(market, member, settings) {
     ...base,
     food: r.food ?? 'none',
     damage: r.damage,
+    pilledNow,
     perAttempt,
     multiplier,
     attempts: r.swings,
@@ -150,6 +169,9 @@ export function quantile(values, q = QUANTILE) {
   const sorted = Float64Array.from(values).sort();
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
 }
+
+/** A member's simulated fights scaled (taking the pill multiplies every hit alike). */
+export const scaled = (sims, factor) => (factor === 1 ? sims : sims.map((x) => x * factor));
 
 /** The unit total's cautious figure: members' simulated fights added run by run. */
 export function unitQuantile(simulations, q = QUANTILE) {
