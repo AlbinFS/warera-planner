@@ -41,10 +41,10 @@
     const w = worthOf(c, i);
     // Potential: trainings used of the most they can take; sorted by how many are left.
     const left = e.potentialMax != null ? Math.max(0, e.potentialMax - (e.potential ?? 0)) : -1;
-    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, potential: left, used: e.potential, max: e.potentialMax, points: d.points, payroll: d.wage, profit: gameEstimate(d), breakEven: d.points * pointValue,
+    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, potential: left, used: e.potential, max: e.potentialMax, points: d.points, payroll: d.wage, profit: gameEstimate(d), goodsProfit: d.profit, breakEven: d.points * pointValue,
       others: w ? w.others + w.toolboxes : 0, value: w ? w.value : gameEstimate(d), worth: w };
   })));
-  const COLS = { company: 'Company', name: 'Name', production: 'Production', potential: 'Potential', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit (game)', others: 'For coworkers', value: 'Value to company' };
+  const COLS = { company: 'Company', name: 'Name', production: 'Production', potential: 'Potential', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit (game)', goodsProfit: 'Profit (goods)', others: 'For coworkers', value: 'Value to company' };
   let sortKey = $state('value');
   let sortDesc = $state(true);
   function sortBy(k) {
@@ -113,6 +113,7 @@
               <td class="num">{fmt(r.payroll, 2)}</td>
               <td class="num" title="Payroll at which this employee would make exactly nothing">{fmt(r.breakEven, 2)}</td>
               <td class="num"><strong class:good={r.profit >= 0} class:bad={r.profit < 0}>{signed(r.profit)}</strong></td>
+              <td class="num" title="At what {itemLabel(r.good) || r.good} sells for, minus its materials, per point"><strong class:good={r.goodsProfit >= 0} class:bad={r.goodsProfit < 0}>{signed(r.goodsProfit)}</strong></td>
               <td class="num" title={r.worth ? worthTip(r.worth) : ''}><span class:good={r.others > 0.005} class:bad={r.others < -0.005} class:muted={Math.abs(r.others) <= 0.005}>{signed(r.others)}</span></td>
               <td class="num" title={r.worth ? worthTip(r.worth) : ''}><strong class:good={r.value >= 0} class:bad={r.value < 0}>{signed(r.value)}</strong></td>
             </tr>
