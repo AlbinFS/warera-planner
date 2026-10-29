@@ -89,6 +89,11 @@ export async function cachedBatch(calls, ttlMs = 60 * 1000) {
 }
 
 /** A cached call: the same procedure and input within ttlMs share one request. */
+/** Drops what's kept for these procedures, so the next call asks the game again. */
+export function forget(...procedures) {
+  for (const key of [...cache.keys()]) if (procedures.some((p) => key.startsWith(p + '{'))) cache.delete(key);
+}
+
 export function cached(procedure, input = {}, ttlMs = 5 * 60 * 1000) {
   const key = procedure + JSON.stringify(input);
   const hit = cache.get(key);

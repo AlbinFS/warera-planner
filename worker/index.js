@@ -104,11 +104,14 @@ async function companyEmployees(env, request) {
   if (!ids.length || ids.length > 20) return json({ error: 'Give ?ids= with 1 to 20 company ids.' }, 400);
   const api = new WareraApi(env);
   if (!api.key) return json({ error: 'No API key on the server.' }, 503);
+  // ?fresh=1 (the Eco page's Refresh): straight from the game, not the minute-old copy.
+  const fresh = new URL(request.url).searchParams.get('fresh') === '1';
+  if (fresh) memo.delete(`employees:${ids.join(',')}`);
   const body = await remembered(`employees:${ids.join(',')}`, async () => {
     const pages = await api.batch('employee.getCompanyEmployees', ids.map((companyId) => ({ companyId })));
     return JSON.stringify({ companies: Object.fromEntries(ids.map((id, i) => [id, pages[i]])) });
   });
-  return json(body, 200, 60);
+  return json(body, 200, fresh ? 0 : 60);
 }
 
 /** A unit's recent contracts (won or currently led), newest first. */

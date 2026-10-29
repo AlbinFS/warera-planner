@@ -2,7 +2,7 @@
  * Eco page state: the player's companies and their employees (both from the
  * API) and eco settings (kept in this browser).
  */
-import { cached, cachedBatch, getApiKey } from './warera.js';
+import { cached, cachedBatch, getApiKey, forget } from './warera.js';
 
 const SETTINGS_KEY = 'eco.settings.v2';
 // Employees used to be typed in and kept here; they come from the game now.
@@ -46,14 +46,16 @@ $effect.root(() => {
 });
 
 /** The player's companies: good, upgrade levels, region, whether switched off. */
-export async function loadCompanies(playerId) {
+export async function loadCompanies(playerId, { fresh = false } = {}) {
+  // Refresh: what the game has now, not what was kept from a few minutes ago.
+  if (fresh) forget('company.getCompanies', 'company.getById', 'manager.getByCompanyId', 'employee.getCompanyEmployees');
   const list = await cached('company.getCompanies', { userId: playerId, perPage: 100 }, 5 * 60 * 1000);
   const ids = (list.items ?? []).map((c) => (typeof c === 'string' ? c : c._id)).filter(Boolean);
   const [companies, managers] = await Promise.all([
     Promise.all(ids.map((companyId) => cached('company.getById', { companyId }, 5 * 60 * 1000))),
     // Each company's hired manager, if any (public): their pay and bonus.
     cachedBatch(ids.map((companyId) => ['manager.getByCompanyId', { companyId }]), 5 * 60 * 1000).catch(() => ids.map(() => null)),
-    loadEmployees(ids).then(
+    loadEmployees(ids, fresh).then(
       () => { employeesStatus.error = ''; },
       (err) => { employeesStatus.error = `Couldn't load your employees from the game (${err.message}); income is counted without them.`; },
     ),
@@ -91,7 +93,7 @@ export const words = (code) => String(code ?? '').replace(/([A-Z])/g, ' $1').rep
  * shows: production, bonus % (Management included) and payroll per day (the
  * API's wage is per hour); the rest is shown on the Employees tab.
  */
-async function loadEmployees(ids) {
+async function loadEmployees(ids, fresh = false) {
   if (getApiKey()) {
     const pages = await cachedBatch(ids.map((companyId) => ['employee.getCompanyEmployees', { companyId }]), 60 * 1000);
     ids.forEach((id, i) => {
@@ -101,7 +103,7 @@ async function loadEmployees(ids) {
   }
   for (let i = 0; i < ids.length; i += 20) {
     const chunk = ids.slice(i, i + 20);
-    const res = await fetch(`/api/company-employees?ids=${chunk.join(',')}`);
+    const res = await fetch(`/api/company-employees?ids=${chunk.join(',')}${fresh ? '&fresh=1' : ''}`);
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
     for (const id of chunk) {

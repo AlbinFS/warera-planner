@@ -88,6 +88,11 @@
   };
   // Open an employee's card list below.
   let openCards = $state(null);
+  // The rarity each employee was dealt this session (the game rolls one rarity for the whole hand): only those cards.
+  let dealt = $state({});
+  const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+  const setDealt = (id, rarity) => { dealt = { ...dealt, [id]: dealt[id] === rarity ? null : rarity }; };
+  const ofDealt = (id, list) => (dealt[id] ? list.filter((c) => c.rarity === dealt[id]).sort((a, b) => b.total - a.total) : list);
   function showCards(id) {
     openCards = id;
     requestAnimationFrame(() => document.getElementById(`cards-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -168,7 +173,9 @@
     {#each plan as p (p.worker.id)}
       {@const w = p.worker}
       {@const r = cards[w.id]}
-      <article class="person" data-state={p.verdict}>
+      <article class="person" data-state={p.verdict} role="button" tabindex="0" title="All of {w.name}'s cards"
+        onclick={(e) => { if (!e.target.closest('button, a, .rarities')) showCards(w.id); }}
+        onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) showCards(w.id); }}>
         <header>
           {#if countries[w.nationality]?.code}<img class="flag" src={flagImage(countries[w.nationality].code)} alt={countries[w.nationality]?.name ?? ''} title={countries[w.nationality]?.name ?? ''} width="20" height="14" />{/if}
           <strong class="pname">{w.name}</strong>
@@ -195,13 +202,18 @@
         <p class="why">{p.why}</p>
         {#if r}
           <div class="picks">
-            <span class="plabel">Pick, in this order</span>
+            <div class="rarities" role="group" aria-label="The rarity you were dealt">
+              <span class="plabel">{dealt[w.id] ? 'Dealt' : 'Pick, in this order'}</span>
+              {#each RARITY_ORDER.filter((x) => r.cards.some((c) => c.rarity === x)) as x (x)}
+                <button type="button" class="rchip" data-rarity={x} aria-pressed={dealt[w.id] === x} title="I was dealt {x} cards: show only those" onclick={() => setDealt(w.id, x)}>{RARITY_SHORT[x]}</button>
+              {/each}
+            </div>
             <ol>
-              {#each likely(r.cards) as c, i (i)}
+              {#each dealt[w.id] ? ofDealt(w.id, r.cards).slice(0, 8) : likely(r.cards) as c, i (i)}
                 <li><span class="rarity" data-rarity={c.rarity}>{RARITY_SHORT[c.rarity]}</span> {c.label} <small class="muted">{signed(c.perDay, 2)}/day · {fmt(c.chance * 100, 0)} % in hand</small></li>
               {/each}
             </ol>
-            {#if rareBetter(r.cards).length}<p class="rare">Rarer but better, take if dealt: {rareBetter(r.cards).map((c) => `${c.label} (${c.chance >= 0.001 ? fmt(c.chance * 100, 1) : '<0.1'} %)`).join(' · ')}</p>{/if}
+            {#if !dealt[w.id] && rareBetter(r.cards).length}<p class="rare">Rarer but better, take if dealt: {rareBetter(r.cards).map((c) => `${c.label} (${c.chance >= 0.001 ? fmt(c.chance * 100, 1) : '<0.1'} %)`).join(' · ')}</p>{/if}
             <button class="link" onclick={() => showCards(w.id)}>All cards</button>
           </div>
         {/if}
@@ -228,11 +240,18 @@
     {@const r = cards[w.id]}
     <details id="cards-{w.id}" open={openCards === w.id}>
       <summary><strong>{w.name}</strong> <span class="muted">· {w.company.name} · {r.left} {r.left === 1 ? 'training' : 'trainings'} left · {fmt(r.days, 0)} days · a session ≈ {signed(r.session, 1)} G</span></summary>
+      <div class="rarities" role="group" aria-label="The rarity you were dealt">
+        <span class="plabel">Dealt</span>
+        {#each RARITY_ORDER.filter((x) => r.cards.some((c) => c.rarity === x)) as x (x)}
+          <button type="button" class="rchip" data-rarity={x} aria-pressed={dealt[w.id] === x} onclick={() => setDealt(w.id, x)}>{x}</button>
+        {/each}
+        {#if dealt[w.id]}<button type="button" class="link" onclick={() => setDealt(w.id, dealt[w.id])}>show all</button>{/if}
+      </div>
       <div class="scroll">
         <table class="cards">
           <thead><tr><th>Card</th><th title="Rarity">R</th><th class="num" title="Chance it is in a hand of 3">In a hand</th><th class="num">G a day</th><th class="num">G in all</th></tr></thead>
           <tbody>
-            {#each shown(r.cards) as c, i (i)}
+            {#each dealt[w.id] ? ofDealt(w.id, r.cards) : shown(r.cards) as c, i (i)}
               <tr class:bad-row={c.total < 0}>
                 <td>{c.label}</td>
                 <td><span class="rarity" data-rarity={c.rarity}>{RARITY_SHORT[c.rarity]}</span></td>
@@ -383,6 +402,17 @@
   .why { margin: 0; font-size: 12px; color: var(--muted); }
   .picks { border-top: 1px solid var(--line); padding-top: 8px; font-size: 13px; }
   .plabel { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .person { cursor: pointer; transition: border-color .15s; }
+  .person:hover { border-color: var(--accent); }
+  .person:focus-visible { outline: 2px solid var(--accent); }
+  .rarities { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 2px 0 4px; }
+  .rarities .plabel { margin-right: 4px; }
+  .rchip { --r: var(--muted); font-size: 11px; font-weight: 700; text-transform: capitalize; min-width: 24px; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--r); color: var(--r); background: none; cursor: pointer; }
+  .rchip[data-rarity='uncommon'] { --r: var(--good); }
+  .rchip[data-rarity='rare'] { --r: var(--info); }
+  .rchip[data-rarity='epic'] { --r: #a35bd6; }
+  .rchip[data-rarity='legendary'] { --r: var(--accent); }
+  .rchip[aria-pressed='true'] { background: var(--r); color: var(--bg); }
   .picks ol { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 3px; }
   .picks .rare { margin: 6px 0 0; font-size: 12px; color: var(--accent); }
   @media (max-width: 420px) { .tiles { grid-template-columns: repeat(2, 1fr); } }

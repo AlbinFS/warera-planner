@@ -28,9 +28,11 @@
   // Workforce overview: every employee, sortable.
   const all = $derived(companies.filter((c) => !c.disabled).flatMap((c) => (ecoEmployees[c.id] ?? []).map((e) => {
     const d = day(e, c);
-    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, points: d.points, payroll: d.wage, profit: gameEstimate(d), breakEven: d.points * pointValue };
+    // Potential: trainings used of the most they can take; sorted by how many are left.
+    const left = e.potentialMax != null ? Math.max(0, e.potentialMax - (e.potential ?? 0)) : -1;
+    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, potential: left, used: e.potential, max: e.potentialMax, points: d.points, payroll: d.wage, profit: gameEstimate(d), breakEven: d.points * pointValue };
   })));
-  const COLS = { company: 'Company', name: 'Name', production: 'Production', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit (game)' };
+  const COLS = { company: 'Company', name: 'Name', production: 'Production', potential: 'Potential', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit (game)' };
   let sortKey = $state('profit');
   let sortDesc = $state(true);
   function sortBy(k) {
@@ -86,6 +88,7 @@
               <td><img src={itemImage(r.good, items)} alt="" width="18" height="18" class="mini" /> {r.company}</td>
               <td>{r.name}</td>
               <td class="num">{r.production}</td>
+              <td class="num" title="Trainings used of the most they can take; trainings left below">{#if r.max != null}{r.used ?? 0} / {r.max}<br /><small class:good={r.potential > 0} class:muted={r.potential === 0}>{r.potential ? `${r.potential} left` : 'done'}</small>{:else}<span class="muted">?</span>{/if}</td>
               <td class="num">{fmt(r.points, 1)}</td>
               <td class="num">{fmt(r.payroll, 2)}</td>
               <td class="num" title="Payroll at which this employee would make exactly nothing">{fmt(r.breakEven, 2)}</td>
