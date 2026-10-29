@@ -8,6 +8,7 @@ import { prepare, strongest, mostProfit, joined, strongestSplit, isSplit, cheape
 import { WEAR_PER_HIT, SCRAP_BASE, itemPrice, canFight } from '../combat/model.js';
 import { searchLayout } from '../combat/client.js';
 import { incomePlan } from './income.js';
+import { prestigeUsed } from './prestige.js';
 
 const GEAR_SLOTS = ['weapon', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 
@@ -22,10 +23,17 @@ export function fightOptions(settings) {
 /** Whether the settings fight the debuff with its own build. */
 export const splitActive = (market, settings) => isSplit({ items: market.gameConfigItems }, fightOptions(settings));
 
-/** The player's level, rank and prestige (a shared build carries its own). */
-export function playerOf(planner) {
+/**
+ * The player's level, rank and prestige (a shared build carries its own):
+ * ranks per skill and the prestige points there are to place.
+ * prestige: other ranks (an optimizer's) in place of the planned ones.
+ */
+export function playerOf(planner, prestige = planner.player?.prestige) {
   const p = planner.player;
-  return { level: p?.level ?? 1, militaryRankPercent: p?.militaryRankPercent ?? 0, prestige: p?.prestige ?? {} };
+  return {
+    level: p?.level ?? 1, militaryRankPercent: p?.militaryRankPercent ?? 0, prestige: prestige ?? {},
+    prestigePoints: Math.max(p?.prestigePoints ?? 0, prestigeUsed(p?.prestige)),
+  };
 }
 
 /** The planner's gear as engine rolls ({ code, skills, price }; ammo a code). */
@@ -242,7 +250,7 @@ export async function optimizeSkills(market, planner, settings, { min, max, keep
   }, { onProgress: (s) => onProgress?.({ evaluations: s.checked }), signal });
   if (!r?.best || r.best.unreachable) return { error: 'No skill layout reaches that damage range with these settings.' };
   return {
-    skills: { ...start, ...r.levels }, income: r.best.income ?? 0, incomeChange: income ? r.best.income ?? 0 : null,
+    skills: { ...start, ...r.levels }, prestige: r.prestige, income: r.best.income ?? 0, incomeChange: income ? r.best.income ?? 0 : null,
     cost: r.best.cost, elapsedMs: Date.now() - started, hadEconomy: false,
   };
 }

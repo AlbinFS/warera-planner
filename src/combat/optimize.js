@@ -15,6 +15,7 @@
  * defense options are cached per stat values.
  */
 import { playerStats, wearPerSwing, itemPrice, softCapPercent, FOODS, AMMOS, HEALTH_COST } from './model.js';
+import { minPoints, maxRank } from '../lib/prestige.js';
 
 // Offense options closer than this in cost per swing (G) count as one: the strongest is kept.
 // (0.005 gave the same best builds as 0.0005, to the unit, in every test case, in a third less time.)
@@ -629,9 +630,15 @@ function seeded(seed) {
  * trimmed to the budget), two that spread the points (unless `spreads` is
  * false), and EXTRA_STARTS random fight layouts.
  */
-export function layoutSpace(config, { start, searched = FIGHT, budget, playerLevel, zeroed = [], extraStarts = EXTRA_STARTS, spreads = true }) {
-  const used = (l) => searched.reduce((t, s) => t + levelCost(config, s, l[s] ?? 0), 0);
-  const max = Object.fromEntries(searched.map((s) => [s, maxLevel(config, s, playerLevel)]));
+export function layoutSpace(config, { start, searched = FIGHT, budget, playerLevel, zeroed = [], extraStarts = EXTRA_STARTS, spreads = true, prestigePoints = 0 }) {
+  // With prestige points the layouts are effective levels (level + ranks; prestige.js): a rank saves
+  // the skill points of a level, and lets a skill past 10.
+  const unlocked = Object.fromEntries(searched.map((s) => [s, maxLevel(config, s, playerLevel)]));
+  const cost = (s, n) => levelCost(config, s, n);
+  const used = prestigePoints > 0
+    ? (l) => minPoints(searched, l, prestigePoints, cost, (s) => unlocked[s])
+    : (l) => searched.reduce((t, s) => t + levelCost(config, s, l[s] ?? 0), 0);
+  const max = Object.fromEntries(searched.map((s) => [s, unlocked[s] + (unlocked[s] > 0 ? maxRank(prestigePoints) : 0)]));
   const fits = (l) => used(l) <= budget && searched.every((s) => l[s] >= 0 && l[s] <= max[s]);
   const keyOf = (l) => searched.map((s) => l[s]).join(',');
   const neighbours = (l) => {
@@ -706,8 +713,8 @@ const KICK_STEPS = 4;
  * shape, optional): a cheaper score that ranks layouts about as the exact one
  * does; with it, only a step's SCREEN best neighbours by it are scored exactly.
  */
-export async function bestLayoutAsync(config, { start, searched = FIGHT, budget, playerLevel, zeroed, extraStarts, spreads, scoreMany, scoreQuick = null, screen = SCREEN, kicks = KICKS, isBetter = better, onStep, shouldStop }) {
-  const space = layoutSpace(config, { start, searched, budget, playerLevel, zeroed, extraStarts, spreads });
+export async function bestLayoutAsync(config, { start, searched = FIGHT, budget, playerLevel, zeroed, extraStarts, spreads, prestigePoints = 0, scoreMany, scoreQuick = null, screen = SCREEN, kicks = KICKS, isBetter = better, onStep, shouldStop }) {
+  const space = layoutSpace(config, { start, searched, budget, playerLevel, zeroed, extraStarts, spreads, prestigePoints });
   const cached = (score) => {
     const memo = new Map();
     const all = async (list, hint = null) => {

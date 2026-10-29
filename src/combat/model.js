@@ -46,10 +46,10 @@ export function breakpoint(percent, cap = 40) {
   return v;
 }
 
-/** A skill's value at a level (plus prestige, at most 4), from the game config. */
+/** A skill's value at a level plus prestige ranks (one level each), from the game config; extrapolated past the table. */
 export function skillValue(config, skill, level, prestige = 0) {
   const levels = config.skills[skill]?.levels ?? {};
-  const n = level + Math.min(4, Math.max(0, prestige));
+  const n = level + Math.max(0, prestige);
   if (typeof levels[n]?.value === 'number') return levels[n].value;
   const top = Math.max(...Object.keys(levels).map(Number));
   const step = (levels[top]?.value ?? 0) - (levels[top - 1]?.value ?? levels[top]?.value ?? 0);

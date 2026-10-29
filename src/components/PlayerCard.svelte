@@ -46,9 +46,9 @@
           {#if country?.code}<img class="flag" src={flagImage(country.code)} alt={country.name} title={country.name} width="22" height="16" />{/if}
           <strong>{planner.player.username}</strong>
         </div>
-        <div class="muted small">Level {planner.player.level} · military rank +{planner.player.militaryRankPercent}%</div>
+        <div class="muted small">Level {planner.player.own?.level ?? planner.player.level}{#if planner.player.own?.prestigePoints} · <span class="star">★ prestiged {planner.player.own.prestigePoints}×</span>{/if} · military rank +{planner.player.militaryRankPercent}%{#if planner.player.own && planner.player.level !== planner.player.own.level} · <strong>planning level {planner.player.level}</strong>{/if}</div>
       </div>
-      <div class="level num" title="Level">{planner.player.level}</div>
+      <div class="level num" title="Level{planner.player.own && planner.player.level !== planner.player.own.level ? ' (planned)' : ''}">{planner.player.level}</div>
     </div>
   {:else}
     <p class="intro"><strong>Start with your WarEra username.</strong> Your skills and the gear you wear are loaded, then you can change anything and see the damage and cost update.</p>
@@ -68,6 +68,7 @@
   .flag { border-radius: 2px; }
   .level { margin-left: auto; font-size: 34px; font-weight: 700; color: var(--muted); }
   .small { font-size: 13px; }
+  .star { color: var(--r-legendary); }
   .intro { margin: 0 0 12px; }
   .player.empty { border-color: var(--accent); }
   form { display: flex; gap: 8px; }

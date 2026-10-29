@@ -16,11 +16,11 @@ export function priceKey(code, skills) {
   return entries.length ? `${code}:${entries.map(([k, v]) => `${k}=${v}`).join('|')}` : `${code}:no-skills`;
 }
 
-/** Value of a skill at a level plus prestige (at most 4), from the game config; extrapolated past the table. */
+/** Value of a skill at a level plus prestige ranks (one level each), from the game config; extrapolated past the table. */
 export function skillValue(skillConfig, level, prestige = 0) {
   const levels = skillConfig?.levels ?? {};
   const at = (n) => (typeof levels[String(n)]?.value === 'number' ? levels[String(n)].value : null);
-  const effective = level + Math.min(4, Math.max(0, prestige));
+  const effective = level + Math.max(0, prestige);
   if (at(effective) != null) return at(effective);
   const top = Math.max(...Object.keys(levels).map(Number).filter((n) => at(n) != null));
   const step = at(top) - (at(top - 1) ?? at(top));

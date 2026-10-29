@@ -74,6 +74,7 @@
   let points = $state.raw([]);
   let search = $state.raw(null);
   let start = $state.raw(null);
+  let startRanks = $state.raw({});
   // Economy income per day for the skills the run ended on, modelled from the
   // player's companies for that layout.
   let income = $state.raw(null);
@@ -116,6 +117,7 @@
     search = null;
     income = null;
     start = { ...planner.skills };
+    startRanks = { ...(planner.player?.prestige ?? {}) };
     controller = new AbortController();
     const began = Date.now();
     const secs = () => `${Math.round((Date.now() - began) / 1000)} s`;
@@ -153,7 +155,7 @@
       phase = 'builds';
       document.title = 'Listing builds · optimizing…';
       status = 'Listing builds for these skills…';
-      points = await collectBuilds(data.market, planner, runSettings, levels, (share) => { progress = share; });
+      points = await collectBuilds(data.market, planner, runSettings, levels, (share) => { progress = share; }, search?.prestige);
       status = `Done in ${secs()} · ${points.length} exact builds for ${terms.mode === 'gear' ? 'your planned' : 'the suggested'} skills.`;
       finished = status;
     } catch (err) {
@@ -184,6 +186,7 @@
 
   function useInPlanner(build) {
     if (search?.levels) for (const s of ALL_SKILLS) planner.skills[s] = search.levels[s];
+    if (search?.prestige && planner.player) planner.player.prestige = { ...search.prestige };
     applyBuild(build.equipment, build.food, build.debuff);
     navigate('/');
   }
@@ -290,10 +293,12 @@
         <thead><tr><th>Skill</th><th>Planned</th><th>Suggested</th></tr></thead>
         <tbody>
           {#each skillRows as s (s)}
-            {@const d = (search.levels[s] ?? 0) - (start[s] ?? 0)}
-            <tr class:changed={d !== 0} class:eco-first={s === ECONOMY_SKILLS[0]}>
-              <td>{NAMES[s]}{#if ECONOMY_SKILLS.includes(s) && !income?.searched} <small class="muted">kept</small>{/if}</td><td class="num">{start[s] ?? 0}</td>
-              <td class="num"><strong>{search.levels[s] ?? 0}</strong>{#if d} <span class={d > 0 ? 'pos' : 'neg'}>({d > 0 ? '+' : ''}{d})</span>{/if}</td>
+            {@const was = startRanks[s] ?? 0}
+            {@const now = search.prestige?.[s] ?? was}
+            {@const d = (search.levels[s] ?? 0) + now - (start[s] ?? 0) - was}
+            <tr class:changed={d !== 0 || now !== was} class:eco-first={s === ECONOMY_SKILLS[0]}>
+              <td>{NAMES[s]}{#if ECONOMY_SKILLS.includes(s) && !income?.searched} <small class="muted">kept</small>{/if}</td><td class="num">{start[s] ?? 0}{#if was}<span class="rank" title="Prestige ranks: one level each"> +{was}★</span>{/if}</td>
+              <td class="num"><strong>{search.levels[s] ?? 0}</strong>{#if now}<span class="rank" title="Prestige ranks: one level each"> +{now}★</span>{/if}{#if d} <span class={d > 0 ? 'pos' : 'neg'}>({d > 0 ? '+' : ''}{d})</span>{/if}</td>
             </tr>
           {/each}
         </tbody>
@@ -402,6 +407,7 @@
   th { color: var(--muted); font-size: 12px; font-weight: 500; position: sticky; top: 0; background: var(--surface); }
   th:first-child, td:first-child { text-align: left; }
   .skills { max-width: 420px; }
+  .rank { color: var(--r-legendary); font-size: 12px; }
   .skills tr:not(.changed) td { color: var(--muted); }
   td.gear { text-align: left; }
   td.gear :global(.strip) { flex-wrap: nowrap; }

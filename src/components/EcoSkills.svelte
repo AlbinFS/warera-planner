@@ -3,6 +3,8 @@
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings } from '../lib/eco.svelte.js';
   import { ECO_SKILLS, ecoValue, ecoCost, dailyIncome, optimizeEcoSkills, trainingsFromEmployees } from '../lib/eco.js';
+  import { FIGHT_SKILLS } from '../engine/inputs.js';
+  import { prestigeUsed } from '../lib/prestige.js';
   import { fmt } from '../lib/format.js';
   import Icon from './Icon.svelte';
   import { mdiFactory, mdiLightningBolt, mdiAccountGroup, mdiCrown, mdiAccountStar } from '@mdi/js';
@@ -20,12 +22,21 @@
   const skills = $derived(config.skills);
   const level = $derived(planner.player?.level ?? 1);
   const current = $derived(planner.player?.ecoLevels ?? Object.fromEntries(ECO_SKILLS.map((s) => [s, 0])));
+  // Prestige ranks as the game has them now (each one more level), and the planned prestige points.
+  const ownRanks = $derived(planner.player?.own?.prestige ?? {});
+  const currentEffective = $derived(Object.fromEntries(ECO_SKILLS.map((s) => [s, (current[s] ?? 0) + (ownRanks[s] ?? 0)])));
   const currentCost = $derived(ECO_SKILLS.reduce((sum, s) => sum + ecoCost(skills, s, current[s] ?? 0), 0));
   const budget = $derived(ecoSettings.budgetMode === 'all' ? level * 4
     : ecoSettings.budgetMode === 'custom' ? Math.max(0, Number(ecoSettings.customBudget) || 0)
     : Math.max(0, level * 4 - fightPoints));
+  // Prestige points for eco: all of them for pure eco, else what the fight skills' ranks leave.
+  const prestigePoints = $derived.by(() => {
+    const total = Math.max(planner.player?.prestigePoints ?? 0, prestigeUsed(planner.player?.prestige));
+    if (ecoSettings.budgetMode === 'all') return total;
+    return Math.max(0, total - prestigeUsed(Object.fromEntries(FIGHT_SKILLS.map((s) => [s, planner.player?.prestige?.[s] ?? 0]))));
+  });
 
-  const now = $derived(dailyIncome(current, plan, config));
+  const now = $derived(dailyIncome(currentEffective, plan, config));
   // What the employees can train a day (the box overrides it).
   const autoTrainings = $derived(trainingsFromEmployees(plan.companies.flatMap((c) => c.employees ?? [])));
   const typedTrainings = $derived(ecoSettings.trainingsPerDay !== null && ecoSettings.trainingsPerDay !== '' && ecoSettings.trainingsPerDay !== undefined);
@@ -34,17 +45,22 @@
   let best = $state.raw(null);
   let ran = $state(false);
   let ranWith = $state('');
-  const inputsKey = $derived(JSON.stringify([budget, plan]));
+  const inputsKey = $derived(JSON.stringify([budget, plan, prestigePoints, level]));
   let applied = $state(false);
   function optimize() {
     applied = false;
-    best = optimizeEcoSkills(plan, config, { budget, playerLevel: level });
+    best = optimizeEcoSkills(plan, config, { budget, playerLevel: level, prestigePoints, prefer: ownRanks });
     ran = true;
     ranWith = inputsKey;
   }
   const outdated = $derived(ran && ranWith !== inputsKey);
   const employeeCount = $derived(plan.companies.reduce((s, c) => s + (c.employees?.length ?? 0), 0));
-  const delta = (s) => (best ? best.levels[s] - (current[s] ?? 0) : 0);
+  const delta = (s) => (best ? best.effective[s] - currentEffective[s] : 0);
+  function apply() {
+    for (const s of ECO_SKILLS) planner.skills[s] = best.levels[s];
+    if (planner.player) planner.player.prestige = { ...planner.player.prestige, ...best.ranks };
+    applied = true;
+  }
 </script>
 
 <section class="card" aria-labelledby="eco-in-title">
@@ -76,7 +92,7 @@
       <input type="number" min="0" max="20" bind:value={ecoSettings.extraCompanies} />
       <small class="help">You own {plan.ownedCount}. Count new ones here to see what a higher Companies skill would earn: each new company gets a level 1 engine making the best-paying good. The cost of building them isn't included.</small>
     </label>
-    <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy <small class="help">(10 energy each, for your Production skill's points: {ecoValue(skills, 'production', current.production ?? 0)} now, +3 a level)</small></label>
+    <label class="check"><input type="checkbox" bind:checked={ecoSettings.selfWork} /> I self-work with spare energy <small class="help">(10 energy each, for your Production skill's points: {ecoValue(skills, 'production', currentEffective.production)} now, +3 a level)</small></label>
   </div>
   <div class="go">
     <button class="primary" onclick={optimize}>Find best eco skills</button>
@@ -96,6 +112,7 @@
       {#if best.result.leadership > 0.05 || now.leadership > 0.05}<div><dt>Better training cards</dt><dd class="num">{fmt(best.result.leadership, 1)} G</dd><small class="muted">Leadership {best.levels.leadership}: value, not money (now {fmt(now.leadership, 1)})</small></div>{/if}
       <div><dt>Difference</dt><dd class="num">{best.result.value >= now.value ? '+' : ''}{fmt(best.result.value - now.value, 1)} G</dd></div>
       <div><dt>Points used</dt><dd class="num">{best.spent} <small class="muted">of {budget}</small></dd></div>
+      {#if prestigePoints > 0}<div><dt>★ Prestige points</dt><dd class="num">{prestigeUsed(best.ranks)} <small class="muted">of {prestigePoints}</small></dd><small class="muted">each rank is a level without skill points</small></div>{/if}
     </dl>
     <table>
       <thead><tr><th>Skill</th><th>Now</th><th>Best</th><th>What it does</th></tr></thead>
@@ -103,14 +120,14 @@
         {#each ECO_SKILLS as s (s)}
           <tr>
             <td class="name"><Icon path={META[s].icon} size={16} color="var(--c-economy)" /> {META[s].label}</td>
-            <td class="num">{current[s] ?? 0} <small class="muted">({ecoValue(skills, s, current[s] ?? 0)})</small></td>
-            <td class="num"><strong class:up={delta(s) > 0} class:down={delta(s) < 0}>{best.levels[s]}</strong> <small class="muted">({ecoValue(skills, s, best.levels[s])})</small></td>
+            <td class="num">{current[s] ?? 0}{#if ownRanks[s]}<span class="rank"> +{ownRanks[s]}★</span>{/if} <small class="muted">({ecoValue(skills, s, currentEffective[s])})</small></td>
+            <td class="num"><strong class:up={delta(s) > 0} class:down={delta(s) < 0}>{best.levels[s]}</strong>{#if best.ranks[s]}<span class="rank"> +{best.ranks[s]}★</span>{/if} <small class="muted">({ecoValue(skills, s, best.effective[s])})</small></td>
             <td class="muted small">{META[s].what}</td>
           </tr>
         {/each}
       </tbody>
     </table>
-    <p><button class="primary" onclick={() => { for (const s of ECO_SKILLS) planner.skills[s] = best.levels[s]; applied = true; }}>Put these in Overview & MinMax</button>
+    <p><button class="primary" onclick={apply}>Put these in Overview & MinMax</button>
       {#if applied}<span class="muted small"> Done: the Overview & MinMax page and the Skill playground now use them.</span>{/if}</p>
 
     <h3>Where the money comes from (best skills)</h3>
@@ -146,6 +163,7 @@
   td.num { white-space: nowrap; }
   .name { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
   .up { color: var(--good); }
+  .rank { color: var(--r-legendary); font-size: 12px; }
   .down { color: var(--bad); }
   h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 16px 0 6px; font-weight: 500; }
   .parts { margin: 0; padding-left: 18px; display: grid; gap: 4px; }

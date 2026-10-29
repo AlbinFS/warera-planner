@@ -135,6 +135,7 @@
     if (!result.best) throw new Error('No skill layout has a build within this budget.');
     return {
       skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, result.levels[s]])),
+      prestige: result.prestige,
       budgetBuild: result.best,
       incomeChange: keepEconomy ? null : result.incomeChange,
     };
@@ -148,6 +149,7 @@
   async function applySkills(withGear = true) {
     const keepDamage = current && !current.error ? current.damage : null;
     for (const s of ALL_SKILLS) planner.skills[s] = found.skills[s];
+    if (found.prestige && planner.player) planner.player.prestige = { ...found.prestige };
     if (found.budgetBuild) {
       applyBuild(found.budgetBuild.equipment, found.budgetBuild.food);
     } else if (withGear && keepDamage) {
@@ -159,7 +161,8 @@
     found = null;
   }
 
-  const changed = $derived(found?.skills ? ALL_SKILLS.filter((s) => found.skills[s] !== planner.skills[s]) : []);
+  const rankOf = (s, ranks = planner.player?.prestige) => ranks?.[s] ?? 0;
+  const changed = $derived(found?.skills ? ALL_SKILLS.filter((s) => found.skills[s] !== planner.skills[s] || rankOf(s, found.prestige ?? planner.player?.prestige) !== rankOf(s)) : []);
 </script>
 
 {#if show !== 'skills'}
@@ -290,9 +293,10 @@
           <thead><tr><th>Skill</th><th>Now</th><th>Best</th></tr></thead>
           <tbody>
             {#each changed as s (s)}
+              {@const after = found.skills[s] + rankOf(s, found.prestige ?? planner.player?.prestige)}
               <tr>
-                <td>{NAMES[s]}</td><td class="num">{planner.skills[s]}</td>
-                <td class="num"><strong class={found.skills[s] > planner.skills[s] ? 'up' : 'down'}>{found.skills[s]}</strong></td>
+                <td>{NAMES[s]}</td><td class="num">{planner.skills[s]}{#if rankOf(s)}<span class="rank" title="Prestige ranks: one level each"> +{rankOf(s)}★</span>{/if}</td>
+                <td class="num"><strong class={after > planner.skills[s] + rankOf(s) ? 'up' : after < planner.skills[s] + rankOf(s) ? 'down' : ''}>{found.skills[s]}</strong>{#if rankOf(s, found.prestige ?? planner.player?.prestige)}<span class="rank" title="Prestige ranks: one level each"> +{rankOf(s, found.prestige ?? planner.player?.prestige)}★</span>{/if}</td>
               </tr>
             {/each}
           </tbody>
@@ -321,6 +325,7 @@
 
 <style>
   .head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .rank { color: var(--r-legendary); font-size: 12px; }
   .head h2 { margin: 0; }
   .switch { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
   .switch button { background: none; border: 0; padding: 6px 12px; cursor: pointer; color: var(--muted); font-size: 13px; }

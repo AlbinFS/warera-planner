@@ -5,6 +5,7 @@
    */
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies, apiKeyState } from '../lib/eco.svelte.js';
+  import { maxRank } from '../lib/prestige.js';
   import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import { staffModels } from '../lib/income.js';
@@ -108,17 +109,20 @@
   const estimateNote = $derived(fromWages ? "the game's current value, read from your employees' wages" : GAME_POINT_VALUE_NOTE);
   const pointValue = $derived(ecoSettings.pointValue > 0 ? ecoSettings.pointValue : estimate);
   const goods = $derived(goodsProfit(items, data.market.itemPrices));
-  const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0));
+  // The game's own levels and prestige ranks (each rank one more level).
+  const ownRank = (s) => planner.player?.own?.prestige?.[s] ?? 0;
+  const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0, ownRank('management')));
   const perPoint = $derived(Object.fromEntries(goods.map((g) => [g.code, g.perPoint])));
 
   // The employees as the hiring and training models see them; what a toolbox is worth to them.
   const staffing = $derived(staffModels(companies, ecoEmployees, { perPoint, managementPercent: 2 * currentManagementValue, regions, countries, items }));
   // What each Leadership level adds a day through better training cards.
-  const leadershipTop = $derived(Math.max(0, ...Object.keys(data.market.gameConfigSkills.leadership?.levels ?? { 0: 1 }).map(Number)));
+  // Past level 10 with prestige ranks.
+  const leadershipTop = $derived(Math.max(0, ...Object.keys(data.market.gameConfigSkills.leadership?.levels ?? { 0: 1 }).map(Number)) + maxRank(Math.max(planner.player?.prestigePoints ?? 0, planner.player?.own?.prestigePoints ?? 0)));
   const leadershipByLevel = $derived(leadershipValues(staffing.models, leadershipTop));
-  const leadership = $derived(planner.player?.ecoLevels?.leadership ?? 0);
+  const leadership = $derived((planner.player?.ecoLevels?.leadership ?? 0) + ownRank('leadership'));
   // What 10 energy of self-work makes now: the Production skill's points at the best-paying good.
-  const selfWorkValue = $derived(ecoValue(data.market.gameConfigSkills, 'production', planner.player?.ecoLevels?.production ?? 0) * Math.max(0, ...companies.filter((c) => !c.disabled).map((c) => perPoint[c.good] ?? 0)));
+  const selfWorkValue = $derived(ecoValue(data.market.gameConfigSkills, 'production', planner.player?.ecoLevels?.production ?? 0, ownRank('production')) * Math.max(0, ...companies.filter((c) => !c.disabled).map((c) => perPoint[c.good] ?? 0)));
 
   /** Everything the model needs, from the companies, employees and settings. */
   const plan = $derived({

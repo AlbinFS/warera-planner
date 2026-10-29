@@ -3,7 +3,8 @@
  * score skill layouts in parallel, while the climb over layouts runs here.
  * The market is sent to each worker once; later searches reuse it.
  */
-import { bestLayoutAsync, better, configOf, FIGHT } from './optimize.js';
+import { bestLayoutAsync, better, configOf, FIGHT, levelCost, maxLevel } from './optimize.js';
+import { effective, prestigeUsed, splitPrestige } from '../lib/prestige.js';
 
 const SIZE = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 2));
 let pool = null;
@@ -41,13 +42,28 @@ const rangeBetter = (a, b) => !!a && a.cost != null && (!b || b.cost == null || 
 
 /**
  * A skill-layout search (args as worker.js describes, plus searched, budget,
- * and zeroed: skills the first start sets to 0).
+ * and zeroed: skills the first start sets to 0). The player's prestige points
+ * (player.prestigePoints; their ranks in player.prestige) are placed too: the
+ * search runs on effective levels (level + ranks) and each result says where
+ * the ranks go: { levels, prestige } (levels without ranks, as the planner has them).
  * onProgress gets each step; `signal` stops it after the current step.
  */
 export async function searchLayout(market, args, { onProgress, signal } = {}) {
   const workers = getPool();
   const ctx = nextCtx++;
-  const { searched, budget, zeroed, ...context } = JSON.parse(JSON.stringify(args));
+  const config = configOf(market);
+  const ranks = args.player.prestige ?? {};
+  // Ranks on skills that aren't searched stay; the rest of the points are the search's.
+  const points = Math.max(0, (args.player.prestigePoints ?? prestigeUsed(ranks)) - prestigeUsed(Object.fromEntries(Object.entries(ranks).filter(([s]) => !args.searched.includes(s)))));
+  const startEffective = effective(args.start, ranks);
+  const split = (l) => {
+    if (!l) return l;
+    const r = splitPrestige(args.searched, l, points, { levelCost: (s, n) => levelCost(config, s, n), maxLevel: (s) => maxLevel(config, s, args.player.level), prefer: ranks });
+    const prestige = { ...ranks, ...(r?.ranks ?? {}) };
+    return { levels: Object.fromEntries(Object.entries(l).map(([s, n]) => [s, args.searched.includes(s) ? r?.levels[s] ?? n : n - (ranks[s] ?? 0)])), prestige };
+  };
+  // Workers score effective levels: no ranks on top.
+  const { searched, budget, zeroed, ...context } = JSON.parse(JSON.stringify({ ...args, start: startEffective, player: { ...args.player, prestige: {} } }));
   const withMarket = market === sentMarket ? context : { ...context, market: JSON.parse(JSON.stringify(market)) };
   sentMarket = market;
   await Promise.all(workers.map((w) => call(w, { op: 'context', ctx, args: withMarket })));
@@ -76,11 +92,12 @@ export async function searchLayout(market, args, { onProgress, signal } = {}) {
     const results = await Promise.all(parts.map((part, w) => (part.length ? call(workers[w], { op: 'score', ctx, layouts: part, near, quick }) : [])));
     return where.map(([w, i]) => results[w][i]);
   };
-  return bestLayoutAsync(configOf(market), {
-    start: args.start, searched, budget, zeroed, playerLevel: args.player.level, scoreMany,
+  const r = await bestLayoutAsync(config, {
+    start: startEffective, searched, budget, zeroed, playerLevel: args.player.level, prestigePoints: points, scoreMany,
     // Most damage: neighbours are screened with one build all session and the loot counted once.
     scoreQuick: args.objective.kind === 'damage' ? (layouts, hint) => scoreMany(layouts, hint, true) : null,
     isBetter: args.objective.kind === 'range' ? rangeBetter : better,
-    onStep: onProgress, shouldStop: () => signal?.aborted,
+    onStep: onProgress && ((s) => onProgress({ ...s, ...split(s.levels) })), shouldStop: () => signal?.aborted,
   });
+  return r?.levels ? { ...r, ...split(r.levels) } : r;
 }

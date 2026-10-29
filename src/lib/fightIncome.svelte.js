@@ -101,12 +101,13 @@ export function trackCompanyProfit(market) {
     $effect(() => {
       const id = planner.player?.id;
       const levels = Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, planner.skills[s] ?? 0]));
+      const ranks = Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, planner.player?.prestige?.[s] ?? 0]));
       if (!id) { companyProfit.value = null; return; }
-      const key = JSON.stringify([id, levels]);
+      const key = JSON.stringify([id, levels, ranks]);
       wanted = key;
       (async () => {
         if (modelFor !== id) { model = await incomeModel(market, planner).catch(() => null); modelFor = id; }
-        if (wanted === key) companyProfit.value = model ? model(levels) : null;
+        if (wanted === key) companyProfit.value = model ? model(levels, ranks) : null;
       })();
     });
   });

@@ -105,7 +105,7 @@
           <tr class="credit"><td class="pic"></td><td>Battle loot <span class="muted">({auto ? `about ${fmt(auto.items, 1)} items, ${fmt(auto.epicPlus, 1)} epic or better` : fightIncome.lootMode === 'items' ? `${fmt(Number(fightIncome.lootItems) || 0, 1)} ${fightIncome.lootRarity} × ${fmt(prices[fightIncome.lootRarity] ?? 0, 1)} G` : `${fmt(terms.perK, 3)} G per 1k`})</span></td><td class="num amount">{fmt(-lootIncome, 2)}</td><td></td></tr>
         {/if}
         {#if income != null}
-          <tr class="credit"><td class="pic"></td><td>Company profit <span class="muted">(a day, at these economy skills)</span></td><td class="num amount">{fmt(-income, 2)}</td><td></td></tr>
+          <tr class="credit"><td class="pic"></td><td>Company profit <span class="muted">(a day, with current economy skills)</span></td><td class="num amount">{fmt(-income, 2)}</td><td></td></tr>
         {/if}
         {#if breakdown.other}
           <tr><td></td><td class="muted">Other (daily credits, gear without a price)</td><td class="num amount">{fmt(breakdown.other, 2)}</td><td></td></tr>

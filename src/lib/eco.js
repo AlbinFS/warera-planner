@@ -16,14 +16,25 @@
  * Everything is pure (no I/O) so it can be checked and reused.
  */
 
+import { maxRank, rankCost, splitPrestige } from './prestige.js';
+
 export const ECO_SKILLS = ['companies', 'management', 'energy', 'production', 'leadership'];
 
 const HOURS = 24;
 const ENERGY_PER_ACTION = 10;
 
-/** Skill value at a level, from the game config. */
-export function ecoValue(skills, skill, level) {
-  return skills[skill]?.levels?.[String(level)]?.value ?? 0;
+/**
+ * Skill value at a level (plus prestige ranks, one level each), from the game
+ * config; past level 10 (prestige) it goes on by the last step, as the game's does.
+ */
+export function ecoValue(skills, skill, level, prestige = 0) {
+  const levels = skills[skill]?.levels ?? {};
+  const n = (level ?? 0) + Math.max(0, prestige ?? 0);
+  const at = (k) => levels[String(k)]?.value;
+  if (typeof at(n) === 'number') return at(n);
+  const top = Math.max(-1, ...Object.keys(levels).map(Number).filter((k) => typeof at(k) === 'number'));
+  if (top < 1 || n < top) return 0;
+  return at(top) + (n - top) * (at(top) - (at(top - 1) ?? at(top)));
 }
 export const ecoCost = (skills, skill, level) => skills[skill]?.levels?.[String(level)]?.totalCost ?? (level * (level + 1)) / 2;
 export const ecoMaxLevel = (skills, skill, playerLevel) => Math.max(0, ...Object.entries(skills[skill]?.levels ?? {})
@@ -220,41 +231,65 @@ export function incomeSteps(plan, config, { skills: names, budget, playerLevel }
 
 /**
  * The eco skill layout with the most value per day (money, and Leadership's
- * better training cards) within a point budget.
- * Exhaustive over the five eco skills (small search). Options: minimum
- * levels per skill (e.g. Leadership while training) and the player level
- * for unlocks. Ties go to the cheaper layout, then to more Energy. When no
- * layout has the energy for every training, the one with the most energy
- * (then the most money), its result marked energyShort.
+ * better training cards) within a point budget, with prestige points placed
+ * too (prestige.js: a rank is a level for prestige points instead of skill points).
+ * Exhaustive over the five eco skills' effective levels (level + ranks; small
+ * search). Options: minimum effective levels per skill (e.g. Leadership while
+ * training), the player level for unlocks, the prestige points to place and
+ * the ranks to keep on a tie (`prefer`). Ties go to the cheaper layout, then to
+ * more Energy. When no layout has the energy for every training, the one with
+ * the most energy (then the most money), its result marked energyShort.
+ * Returns { levels (without ranks), ranks, effective, result, spent }.
  */
-export function optimizeEcoSkills(plan, config, { budget, playerLevel, minimum = {} }) {
+export function optimizeEcoSkills(plan, config, { budget, playerLevel, minimum = {}, prestigePoints = 0, prefer = {} }) {
   const { skills } = config;
-  const max = Object.fromEntries(ECO_SKILLS.map((s) => [s, ecoMaxLevel(skills, s, playerLevel)]));
+  const points = Math.max(0, prestigePoints);
+  const unlocked = Object.fromEntries(ECO_SKILLS.map((s) => [s, ecoMaxLevel(skills, s, playerLevel)]));
+  const top = maxRank(points);
+  const max = Object.fromEntries(ECO_SKILLS.map((s) => [s, unlocked[s] + (unlocked[s] > 0 ? top : 0)]));
+  // Fewest skill points by prestige points used, for the skills chosen so far.
+  const extend = (spent, s, e) => {
+    const next = new Array(points + 1).fill(Infinity);
+    for (let p = 0; p <= points; p++) {
+      if (spent[p] === Infinity) continue;
+      for (let r = Math.max(0, e - unlocked[s]); r <= Math.min(e, unlocked[s] > 0 ? top : 0); r++) {
+        const q = p + rankCost(r);
+        const cost = spent[p] + ecoCost(skills, s, e - r);
+        if (q <= points && cost < next[q]) next[q] = cost;
+      }
+    }
+    return next;
+  };
   let best = null;
   let short = null;
   const levels = {};
-  const walk = (i, spent) => {
+  const walk = (i, spentBy) => {
+    const spent = Math.min(...spentBy);
     if (i === ECO_SKILLS.length) {
       const r = dailyIncome(levels, plan, config);
       if (r.energyShort) {
         if (!best && (!short || r.energyPerDay > short.result.energyPerDay || (r.energyPerDay === short.result.energyPerDay && r.value > short.result.value + 1e-9))) {
-          short = { levels: { ...levels }, result: r, spent };
+          short = { effective: { ...levels }, result: r, spent };
         }
         return;
       }
       if (!best || r.value > best.result.value + 1e-9 || (Math.abs(r.value - best.result.value) <= 1e-9 && spent < best.spent)) {
-        best = { levels: { ...levels }, result: r, spent };
+        best = { effective: { ...levels }, result: r, spent };
       }
       return;
     }
     const s = ECO_SKILLS[i];
     for (let n = minimum[s] ?? 0; n <= max[s]; n++) {
-      const cost = ecoCost(skills, s, n);
-      if (spent + cost > budget) break;
+      const next = extend(spentBy, s, n);
+      // More levels never cost fewer points: past the budget, stop.
+      if (Math.min(...next) > budget) break;
       levels[s] = n;
-      walk(i + 1, spent + cost);
+      walk(i + 1, next);
     }
   };
-  walk(0, 0);
-  return best ?? short;
+  walk(0, [0, ...new Array(points).fill(Infinity)]);
+  const found = best ?? short;
+  if (!found) return null;
+  const split = splitPrestige(ECO_SKILLS, found.effective, points, { levelCost: (s, n) => ecoCost(skills, s, n), maxLevel: (s) => unlocked[s], prefer });
+  return { ...found, levels: split.levels, ranks: split.ranks };
 }

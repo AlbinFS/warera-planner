@@ -10,7 +10,9 @@ import { settings } from './settings.svelte.js';
 const emptyGear = () => Object.fromEntries(SLOTS.map((s) => [s, null]));
 
 export const planner = $state({
-  player: null, // { id, username, level, militaryRankPercent, prestige: { skill: n }, currentGear }
+  // { id, username, level, militaryRankPercent, prestige: { skill: ranks }, prestigePoints, currentGear, own: { level, prestige, prestigePoints } }
+  // level, prestige and prestigePoints are the plan's (editable); `own` is what the game has.
+  player: null,
   skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, 0])),
   gear: emptyGear(), // weapon/armor: { code, skills } or null; ammo: code or null
   food: 'cookedFish',
@@ -79,12 +81,15 @@ export async function loadPlayer(user) {
     level: user.leveling?.level ?? 1,
     militaryRankPercent: user.skills?.attack?.militaryRankPercent ?? 0,
     prestige: Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.prestige ?? 0])),
+    // One prestige point per prestige (prestigeLevel); leveling.prestige is the part not on a skill yet.
+    prestigePoints: user.leveling?.prestigeLevel ?? 0,
     currentGear: equipment,
     // Economy skills as the game has them now (v0.27 added Leadership).
     ecoLevels: Object.fromEntries(['companies', 'management', 'energy', 'production', 'leadership'].map((k) => [k, user.skills?.[k]?.level ?? 0])),
     // The character's own levels, for "Reset to my skills".
     skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.level ?? 0])),
   };
+  planner.player.own = { level: planner.player.level, prestige: { ...planner.player.prestige }, prestigePoints: planner.player.prestigePoints };
   planner.skills = { ...planner.player.skills };
   planner.gear = gearFrom(equipment);
   // A loaded player replaces a shared build; drop it from the address so a refresh keeps this player.

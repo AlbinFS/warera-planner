@@ -31,7 +31,8 @@ export async function incomePlan(market, planner) {
   const [companies, { upgrades }] = await Promise.all([loadCompanies(planner.player.id), loadMarket()]);
   const config = { skills: market.gameConfigSkills, upgrades, items: market.gameConfigItems };
   const perPoint = Object.fromEntries(goodsProfit(config.items, market.itemPrices).map((g) => [g.code, g.perPoint]));
-  const currentManagementValue = ecoValue(config.skills, 'management', planner.player.ecoLevels?.management ?? 0);
+  // The game's own levels and ranks: what the employees' shown bonus has in it.
+  const currentManagementValue = ecoValue(config.skills, 'management', planner.player.ecoLevels?.management ?? 0, planner.player.own?.prestige?.management ?? 0);
   const plan = {
     companies: companies.map((c) => ({ ...c, employees: ecoEmployees[c.id] ?? [] })),
     perPoint,
@@ -43,5 +44,5 @@ export async function incomePlan(market, planner) {
   return JSON.parse(JSON.stringify({ plan, config }));
 }
 
-/** Money per day for an economy layout (Leadership's better cards aren't money: see dailyIncome). */
-export const incomeOf = ({ plan, config }, levels) => dailyIncome(Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, levels[s] ?? 0])), plan, config).total;
+/** Money per day for an economy layout, plus prestige ranks (Leadership's better cards aren't money: see dailyIncome). */
+export const incomeOf = ({ plan, config }, levels, prestige = {}) => dailyIncome(Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, (levels[s] ?? 0) + (prestige?.[s] ?? 0)])), plan, config).total;

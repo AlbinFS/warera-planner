@@ -33,10 +33,10 @@ export function frontier(points) {
   return kept;
 }
 
-/** Every build worth listing across the damage range for one skill layout. */
-export async function collectBuilds(market, planner, settings, skills, onProgress) {
+/** Every build worth listing across the damage range for one skill layout (prestige: its ranks, if not the planned ones). */
+export async function collectBuilds(market, planner, settings, skills, onProgress, prestige) {
   const prep = prepare(market, { lockedFood: settings.food === 'any' ? undefined : settings.food });
-  const all = buildFrontier(prep, skills, playerOf(planner), fightOptions(settings));
+  const all = buildFrontier(prep, skills, playerOf(planner, prestige), fightOptions(settings));
   onProgress?.(1);
   if (!all.length) throw new Error('No build can fight with these settings (missing prices?).');
   // One build per 0.5% of damage (the frontier is very fine-grained), always keeping the strongest.
@@ -50,10 +50,10 @@ export async function collectBuilds(market, planner, settings, skills, onProgres
   }));
 }
 
-/** Income per day for economy-skill layouts (the Eco page's model). */
+/** Income per day for economy-skill layouts (the Eco page's model), with the planned prestige ranks. */
 export async function incomeModel(market, planner) {
   const model = await incomePlan(market, planner);
-  return (levels) => incomeOf(model, levels);
+  return (levels, prestige = planner.player?.prestige) => incomeOf(model, levels, prestige);
 }
 
 /**
@@ -78,7 +78,7 @@ export async function searchSkills(market, planner, settings, options) {
     // A layout no build keeps within the limit (worker.js scores it to climb on) is no answer.
     const best = s.best?.infeasible ? null : s.best;
     return {
-      step: s.steps ?? s.step ?? 0, levels: { ...start, ...s.levels }, checked: s.checked, budget: s.budget, used: s.used, trying: s.trying ?? null,
+      step: s.steps ?? s.step ?? 0, levels: { ...start, ...s.levels }, prestige: s.prestige ?? planner.player?.prestige ?? {}, checked: s.checked, budget: s.budget, used: s.used, trying: s.trying ?? null,
       best: best && { ...evaluate({ damage: best.damage, cost: best.cost }, { ...terms, economy: (terms.economy ?? 0) + (best.incomeChange ?? 0) }), armor: best.armor, dodge: best.dodge },
       incomeChange: best?.incomeChange ?? 0,
     };

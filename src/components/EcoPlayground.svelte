@@ -27,6 +27,10 @@
   const ownEco = () => Object.fromEntries(ECO_SKILLS.map((s) => [s, own[s] ?? planner.player?.ecoLevels?.[s] ?? 0]));
   const ownFight = () => Object.fromEntries(FIGHT_SKILLS.map((s) => [s, own[s] ?? 0]));
   const eco = $derived(Object.fromEntries(ECO_SKILLS.map((s) => [s, planner.skills[s] ?? 0])));
+  // Prestige ranks count as levels: the planned ones for the layout tried, the game's for "now".
+  const rank = (s) => planner.player?.prestige?.[s] ?? 0;
+  const ownRank = (s) => planner.player?.own?.prestige?.[s] ?? 0;
+  const withRanks = (levels, of) => Object.fromEntries(ECO_SKILLS.map((s) => [s, (levels[s] ?? 0) + of(s)]));
   const fight = $derived(Object.fromEntries(FIGHT_SKILLS.map((s) => [s, planner.skills[s] ?? 0])));
   function reset() { planner.skills = { ...planner.skills, ...ownEco(), ...ownFight() }; }
 
@@ -36,35 +40,36 @@
     : Math.max(0, ...Object.entries(skills[s]?.levels ?? {}).filter(([, l]) => (l.unlockAtLevel ?? 0) <= level).map(([n]) => Number(n))));
   const topOf = (s) => Math.max(0, ...Object.keys(skills[s]?.levels ?? {}).map(Number));
 
-  const base = $derived(dailyIncome(ownEco(), plan, config));
-  const result = $derived(dailyIncome(eco, plan, config));
+  const base = $derived(dailyIncome(withRanks(ownEco(), ownRank), plan, config));
+  const result = $derived(dailyIncome(withRanks(eco, rank), plan, config));
   /** Gold per day for this layout with one eco skill changed by `step`. */
   const withStep = (s, step) => {
     const n = eco[s] + step;
     if (n < 0 || n > maxOf(s)) return null;
-    return dailyIncome({ ...eco, [s]: n }, plan, config).total - result.total;
+    return dailyIncome(withRanks({ ...eco, [s]: n }, rank), plan, config).total - result.total;
   };
 
   // Fight damage with the planned gear and these fight skills (recalculated shortly after a change).
   let damage = $state(null);
   let baseDamage = $state(null);
   let seq = 0;
-  async function damageFor(levels) {
-    const r = await evaluateBuild(market, { ...planner, skills: { ...planner.skills, ...levels } }, settings).catch(() => null);
+  async function damageFor(levels, prestige = planner.player?.prestige) {
+    const player = planner.player && { ...planner.player, prestige: prestige ?? {} };
+    const r = await evaluateBuild(market, { ...planner, player, skills: { ...planner.skills, ...levels } }, settings).catch(() => null);
     return r && !r.error ? r.damage : null;
   }
   $effect(() => {
     const levels = { ...fight };
-    JSON.stringify([settings, planner.gear]);
+    JSON.stringify([settings, planner.gear, planner.player?.prestige, planner.player?.level]);
     const id = ++seq;
     const timer = setTimeout(async () => { const d = await damageFor(levels); if (id === seq) damage = d; }, 250);
     return () => clearTimeout(timer);
   });
-  $effect(() => { JSON.stringify([settings, planner.gear, own]); damageFor(ownFight()).then((d) => (baseDamage = d)); });
+  $effect(() => { JSON.stringify([settings, planner.gear, own]); damageFor(ownFight(), planner.player?.own?.prestige).then((d) => (baseDamage = d)); });
 
   const valueText = (s, n) => {
-    if (ECO_SKILLS.includes(s)) return String(ecoValue(skills, s, n));
-    const v = skillValue(skills[s], n, planner.player?.prestige?.[s] ?? 0);
+    if (ECO_SKILLS.includes(s)) return String(ecoValue(skills, s, n, rank(s)));
+    const v = skillValue(skills[s], n, rank(s));
     return SKILLS[s]?.percent ? `${Math.round(v)}%` : String(Math.round(v * 10) / 10);
   };
   const signed = (n, d = 1) => `${n >= 0 ? '+' : ''}${fmt(n, d)}`;
