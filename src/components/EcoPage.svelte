@@ -20,8 +20,9 @@
   import EcoManagers from './EcoManagers.svelte';
   import EcoLocation from './EcoLocation.svelte';
   import EcoSwitch from './EcoSwitch.svelte';
+  import EcoEvents from './EcoEvents.svelte';
   import Icon from './Icon.svelte';
-  import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant, mdiAccountPlus, mdiHammerWrench, mdiMapMarkerRadius } from '@mdi/js';
+  import { mdiSchool, mdiFactory, mdiAccountHardHat, mdiTuneVariant, mdiAccountPlus, mdiHammerWrench, mdiMapMarkerRadius, mdiCardsPlaying } from '@mdi/js';
 
   let { data } = $props();
   const items = $derived(data.market.gameConfigItems);
@@ -97,6 +98,7 @@
     { id: 'hiring', label: 'Next employee', icon: mdiAccountPlus },
     { id: 'training', label: 'Training & tools', icon: mdiHammerWrench },
     { id: 'location', label: 'Location', icon: mdiMapMarkerRadius },
+    { id: 'events', label: 'Worker events', icon: mdiCardsPlaying },
   ];
 </script>
 
@@ -131,6 +133,8 @@
       <EcoManagers {companies} {perPoint} {items} />
     {:else if tab === 'employees'}
       <EcoEmployees {companies} {perPoint} {pointValue} {items} {estimateNote} />
+    {:else if tab === 'events'}
+      <EcoEvents {companies} {perPoint} {items} prices={data.market.itemPrices} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} {selfWorkValue} selfWork={ecoSettings.selfWork} />
     {:else if tab === 'location'}
       <EcoLocation {companies} {perPoint} {items} />
     {:else if tab === 'hiring'}

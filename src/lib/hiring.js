@@ -215,8 +215,16 @@ function effects(e, coworkers, place) {
     if (c.traits.includes('luckyCharm')) out.luck += 3;
     if (c.traits.includes('jinx')) out.luck -= 2;
   }
+  // Pairs made by employee events, while the other one works here too (its id on the trait, else anyone).
+  for (const [rel, percent] of RELATIONS) {
+    if (!has(rel)) continue;
+    const other = e.traitArgs?.[rel];
+    if (coworkers.some((c) => !other || c.id === other)) out.percent += percent;
+  }
   return out;
 }
+// The game's relation traits: Old Friends +15 %, Sweethearts +20 %, Nemesis −15 % output.
+const RELATIONS = [['oldFriends', 15], ['sweethearts', 20], ['nemesis', -15]];
 
 // Luck finds toolboxes: 0.1 % an hour per point, at most 2 % an hour (Scavenger twice as likely).
 const TOOLBOX_PER_POINT = 0.001;
@@ -368,7 +376,7 @@ export function rankTraits(model, profile, options = {}) {
 const MATCH = 0.2;
 
 function asCoworker(e) {
-  return { nationality: e.nationality, gender: e.gender, traits: (e.traits ?? []).filter(Boolean), prod: e.prod ?? e.production, wage: e.wage ?? e.payroll };
+  return { id: e.id, nationality: e.nationality, gender: e.gender, traits: (e.traits ?? []).filter(Boolean), prod: e.prod ?? e.production, wage: e.wage ?? e.payroll };
 }
 
 /** Points per day of the whole team, each with the effects of the rest. */
@@ -397,6 +405,13 @@ export function changeValue(model, index, change) {
   return teamWorth(model, team) - worthNow.get(model);
 }
 const worthNow = new WeakMap();
+
+/** changeValue for several employees at once: changes { index: (e) => fields }. G a day, before wages. */
+export function changesValue(model, changes) {
+  const team = model.team.map((x, i) => (changes[i] ? { ...x, ...changes[i](x) } : x));
+  if (!worthNow.has(model)) worthNow.set(model, teamWorth(model, model.team));
+  return teamWorth(model, team) - worthNow.get(model);
+}
 
 /** A typical candidate with this nationality, gender and trait. */
 /**
