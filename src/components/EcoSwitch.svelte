@@ -33,7 +33,7 @@
     const best = goods.filter((g) => g !== c.good)
       .map((good) => switchValue(model, { employees: team, good, perPoint, enginePoints, cost: switchCost }))
       .reduce((a, b) => (!a || b.total > a.total ? b : a), null);
-    return { company: c, best, now: best?.now ?? 0 };
+    return { company: c, best, now: best?.now ?? 0, staffed: team.length > 0 };
   }).sort((a, b) => (b.best?.total ?? 0) - (a.best?.total ?? 0)));
 </script>
 
@@ -45,23 +45,24 @@
     starts over in the new good (+1 % a day up to 20 %, the old good's kept) and tools for the old good stop working (tools in your inventory:
     see Training & tools). Worked out day by day: day 1 at the specialization each employee already has in the new good
     (usually 0 %), day 2 a percent more, and so on, so the payback day is when the running total covers the switch. Since v0.27 any good can be made anywhere: the game counts no region, climate or deposit in output.
-    Weighed over {SWITCH_DAYS} days.
   </p>
   <div class="scroll">
     <table>
-      <thead><tr><th>Company</th><th>Best switch</th><th class="num">Day 1</th><th class="num" title="Specialization grows a percent a day from the first: this is the 30 days' gain, day by day, divided by 30">Average a day</th><th class="num">{SWITCH_DAYS} days, after the cost</th><th class="num">Pays back</th></tr></thead>
+      <thead><tr><th>Company</th><th>Best switch</th><th class="num" title="The first day: specialization in the new good starts at what each employee already has there (usually 0 %)">Day 1</th><th class="num" title="Once specialization has caught up (a percent a day, up to 20 %)">From day 21 on</th><th class="num" title="The day the running total, worked out day by day, has covered the switch's cost">Pays back</th></tr></thead>
       <tbody>
         {#each rows as r (r.company.id)}
           <tr class:keep={!r.best || r.best.total <= 0.005}>
-            <td><img src={itemImage(r.company.good, items)} alt="" width="18" height="18" class="mini" /> <strong>{r.company.name}</strong> <span class="muted">{itemLabel(r.company.good) || r.company.good}</span></td>
+            <td>
+              <img src={itemImage(r.company.good, items)} alt="" width="18" height="18" class="mini" /> <strong>{r.company.name}</strong> <span class="muted">{itemLabel(r.company.good) || r.company.good}</span>
+              {#if !r.staffed && r.best && r.best.total > 0.005}<br /><small class="muted">No employees: only its engine switches, so day 1 and day 21 are the same (no specialization to build up).</small>{/if}
+            </td>
             {#if r.best && r.best.total > 0.005}
               <td><img src={itemImage(r.best.good, items)} alt="" width="18" height="18" class="mini" /> {itemLabel(r.best.good) || r.best.good}</td>
               <td class="num" class:good={r.best.first > 0.005} class:bad={r.best.first < -0.005}>{signed(r.best.first)} G/day</td>
-              <td class="num" class:good={r.best.average > 0.005} class:bad={r.best.average < -0.005}>{signed(r.best.average)} G/day</td>
-              <td class="num good"><strong>{signed(r.best.total, 1)} G</strong></td>
-              <td class="num">{r.best.payback ? `day ${r.best.payback}` : `after ${SWITCH_DAYS} days`}</td>
+              <td class="num" class:good={r.best.full > 0.005} class:bad={r.best.full < -0.005}>{signed(r.best.full)} G/day</td>
+              <td class="num">{r.best.payback ? `day ${r.best.payback}` : `not within ${SWITCH_DAYS} days`}</td>
             {:else}
-              <td colspan="5" class="muted">Keep it: no other good pays more over {SWITCH_DAYS} days.</td>
+              <td colspan="4" class="muted">Keep it: no switch pays back within {SWITCH_DAYS} days.</td>
             {/if}
           </tr>
         {/each}

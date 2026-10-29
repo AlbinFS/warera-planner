@@ -288,16 +288,15 @@
     {#if s.plan.length}
       <div class="scroll">
         <table>
-          <thead><tr><th>Switch</th><th>Tool to</th><th class="num">Day 1</th><th class="num" title="Specialization grows a percent a day from the first: this is the 30 days' gain, day by day, divided by 30">Average a day</th><th class="num">{SWITCH_DAYS} days, after the cost</th><th class="num">Pays back</th></tr></thead>
+          <thead><tr><th>Switch</th><th>Tool to</th><th class="num" title="The first day: specialization in the new good starts at what each employee already has there (usually 0 %)">Day 1</th><th class="num" title="Once specialization has caught up (a percent a day, up to 20 %)">From day 21 on</th><th class="num" title="The day the running total, worked out day by day, has covered the switch's cost">Pays back</th></tr></thead>
           <tbody>
             {#each s.plan as o (o.company.id)}
               <tr>
                 <td><strong>{o.company.name}</strong> <span class="muted">{itemLabel(o.company.good) || o.company.good} → {itemLabel(o.good) || o.good}</span></td>
                 <td>{o.tools.filter((t) => t.spare).map((t) => `${t.name} (+${t.percent}%)`).join(', ')}</td>
                 <td class="num" class:good={o.first > 0.005} class:bad={o.first < -0.005}>{signed(o.first)} G/day</td>
-                <td class="num" class:good={o.average > 0.005} class:bad={o.average < -0.005}>{signed(o.average)} G/day</td>
-                <td class="num good"><strong>{signed(o.total, 1)} G</strong></td>
-                <td class="num">{o.payback ? `day ${o.payback}` : `after ${SWITCH_DAYS} days`}</td>
+                <td class="num" class:good={o.full > 0.005} class:bad={o.full < -0.005}>{signed(o.full)} G/day</td>
+                <td class="num">{o.payback ? `day ${o.payback}` : `not within ${SWITCH_DAYS} days`}</td>
               </tr>
             {/each}
           </tbody>
