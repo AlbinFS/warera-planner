@@ -18,7 +18,8 @@
 
 import { maxRank, rankCost, splitPrestige } from './prestige.js';
 
-export const ECO_SKILLS = ['companies', 'management', 'energy', 'production', 'leadership'];
+// Leadership is part of Management since v0.27.3.
+export const ECO_SKILLS = ['companies', 'management', 'energy', 'production'];
 
 const HOURS = 24;
 const ENERGY_PER_ACTION = 10;
@@ -178,10 +179,10 @@ export function managerAdvice(manager, staff, perPoint, marketRatePerPoint) {
  * plan: { companies: [{ id, good, engine, employees: [...], manager? }], perPoint: {good: G},
  *         currentManagementValue (the one the employees' shown bonus includes),
  *         selfWork (bool), trainingsPerDay,
- *         leadershipValues: [G a day by Leadership level] (training.js: better cards) }
+ *         cardValues: [G a day by Management level] (training.js: better cards) }
  * Companies run in order of profit, up to the Companies skill's limit. Managers'
  * pay comes off the total: they are paid every hour, whether the company runs.
- * Leadership's better training cards are value made a day (paid out over
+ * Management's better training cards (v0.27.3) are value made a day (paid out over
  * the employees' remaining days), for the trainings the energy covers: not
  * money, so outside `total`; `value` is both (what the eco skills aim for).
  */
@@ -212,12 +213,12 @@ export function dailyIncome(levels, plan, config) {
   const selfWorkPoints = selfWorkActions * ecoValue(skills, 'production', levels.production);
   const selfWork = selfWorkPoints * bestPerPoint;
   const trained = trainingEnergy > 0 ? Math.min(1, energyPerDay / trainingEnergy) : 1;
-  const leadership = (plan.leadershipValues?.[levels.leadership ?? 0] ?? 0) * trained;
+  const cards = (plan.cardValues?.[levels.management ?? 0] ?? 0) * trained;
 
   return {
     total: companies + selfWork - managers,
-    value: companies + selfWork - managers + leadership,
-    companies, selfWork, selfWorkActions, selfWorkPoints, managers, leadership,
+    value: companies + selfWork - managers + cards,
+    companies, selfWork, selfWorkActions, selfWorkPoints, managers, cards,
     energyPerDay, trainingEnergy, energyShort: trainingEnergy > energyPerDay,
     activeCount: active.length, limit, owned: runs.length,
     runs, active,
@@ -261,11 +262,11 @@ export function incomeSteps(plan, config, { skills: names, budget, playerLevel }
 }
 
 /**
- * The eco skill layout with the most value per day (money, and Leadership's
+ * The eco skill layout with the most value per day (money, and Management's
  * better training cards) within a point budget, with prestige points placed
  * too (prestige.js: a rank is a level for prestige points instead of skill points).
- * Exhaustive over the five eco skills' effective levels (level + ranks; small
- * search). Options: minimum effective levels per skill (e.g. Leadership while
+ * Exhaustive over the four eco skills' effective levels (level + ranks; small
+ * search). Options: minimum effective levels per skill (e.g. a level kept while
  * training), the player level for unlocks, the prestige points to place and
  * the ranks to keep on a tie (`prefer`). Ties go to the cheaper layout, then to
  * more Energy. When no layout has the energy for every training, the one with

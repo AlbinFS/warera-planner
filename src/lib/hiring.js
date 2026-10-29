@@ -1,25 +1,25 @@
 /**
  * Who to hire next, and which training cards pay, for one company.
  *
- * The game's employee rules (its web app's config, 2026-10-27):
+ * The game's employee rules (its web app's config, 2026-10-27; v0.27.3, 2026-10-29):
  *   points per day   = Production ÷ 4 × 24 × (1 + bonus %)
  *   bonus %          = Management + core region (+5 in a core region of
  *                      the owner's country, held or not) + tool
  *                      + specialization + percentage traits + (happiness − 50)
- *   happiness        = 50 + every reason (the region's country's income tax,
- *                      −1 a %, and −5 while the region is attacked, among
- *                      them); Responsibility shields losses, Responsibility
- *                      ÷ 10 of each (all of it at 10)
+ *   happiness        = 50 + 3 per point of Responsibility + every reason
+ *                      (the region's country's income tax, −1 a %, and −5
+ *                      while the region is attacked, among them); Loyal
+ *                      halves the losses
  *   wage per day     = fair wage per Production point × (base + trained
  *                      Production) × wage expectation (Greedy +20 %,
  *                      Modest −15 %)
- *   candidates       = stats 1–4, at most one trait (half have none), drawn
- *                      by each trait's weight
+ *   candidates       = stats 1–4 and exactly one trait, drawn by each trait's
+ *                      weight (no clashing pairs)
  *
- * Firing someone costs every coworker still there 5 happiness for 24 hours
- * (firing again restarts that timer, it doesn't stack); a moved employee loses
- * 5 for 7 days and can't be fired for 24 hours. Those are passing: an employee
- * is valued without them, and a replacement shows the firing as a one-time cost.
+ * Firing costs coworkers nothing (since v0.27.3) and moving someone to another
+ * of your companies is free; a new hire can't be fired for 12 hours. Older
+ * happiness reasons for either (a firing's −5, a move's −5) still pass: an
+ * employee is valued without them.
  *
  * A hire is scored by what the whole company makes after it: the newcomer's
  * own points plus every coworker's change (a Xenophobe next to a foreigner,
@@ -39,7 +39,7 @@
 export const TIERS = {
   S: ['sociable', 'primaDonna', 'oldFriends', 'sweethearts', 'girlPower', 'bandOfBrothers', 'handy', 'improviser', 'veteran', 'modest', 'loyal', 'luckyCharm'],
   A: ['foreman', 'rival', 'comic', 'craftsman', 'laborer', 'lateBloomer', 'anchor', 'trainer'],
-  B: ['mentor', 'quickStudy', 'stockpiler', 'sprinter', 'gambler', 'bully'],
+  B: ['mentor', 'quickStudy', 'stockpiler', 'earlyBloomer', 'gambler', 'bully'],
   C: ['loner', 'nationalist', 'cosmopolitan', 'specialist', 'recruiter'],
   D: ['patriot', 'expat', 'statist', 'salvager'],
   E: ['diamondInTheRough', 'scavenger'],
@@ -68,13 +68,13 @@ export const TRAITS = {
   bandOfBrothers: { weight: 5, gender: 'male', note: '+15 % per male coworker (up to +30 %)' },
   manHater: { weight: 5, gender: 'female', bad: true, note: '−15 % per male coworker (up to −30 %)' },
   misogynist: { weight: 5, gender: 'male', bad: true, note: '−15 % per female coworker (up to −30 %)' },
-  specialist: { weight: 10, note: '+3 Production, +5 happiness making their own good (named on the card); unknown, about 1 in 20 matches yours' },
+  specialist: { weight: 10, note: '+3 Production, +5 happiness making their own good, which is the good of the company they got it in (since v0.27.3)' },
   craftsman: { mixed: true, weight: 10, note: '+3 Production on manufactured goods, −1 on raw' },
   laborer: { mixed: true, weight: 10, note: '+3 Production on raw resources, −1 on manufactured' },
   quickStudy: { weight: 10, note: 'specializes twice as fast (20 % in 10 days, not 20)' },
   stockpiler: { weight: 10, note: 'no penalty when storage is full' },
   claustrophobe: { weight: 5, bad: true, note: '−20 % with storage at level 2 or lower' },
-  sprinter: { weight: 5, note: '+50 % in their first day only' },
+  earlyBloomer: { weight: 5, note: '+6 Production until 40, then 2 less per 10 years, gone at 60 (they age a year a day); counted at their age halfway through the next 20 days' },
   veteran: { weight: 5, note: '+20 % after 30 days in the company; counted as +10 % (about a month in, they may ask to retire)' },
   creatureOfHabit: { weight: 10, bad: true, note: '−30 % for 3 days after a move' },
   diamondInTheRough: { weight: 2, note: '+1 to a stat (named on them) every 10 days, up to +4; counted as +2 to a random stat' },
@@ -104,14 +104,19 @@ export const TRAITS = {
 const NAMES = { manHater: 'Misandrist', taxShy: 'Tax-shy', diamondInTheRough: 'Diamond in the Rough', primaDonna: 'Prima Donna', bandOfBrothers: 'Band of Brothers', creatureOfHabit: 'Creature of Habit' };
 export const traitName = (code) => NAMES[code] ?? String(code).replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
 
-// Event-only traits (a named partner): never on a candidate.
+// Traits with a named partner: they come from events, or on a new hire with someone already there
+// (Old Friends, Nemesis: weight 2 each). Not modelled as a hire's trait or taught by a card.
 const EVENT_ONLY = new Set(['oldFriends', 'nemesis', 'sweethearts']);
+const PARTNER_WEIGHT = { oldFriends: 2, nemesis: 2, sweethearts: 0 };
 
-// Traits the game never puts together (its web app's config, 2026-10-28): no card teaches one to
-// someone who has the other.
+// Traits the game never puts together (its web app's config, v0.27.3): no card teaches one to someone
+// who has the other, and new employees never have both.
 const CLASHES = [['handy', 'improviser'], ['loner', 'sociable'], ['cosmopolitan', 'xenophobe'], ['comic', 'bully'], ['craftsman', 'laborer'],
-  ['expat', 'homesick'], ['statist', 'taxShy'], ['sprinter', 'creatureOfHabit'], ['sprinter', 'veteran'], ['diamondInTheRough', 'burnout'],
-  ['greedy', 'modest'], ['flightRisk', 'anchor'], ['luckyCharm', 'jinx'], ['scavenger', 'handy']];
+  ['expat', 'homesick'], ['statist', 'taxShy'], ['diamondInTheRough', 'burnout'], ['greedy', 'modest'], ['flightRisk', 'anchor'],
+  ['luckyCharm', 'jinx'], ['scavenger', 'handy'], ['nationalist', 'cosmopolitan'], ['loyal', 'flightRisk'], ['lateBloomer', 'wornOut'],
+  ['earlyBloomer', 'lateBloomer'], ['veteran', 'burnout'], ['foreman', 'bully'], ['mentor', 'bully'], ['primaDonna', 'modest'],
+  ['climber', 'modest'], ['envious', 'modest'], ['patriot', 'expat'], ['xenophobe', 'expat'], ['stockpiler', 'claustrophobe'],
+  ['loner', 'comic'], ['loner', 'foreman'], ['loner', 'mentor'], ['loner', 'trainer'], ['loner', 'luckyCharm']];
 /** Whether someone with these traits can gain this one (not already theirs, no clash, their gender). */
 export function canGain(code, traits, gender) {
   const t = TRAITS[code];
@@ -127,11 +132,10 @@ const AVERAGE_STAT = 2.5; // candidates roll 1–4
 export const RETIRE_AGE = 65;
 // Production a newcomer typically gains from training in their first weeks (drills add 1–4).
 const TRAINED = 2;
-// Firing: every coworker −5 happiness for a day. Happiness reasons that pass (the game gives them an end time).
-const FIRED_HAPPINESS = 5;
-const FIRED_MS = 24 * 3600e3;
-// A moved employee: −5 happiness for 7 days, and can't be fired for the first 24 hours of it.
-const MOVED_MS = 7 * 24 * 3600e3;
+// Happiness per point of Responsibility (v0.27.3: it used to shield a tenth of each loss per point).
+const RESP_HAPPINESS = 3;
+// A new hire can't be fired for this long. Happiness reasons that pass (the game gives them an end time).
+const HIRE_LOCK_MS = 12 * 3600e3;
 const PASSING = new Set(['coworkerFired', 'recentlyMoved']);
 // A core region of the owner's country: +5 % on every employee.
 const CORE_PERCENT = 5;
@@ -139,17 +143,17 @@ const CORE_PERCENT = 5;
 const COMPANY_MOVE_HAPPINESS = 10;
 const COMPANY_MOVE_DAYS = 7;
 
-/** How likely a candidate is to have this trait (half have none). */
+/** How likely a candidate is to have this trait (every new employee has exactly one, since v0.27.3). */
 export function traitChance(code, gender) {
   const fits = (t) => !t.gender || !gender || t.gender === gender;
-  const total = Object.values(TRAITS).filter(fits).reduce((s, t) => s + t.weight, 0);
-  return TRAITS[code] && fits(TRAITS[code]) ? 0.5 * (TRAITS[code].weight / total) : 0;
+  const total = Object.values(TRAITS).filter(fits).reduce((s, t) => s + t.weight, 0) + Object.values(PARTNER_WEIGHT).reduce((s, w) => s + w, 0);
+  return TRAITS[code] && fits(TRAITS[code]) ? TRAITS[code].weight / total : 0;
 }
 
 /**
  * What an employee's traits and their coworkers' traits do to them, given
  * who they work with: { prod, resp, luck, percent, gain, loss } (gain and
- * loss: happiness, before Responsibility's shield).
+ * loss: happiness; a Loyal employee feels half of the losses).
  */
 function effects(e, coworkers, place) {
   const out = { prod: 0, resp: 0, luck: 0, percent: 0, gain: 0, loss: 0 };
@@ -173,10 +177,10 @@ function effects(e, coworkers, place) {
   if (has('bandOfBrothers')) out.percent += Math.min(30, 15 * of('male'));
   if (has('manHater')) out.percent -= Math.min(30, 15 * of('male'));
   if (has('misogynist')) out.percent -= Math.min(30, 15 * of('female'));
-  // Their good is on them (rolled); unknown, it matches this company's about 1 time in 20.
+  // Their good is on them: the good of the company they got it in (v0.27.3; unknown, taken as this one's).
   if (has('specialist')) {
     const good = e.traitArgs?.specialist;
-    const share = good ? (good === place.good ? 1 : 0) : 1 / 20;
+    const share = !good || good === place.good ? 1 : 0;
     out.prod += 3 * share;
     happy(5 * share);
   }
@@ -193,6 +197,8 @@ function effects(e, coworkers, place) {
   // Age-based traits at the age they reach halfway through the next 20 days (a year passes a day); +2 / −1 when the age is unknown.
   const age = e.age != null ? e.age + Math.min(10, Math.max(0, (RETIRE_AGE - e.age) / 2)) : null;
   if (has('lateBloomer')) out.prod += age == null ? 2 : Math.min(6, 2 * Math.max(0, Math.floor((age - 40) / 10)));
+  // Early Bloomer: +6 until 40, then −2 per 10 years (+4 in their 40s, +2 in their 50s), gone at 60; +4 when the age is unknown.
+  if (has('earlyBloomer')) out.prod += age == null ? 4 : Math.max(0, 6 - 2 * Math.max(0, Math.floor((age - 30) / 10)));
   if (has('wornOut')) out.prod -= age == null ? 1 : Math.min(6, 2 * Math.max(0, Math.floor((age - 50) / 10)));
   // The place itself: its country's income tax, an attack on the region, a core region of the owner's country.
   if (place.tax) happy(-place.tax);
@@ -237,10 +243,9 @@ export function toolboxesPerDay(luck, traits = []) {
 
 /** Points per day from stats and bonus, with happiness held in 0–100. */
 function pointsOf(e, fx) {
-  const shield = Math.min(1, Math.max(0, (e.resp + fx.resp) / 10));
-  const lossFactor = (1 - shield) * (e.traits.includes('loyal') ? 0.5 : 1);
-  // passingLoss: a loss for a while (a move's −5 for 7 days, moving.js), shielded like the rest.
-  const happiness = Math.max(0, Math.min(100, e.happinessBase + fx.gain + (fx.loss + (e.passingLoss ?? 0)) * lossFactor));
+  const lossFactor = e.traits.includes('loyal') ? 0.5 : 1;
+  // passingLoss: a loss for a while (moving.js), halved for Loyal like the rest.
+  const happiness = Math.max(0, Math.min(100, e.happinessBase + RESP_HAPPINESS * Math.max(0, e.resp + fx.resp) + fx.gain + (fx.loss + (e.passingLoss ?? 0)) * lossFactor));
   const prod = Math.max(1, e.prodBase + fx.prod);
   return (prod / OUTPUT_DIVISOR) * HOURS * (1 + (e.bonusBase + fx.percent + happiness - 50) / 100);
 }
@@ -300,29 +305,26 @@ export function companyModel(employees, placeIn, { perPoint, fairWage, managemen
     };
     const now = effects(base, employees.filter((c) => c !== e).map(asCoworker), place);
     const happinessNow = e.happiness?.value ?? 50;
-    const shieldNow = Math.min(1, base.resp / 10);
-    const lossNow = (1 - shieldNow) * (base.traits.includes('loyal') ? 0.5 : 1);
-    // A recent firing or move: real today, gone in a day or a week, so not part of what they're worth.
+    const lossNow = base.traits.includes('loyal') ? 0.5 : 1;
+    // A firing's or a move's loss from before v0.27.3: real today, soon gone, so not part of what they're worth.
     const reasons = e.happiness?.reasons ?? [];
     const passing = reasons.filter((r) => PASSING.has(r.reason) && r.until && Date.parse(r.until) > at).reduce((s, r) => s + r.delta, 0);
-    const moved = reasons.find((r) => r.reason === 'recentlyMoved' && r.until);
     return {
       ...base,
       prodBase: e.production - now.prod,
       resp: base.resp - now.resp,
       luckBase: (e.stats?.luck?.total ?? AVERAGE_STAT) - now.luck,
       bonusBase: e.bonusPercent - now.percent - (happinessNow - 50),
-      happinessBase: happinessNow - now.gain - (now.loss + Math.min(0, passing)) * lossNow,
-      // Moved less than 24 hours ago: the game won't let them be fired yet.
-      fireBlocked: !!moved && Date.parse(moved.until) - MOVED_MS + FIRED_MS > at,
+      // Responsibility's +3 a point is put back by pointsOf (it changes with trait effects, a Foreman's, …).
+      happinessBase: happinessNow - RESP_HAPPINESS * base.resp - now.gain - (now.loss + Math.min(0, passing)) * lossNow,
+      // Hired less than 12 hours ago: the game won't let them be fired yet.
+      fireBlocked: !!e.hiredAt && at - Date.parse(e.hiredAt) < HIRE_LOCK_MS,
     };
   });
-  // A firing whose 24 hours are still running: firing again only restarts it.
-  const firedUntil = Math.max(0, ...employees.flatMap((e) => (e.happiness?.reasons ?? []).filter((r) => r.reason === 'coworkerFired' && r.until).map((r) => Date.parse(r.until))));
   // What a newcomer starts with: Management (the place's core region, tax and attacks come from the place).
   const shared = employees[0]?.bonus?.filter((b) => b.source === 'management').reduce((s, b) => s + b.percent, 0) ?? management;
   // A company whose employees hold tools gives the newcomer one too.
-  return { team, place: { ...place, tools: place.tools ?? employees.some((e) => e.hasTool) }, perPoint, fairWage, shared, toolboxValue, firedFraction: 1 - Math.min(FIRED_MS, Math.max(0, firedUntil - at)) / FIRED_MS };
+  return { team, place: { ...place, tools: place.tools ?? employees.some((e) => e.hasTool) }, perPoint, fairWage, shared, toolboxValue };
 }
 
 const DAY = 864e5;
@@ -457,7 +459,7 @@ function candidate(model, { nationality, gender, trait, production, responsibili
   };
 }
 
-/** Who can be replaced: everyone but those moved in the last 24 hours (everyone, if that's nobody). */
+/** Who can be replaced: everyone but those hired in the last 12 hours (everyone, if that's nobody). */
 function fireable(model) {
   const can = model.team.map((_, i) => i).filter((i) => !model.team[i].fireBlocked);
   return can.length ? can : model.team.map((_, i) => i);
@@ -482,9 +484,8 @@ export function rateCandidate(model, profile, { full = false } = {}) {
  * What hiring this profile changes, per day: points (the newcomer's and
  * every coworker's change), G (points × value − the newcomer's wage), and
  * each coworker's change in points (newWage: the newcomer's own). With `replace` (an index), that employee
- * leaves for the newcomer: their points and wage go with them, and firing them
- * costs once what the coworkers don't make while 5 happiness down for 24 hours
- * (fireCost, G; less while an earlier firing's 24 hours still run).
+ * leaves for the newcomer: their points and wage go with them (firing costs
+ * coworkers nothing since v0.27.3: fireCost is 0, kept for the callers).
  */
 export function hireValue(model, profile, { replace = null } = {}) {
   const before = teamPoints(model.team, model.place);
@@ -498,8 +499,7 @@ export function hireValue(model, profile, { replace = null } = {}) {
   const wage = newcomer.wage - (leaving ? leaving.wage : 0);
   // Toolboxes Luck finds (Gambler, Lucky Charm, Jinx), at what one is worth here.
   const toolboxes = (teamToolboxes([...stay, newcomer], model.place) - teamToolboxes(model.team, model.place)) * (model.toolboxValue ?? 0);
-  const fireCost = leaving ? firingCost(model, stay, newcomer) : 0;
-  return { points, own, coworkers, wage, newWage: newcomer.wage, replaces: leaving?.name ?? null, toolboxes, value: points * model.perPoint + toolboxes - wage, fireCost, fireBlocked: !!leaving?.fireBlocked };
+  return { points, own, coworkers, wage, newWage: newcomer.wage, replaces: leaving?.name ?? null, toolboxes, value: points * model.perPoint + toolboxes - wage, fireCost: 0, fireBlocked: !!leaving?.fireBlocked };
 }
 
 /**
@@ -518,26 +518,17 @@ export function placeValue(model, place) {
   return { worth, moveCost: lost * COMPANY_MOVE_DAYS * model.perPoint };
 }
 
-/** G the coworkers left behind don't make in the 24 hours a firing costs them 5 happiness (the newcomer, hired after, isn't hit). */
-function firingCost(model, stay, newcomer) {
-  const team = [...stay, newcomer];
-  const lost = stay.reduce((s, e) => {
-    const fx = effects(e, team.filter((c) => c !== e), model.place);
-    return s + pointsOf(e, fx) - pointsOf(e, { ...fx, loss: fx.loss - FIRED_HAPPINESS });
-  }, 0);
-  return lost * model.perPoint * (model.firedFraction ?? 1);
-}
 
 /**
  * The best next hire: every nationality worth trying (each one already in
  * the company, the company's country, and any other), both genders, and every
- * trait a candidate can have (or none), ranked by G per day. A full company
+ * trait a candidate can have (they always have one since v0.27.3), ranked by G per day. A full company
  * (`full`) hires by replacing someone: each employee is tried as the one
  * who leaves.
  */
 export function bestHires(model, { otherNationality = 'other', full = false } = {}) {
   const nationalities = [...new Set([...model.team.map((e) => e.nationality), model.place.country, model.place.homeCountry, otherNationality].filter(Boolean))];
-  const traits = [null, ...Object.keys(TRAITS).filter((t) => !EVENT_ONLY.has(t))];
+  const traits = Object.keys(TRAITS).filter((t) => !EVENT_ONLY.has(t));
   const slots = full ? fireable(model) : [null];
   const all = [];
   for (const nationality of nationalities) {

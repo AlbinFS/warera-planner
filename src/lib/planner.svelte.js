@@ -84,8 +84,8 @@ export async function loadPlayer(user) {
     // One prestige point per prestige (prestigeLevel); leveling.prestige is the part not on a skill yet.
     prestigePoints: user.leveling?.prestigeLevel ?? 0,
     currentGear: equipment,
-    // Economy skills as the game has them now (v0.27 added Leadership).
-    ecoLevels: Object.fromEntries(['companies', 'management', 'energy', 'production', 'leadership'].map((k) => [k, user.skills?.[k]?.level ?? 0])),
+    // Economy skills as the game has them now (v0.27.3: Leadership is part of Management).
+    ecoLevels: Object.fromEntries(['companies', 'management', 'energy', 'production'].map((k) => [k, user.skills?.[k]?.level ?? 0])),
     // The character's own levels, for "Reset to my skills".
     skills: Object.fromEntries(ALL_SKILLS.map((s) => [s, user.skills?.[s]?.level ?? 0])),
   };

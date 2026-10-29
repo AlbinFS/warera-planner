@@ -51,7 +51,7 @@ payroll per day match exactly.
 - [x] **Replace or train:** for each losing employee, compare training (what a
   session's best card adds over the days they have left) with replacing them.
 - [x] **Training cards:** every card the game can deal each employee (its pool,
-  rarity odds with Leadership and Luck, a hand of 3), valued over the days the
+  rarity odds with Management (Leadership's before v0.27.3) and Luck, a hand of 3), valued over the days the
   employee has left before retiring (training.js). Which card of a rarity comes
   up isn't in the config: taken as any of them, evenly.
 - [ ] **Wage expectation:** flag employees whose wage will move toward their
@@ -59,7 +59,8 @@ payroll per day match exactly.
 - [x] **Trainings per day:** filled from the employees (one each while they
   have potential left; a Trainer coworker adds one); the box overrides it.
 - [x] **Self-work** on by default (config: 30 points + 3 a Production level per
-  10 energy); **Leadership** valued by the better training cards it brings.
+  10 energy); **Management** also valued by the better training cards it brings
+  (Leadership's, merged into it in v0.27.3).
 - [ ] **Specialization:** when the page suggests switching a company's good
   (e.g. to cooked fish), count the specialization bonus the employees lose
   (+1 % a day, up to 20 %).

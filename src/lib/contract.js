@@ -59,15 +59,14 @@ export async function incomeModel(market, planner) {
 /**
  * Skill layout and gear with the most damage while the net stays at or above
  * −maxLoss. options: { terms: { bounty, poolLoot, loot, economy }, maxLoss,
- * economySearch, deep, onStep, signal }. Leadership earns nothing, so searching
- * economy skills sets it to 0 and frees its points. deep: the debuff build's
+ * economySearch, deep, onStep, signal }. deep: the debuff build's
  * profit may be spent on the pill build's gear (16 h sessions).
  */
 export async function searchSkills(market, planner, settings, options) {
   const { terms, maxLoss, economySearch, onStep, signal, deep = false } = options;
   if (economySearch && !planner.player) throw new Error('Load a player first: the economy search needs their companies.');
-  const searched = economySearch ? [...FIGHT_SKILLS, ...ECONOMY_SKILLS.filter((s) => s !== 'leadership')] : FIGHT_SKILLS;
-  const start = { ...planner.skills, ...(economySearch ? { leadership: 0 } : {}) };
+  const searched = economySearch ? [...FIGHT_SKILLS, ...ECONOMY_SKILLS] : FIGHT_SKILLS;
+  const start = { ...planner.skills };
   const income = economySearch ? await incomePlan(market, planner) : null;
   const budget = (planner.player?.level ?? 1) * 4 - keptPoints(market, start, searched);
   const engineTerms = {

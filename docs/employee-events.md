@@ -28,9 +28,9 @@ two-person events.
 A choice with a **check** succeeds at its base chance, adjusted by the traits
 listed with it, and held between 5 % and 90 %. A **luck check** is the same but
 leans on the employee's Luck. The game's settings for the adjustments:
-happiness (divided by 5), Luck (+2 % a point), skill (+2 % a level), and stats
-(+4 % a point around a middle of 3). The code doesn't say exactly how these
-combine, so treat the base chance as the starting point.
+happiness (divided by 5, around 50), Luck (+4 % a point on a luck check, +2 %
+on any other, counted from the first point since v0.27.3), and +2 % per level
+of your Management (Leadership is part of it since v0.27.3).
 
 - A tenth of successes are **critical successes** (a fifth for a Gambler), and a
   tenth of failures are **critical failures** (a fifth for a Gambler).

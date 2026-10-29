@@ -25,7 +25,7 @@
   cached('managerOffer.getWageStats', {}, 30 * 60 * 1000).then((s) => (marketRate = s?.allowedRange?.average ? s.allowedRange.average / MANAGER_MAX_VALUE : null)).catch(() => {});
 
   const CORE_REGION_PERCENT = 5;
-  // Moving the company: every employee −10 happiness for 7 days (Responsibility shields a tenth a point, Loyal halves it).
+  // Moving the company: every employee −10 happiness for 7 days (Loyal halves it).
   const MOVE_HAPPINESS = 10;
   const MOVE_DAYS = 7;
   // A manager worth hiring by at least this much a day is worth mentioning.

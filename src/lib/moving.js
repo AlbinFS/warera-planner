@@ -1,7 +1,6 @@
 /**
- * Moving employees between your own companies. The game's rules: the one
- * moved loses 5 happiness for 7 days (and can't be fired for 24 hours);
- * wages don't change; a hired manager's bonus is their company's (the one
+ * Moving employees between your own companies. The game's rules (v0.27.3):
+ * a transfer is free (it used to cost 5 happiness for 7 days); wages don't change; a hired manager's bonus is their company's (the one
  * moved leaves it behind and gets the new company's, if it has one); specialization is kept per good (in another good they
  * start from what they have there and gain 1 % a day worked, up to 20 %;
  * Quick Study twice as fast); a tool only works in goods of its kind. A
@@ -19,7 +18,8 @@ import { teamPointsAt, teamPointsEach } from './hiring.js';
 import { toolKind, toolKindFor } from './staffing.js';
 
 export const MOVE_DAYS = 30;
-const MOVE_HAPPINESS = 5;
+// A transfer costs no happiness since v0.27.3 (it was 5 for 7 days).
+const MOVE_HAPPINESS = 0;
 const MOVE_HAPPINESS_DAYS = 7;
 const SPEC_MAX = 20;
 

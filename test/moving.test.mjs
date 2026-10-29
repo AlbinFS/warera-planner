@@ -12,14 +12,14 @@ const emp = (id, traits = [], { production = 4, traitArgs = {} } = {}) => ({
 });
 const side = (id, employees, capacity, good = 'cookedFish') => ({ id, name: id, employees, capacity, model: companyModel(employees, place(good), opts) });
 
-test('moving the old friend over turns the holder\'s +15 % on, for the 7 days\' happiness', () => {
+test('moving the old friend over turns the holder\'s +15 % on, at no cost (transfers are free)', () => {
   const c9 = side('C9', [emp('Ellen'), emp('Anna'), emp('Bo')], 3);
   const c10 = side('C10', [emp('Pernilla', ['oldFriends'], { traitArgs: { oldFriends: 'Ellen' } }), emp('Cia')], 3);
   const v = moveValue(c9, 0, c10);
   const pernilla = v.changes.find((c) => c.name === 'Pernilla');
   assert.ok(pernilla.change > 0, 'Pernilla gains');
-  // The move's −5 happiness costs Ellen a little the first week, so day 1 is below the settled gain.
-  assert.ok(v.first < v.full);
+  // Free since v0.27.3: day 1 already makes what the move settles at (same good, no specialization lost).
+  assert.ok(Math.abs(v.first - v.full) < 1e-9);
   assert.ok(v.total > 0);
   assert.equal(bestMoves([c9, c10])[0].name, 'Ellen');
 });

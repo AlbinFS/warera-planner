@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { companyModel, hireValue, bestHires, traitChance, rankTraits, tierOf, rateCandidate, placeValue, employeeWorth } from '../src/lib/hiring.js';
+import { companyModel, hireValue, bestHires, traitChance, rankTraits, tierOf, rateCandidate, placeValue, employeeWorth, changeValue } from '../src/lib/hiring.js';
 import { trainingCards } from '../src/lib/training.js';
 
 const place = { raw: false, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
@@ -43,7 +43,9 @@ test('a Loner alone loses their bonus when anyone is hired', () => {
 test('the best hire beats a plain one, and gendered traits fit the gender', () => {
   const model = companyModel([emp('A', 'se', 'female', []), emp('B', 'se', 'female', [])], place, opts);
   const all = bestHires(model);
-  assert.ok(all[0].value >= all.find((h) => !h.trait && h.nationality === 'se').value);
+  // Every new employee has a trait since v0.27.3.
+  assert.ok(all.every((h) => h.trait));
+  assert.ok(all[0].value >= all.at(-1).value);
   assert.ok(all.every((h) => h.trait !== 'girlPower' || h.gender === 'female'));
   assert.equal(traitChance('girlPower', 'male'), 0);
 });
@@ -91,8 +93,10 @@ test('a real candidate: more Production and a lower wage hint score higher; a fu
 test('age-based traits follow the candidate\'s age', () => {
   const model = companyModel([emp('A', 'se', 'male', [])], place, opts);
   const at = (age, trait) => rateCandidate(model, { nationality: 'se', gender: 'male', trait, production: 3, responsibility: 2, expectation: 1, age }).value;
-  // A Late Bloomer gains Production once past 40; a young one gets there later.
+  // A Late Bloomer gains Production once past 40; a young one gets there later. An Early Bloomer the other way.
   assert.ok(at(44, 'lateBloomer') > at(20, 'lateBloomer'));
+  assert.ok(at(20, 'earlyBloomer') > at(52, 'earlyBloomer'));
+  assert.ok(at(52, 'earlyBloomer') > at(62, 'earlyBloomer'));
   assert.ok(at(56, 'wornOut') < at(20, 'wornOut'));
 });
 
@@ -103,37 +107,47 @@ test('a Specialist counts their own good when it is known', async () => {
   const match = hireValue(own, { nationality: 'se', gender: 'male', trait: 'specialist', specialistGood: 'iron' });
   const miss = hireValue(own, { nationality: 'se', gender: 'male', trait: 'specialist', specialistGood: 'steel' });
   const unknown = hireValue(own, { nationality: 'se', gender: 'male', trait: 'specialist' });
-  assert.ok(match.value > unknown.value && unknown.value > miss.value);
-  // The game's clashes: no Modest for the Greedy, no Handy for a Scavenger; gender traits by gender.
+  // Since v0.27.3 a Specialist's good is their company's: unknown counts as a match.
+  assert.ok(match.value > miss.value);
+  assert.ok(Math.abs(unknown.value - match.value) < 1e-9);
+  // The game's clashes: no Modest for the Greedy, no Handy for a Scavenger, no Mentor for a Loner; gender traits by gender.
   assert.equal(canGain('modest', ['greedy'], 'male'), false);
+  assert.equal(canGain('mentor', ['loner'], 'male'), false);
   assert.equal(canGain('handy', ['scavenger'], 'male'), false);
   assert.equal(canGain('girlPower', [], 'male'), false);
   assert.equal(canGain('loyal', ['greedy', 'xenophobe'], 'male'), true);
 });
 
-test('firing costs every coworker 5 happiness for a day, once; a recent firing or move is not part of their worth', () => {
-  const now = Date.parse('2026-10-28T12:00:00Z');
+test('firing costs coworkers nothing; a new hire can\'t be fired for 12 hours; older firing and move losses aren\'t part of their worth', () => {
+  const now = Date.parse('2026-10-29T12:00:00Z');
   const team = [emp('A', 'se', 'male', []), emp('B', 'se', 'male', []), emp('C', 'se', 'male', [])];
   const model = companyModel(team, place, { ...opts, now });
   const r = hireValue(model, { nationality: 'se', gender: 'male', trait: null }, { replace: 0 });
-  // Two coworkers stay, each 5 happiness down (Responsibility 2 shields a fifth): 4 points of bonus on 24 points a day, at 0.1 G.
-  assert.ok(Math.abs(r.fireCost - 2 * 24 * 0.04 * 0.1) < 1e-6, String(r.fireCost));
-  assert.equal(hireValue(model, { nationality: 'se', gender: 'male', trait: null }).fireCost, 0);
+  assert.equal(r.fireCost, 0);
 
-  // 12 hours into an earlier firing: firing again restarts the timer, so it costs only the 12 hours added.
+  // A −5 from a firing or move before v0.27.3, still running, isn't held against them.
   const until = new Date(now + 12 * 3600e3).toISOString();
-  const fired = (e) => ({ ...e, bonusPercent: e.bonusPercent - 4, happiness: { value: 46, reasons: [{ reason: 'coworkerFired', delta: -5, until }] } });
+  const fired = (e) => ({ ...e, bonusPercent: e.bonusPercent - 5, happiness: { value: 45, reasons: [{ reason: 'coworkerFired', delta: -5, until }] } });
   const after = companyModel(team.map(fired), place, { ...opts, now });
-  const again = hireValue(after, { nationality: 'se', gender: 'male', trait: null }, { replace: 0 });
-  assert.ok(Math.abs(again.fireCost - r.fireCost / 2) < 1e-6);
-  // And the −5 they carry today isn't held against them: same worth as before the firing.
-  assert.ok(Math.abs(again.value - r.value) < 1e-6);
+  assert.ok(Math.abs(hireValue(after, { nationality: 'se', gender: 'male', trait: null }, { replace: 0 }).value - r.value) < 1e-6);
 
-  // Moved an hour ago: can't be fired yet, so not the one replaced.
-  const moved = { ...team[0], name: 'M', production: 1, happiness: { value: 46, reasons: [{ reason: 'recentlyMoved', delta: -5, until: new Date(now + 7 * 864e5 - 3600e3).toISOString() }] } };
-  const m = companyModel([moved, team[1], team[2]], place, { ...opts, now });
+  // Hired an hour ago: can't be fired yet, so not the one replaced. A transfer doesn't block it any more.
+  const hired = { ...team[0], name: 'H', production: 1, hiredAt: new Date(now - 3600e3).toISOString() };
+  const m = companyModel([hired, team[1], team[2]], place, { ...opts, now });
   assert.equal(m.team[0].fireBlocked, true);
-  assert.notEqual(rateCandidate(m, { nationality: 'se', gender: 'male', production: 4 }, { full: true }).replaces, 'M');
+  assert.notEqual(rateCandidate(m, { nationality: 'se', gender: 'male', production: 4 }, { full: true }).replaces, 'H');
+  const moved = { ...team[0], name: 'M', hiredAt: new Date(now - 30 * 864e5).toISOString(), happiness: { value: 45, reasons: [{ reason: 'recentlyMoved', delta: -5, until }] } };
+  assert.equal(companyModel([moved, team[1]], place, { ...opts, now }).team[0].fireBlocked, false);
+});
+
+test('Responsibility adds 3 happiness a point (v0.27.3)', () => {
+  // Same card numbers, more Responsibility: the model takes it out and puts it back the same.
+  const low = companyModel([{ ...emp('L', 'se', 'male', []), stats: { responsibility: { total: 1 } } }], place, opts);
+  const high = companyModel([{ ...emp('H', 'se', 'male', []), stats: { responsibility: { total: 5 } } }], place, opts);
+  assert.equal(high.team[0].happinessBase, low.team[0].happinessBase - 12);
+  // A Responsibility drill: +3 happiness, so +3 % output, on 24 points a day at 0.1 G.
+  const drill = changeValue(low, 0, (x) => ({ resp: x.resp + 1 }));
+  assert.ok(Math.abs(drill - 24 * 0.03 * 0.1) < 1e-9, String(drill));
 });
 
 test('a lost core region: its tax costs happiness every day, and moving pays back in 70 ÷ the tax days', () => {
@@ -144,10 +158,10 @@ test('a lost core region: its tax costs happiness every day, and moving pays bac
   assert.equal(model.place.core, true);
   const now = placeValue(model, {}).worth;
   const moved = placeValue(model, { country: 'se', tax: 0 });
-  // Responsibility 2 shields a fifth: 12 points of bonus on 24 points a day each, at 0.1 G.
-  assert.ok(Math.abs(moved.worth - now - 3 * 24 * 0.12 * 0.1) < 1e-6);
-  // The move: 10 happiness (8 after the shield) for 7 days.
-  assert.ok(Math.abs(moved.moveCost - 3 * 24 * 0.08 * 7 * 0.1) < 1e-6);
+  // The tax's 15 happiness: 15 points of bonus on 24 points a day each, at 0.1 G (no shield since v0.27.3).
+  assert.ok(Math.abs(moved.worth - now - 3 * 24 * 0.15 * 0.1) < 1e-6);
+  // The move: 10 happiness for 7 days.
+  assert.ok(Math.abs(moved.moveCost - 3 * 24 * 0.10 * 7 * 0.1) < 1e-6);
   assert.ok(Math.abs(moved.moveCost / (moved.worth - now) - 70 / 15) < 1e-6);
   // Out of a core region, the +5 % goes with it.
   assert.ok(placeValue(model, { country: 'se', tax: 0, core: false }).worth < moved.worth);

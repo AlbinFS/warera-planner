@@ -3,8 +3,9 @@
  * engine (src/combat) reads. Pure functions: they run in the browser and in Node.
  */
 export const FIGHT_SKILLS = ['attack', 'precision', 'criticalChance', 'criticalDamages', 'armor', 'dodge', 'health', 'lootChance', 'hunger'];
-// Economy skills since the eco update (v0.27): Entrepreneurship is gone, Leadership is new.
-export const ECONOMY_SKILLS = ['production', 'energy', 'companies', 'management', 'leadership'];
+// Economy skills since the eco update (v0.27): Entrepreneurship is gone; Leadership came and
+// went into Management (v0.27.3).
+export const ECONOMY_SKILLS = ['production', 'energy', 'companies', 'management'];
 export const ALL_SKILLS = [...FIGHT_SKILLS, ...ECONOMY_SKILLS];
 export const SLOTS = ['weapon', 'ammo', 'helmet', 'chest', 'pants', 'boots', 'gloves'];
 

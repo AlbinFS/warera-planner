@@ -18,7 +18,7 @@
 import { prepare, strongest, bestNet, cheapestMany, isSplit, FIGHT } from './optimize.js';
 import { dailyIncome } from '../lib/eco.js';
 
-const ECONOMY = ['production', 'energy', 'companies', 'management', 'leadership'];
+const ECONOMY = ['production', 'energy', 'companies', 'management'];
 // Where the loot step starts, as a share of the neighbouring layout's damage.
 const NEAR_SHARE = 0.95;
 let market = null;

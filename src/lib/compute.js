@@ -235,13 +235,12 @@ export function keptPoints(market, levels, searched) {
 /**
  * Skills for a daily-damage range: the layout whose cheapest builds at four
  * targets across the range cost least on average. With keepEconomy off the
- * economy skills move too, with their income change counted (Leadership earns
- * nothing, so it's set to 0 and its points freed).
+ * economy skills move too, with their income change counted.
  */
 export async function optimizeSkills(market, planner, settings, { min, max, keepEconomy, onProgress, signal }) {
   const started = Date.now();
-  const searched = keepEconomy ? FIGHT_SKILLS : [...FIGHT_SKILLS, ...ECONOMY_SKILLS.filter((s) => s !== 'leadership')];
-  const start = { ...planner.skills, ...(keepEconomy ? {} : { leadership: 0 }) };
+  const searched = keepEconomy ? FIGHT_SKILLS : [...FIGHT_SKILLS, ...ECONOMY_SKILLS];
+  const start = { ...planner.skills };
   const level = planner.player?.level ?? 1;
   const income = !keepEconomy && planner.player?.id ? await incomePlan(market, planner).catch(() => null) : null;
   const targets = Array.from({ length: 4 }, (_, i) => min + ((max - min) * i) / 3);

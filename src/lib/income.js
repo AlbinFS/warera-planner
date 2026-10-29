@@ -47,5 +47,5 @@ export async function incomePlan(market, planner) {
   return JSON.parse(JSON.stringify({ plan, config }));
 }
 
-/** Money per day for an economy layout, plus prestige ranks (Leadership's better cards aren't money: see dailyIncome). */
+/** Money per day for an economy layout, plus prestige ranks (Management's better cards aren't money: see dailyIncome). */
 export const incomeOf = ({ plan, config }, levels, prestige = {}) => dailyIncome(Object.fromEntries(ECONOMY_SKILLS.map((s) => [s, (levels[s] ?? 0) + (prestige?.[s] ?? 0)])), plan, config).total;

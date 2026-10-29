@@ -11,14 +11,15 @@ const emp = (name, extra = {}) => ({
   potential: 3, potentialMax: 6, age: 30, ...extra,
 });
 
-test('a check: base, traits, Leadership, Luck and happiness, held in 5–90 %', () => {
+test('a check: base, traits, Management, Luck and happiness, held in 5–90 %', () => {
   const check = { type: 'standard', base: 45, traitMods: { quickStudy: 10 } };
-  assert.equal(checkChance(check, { who: emp('A') }), 0.45);
-  // Quick Study +10, Leadership 3 (+6), Luck 5 (+2 a point on a standard check), happiness 70 (+4).
+  // Luck counts from the first point since v0.27.3: Luck 3 is +6 on a standard check.
+  assert.ok(Math.abs(checkChance(check, { who: emp('A') }) - 0.51) < 1e-9);
+  // Quick Study +10, Management 3 (+6), Luck 5 (+2 a point on a standard check), happiness 70 (+4).
   const who = emp('A', { traits: ['quickStudy'], happiness: { value: 70 }, stats: { luck: { total: 5 } } });
-  assert.ok(Math.abs(checkChance(check, { who, leadership: 3 }) - 0.69) < 1e-9);
+  assert.ok(Math.abs(checkChance(check, { who, management: 3 }) - 0.75) < 1e-9);
   // A Luck check counts Luck at 4 % a point.
-  assert.ok(Math.abs(checkChance({ type: 'luck', base: 50 }, { who: emp('A', { stats: { luck: { total: 5 } } }) }) - 0.58) < 1e-9);
+  assert.ok(Math.abs(checkChance({ type: 'luck', base: 50 }, { who: emp('A', { stats: { luck: { total: 5 } } }) }) - 0.70) < 1e-9);
   assert.equal(checkChance({ type: 'standard', base: 99 }, { who: emp('A') }), 0.9);
   assert.equal(checkChance({ type: 'standard', base: 0 }, { who: emp('A', { happiness: { value: 0 } }) }), 0.05);
 });
@@ -29,8 +30,8 @@ test('On fire: letting the streak run beats sending them home, by its odds and o
   const answers = rateEvent('onFire', { model, employees: team, self: 0 });
   assert.equal(answers[0].key, EVENTS.onFire.options[0].key);
   const run = answers.find((a) => a.key === EVENTS.onFire.options[0].key);
-  // Chance 55 % base + 4 for happiness 70; the results' chances add up to 1.
-  assert.ok(Math.abs(run.chance - 0.59) < 1e-9);
+  // Chance 55 % base + 4 for happiness 70 + 6 for Luck 3; the results' chances add up to 1.
+  assert.ok(Math.abs(run.chance - 0.65) < 1e-9);
   assert.ok(Math.abs(run.results.reduce((s, r) => s + r.p, 0) - 1) < 1e-9);
   // +30 % for 24 h on 24 points a day at 0.1 G is 0.72 G.
   assert.ok(Math.abs(run.results.find((r) => r.kind === 'success').value - 0.72) < 1e-9);

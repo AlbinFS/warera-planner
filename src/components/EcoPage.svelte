@@ -9,7 +9,7 @@
   import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf, pointValues } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import { staffModels } from '../lib/income.js';
-  import { leadershipValues } from '../lib/training.js';
+  import { cardValues } from '../lib/training.js';
   import { cached } from '../lib/warera.js';
   import EcoSkills from './EcoSkills.svelte';
   import EcoProduction from './EcoProduction.svelte';
@@ -122,11 +122,12 @@
 
   // The employees as the hiring and training models see them; what a toolbox is worth to them.
   const staffing = $derived(staffModels(companies, ecoEmployees, { perPoint, managementPercent: 2 * currentManagementValue, regions, countries, items }));
-  // What each Leadership level adds a day through better training cards.
+  // What each Management level adds a day through better training cards (Leadership's before v0.27.3).
   // Past level 10 with prestige ranks.
-  const leadershipTop = $derived(Math.max(0, ...Object.keys(data.market.gameConfigSkills.leadership?.levels ?? { 0: 1 }).map(Number)) + maxRank(Math.max(planner.player?.prestigePoints ?? 0, planner.player?.own?.prestigePoints ?? 0)));
-  const leadershipByLevel = $derived(leadershipValues(staffing.models, leadershipTop));
-  const leadership = $derived((planner.player?.ecoLevels?.leadership ?? 0) + ownRank('leadership'));
+  const managementTop = $derived(Math.max(0, ...Object.keys(data.market.gameConfigSkills.management?.levels ?? { 0: 1 }).map(Number)) + maxRank(Math.max(planner.player?.prestigePoints ?? 0, planner.player?.own?.prestigePoints ?? 0)));
+  const cardsByLevel = $derived(cardValues(staffing.models, managementTop));
+  // The owner's Management level (with prestige ranks): better training cards and +2 % event odds a level.
+  const managementLevel = $derived((planner.player?.ecoLevels?.management ?? 0) + ownRank('management'));
   // What 10 energy of self-work makes now: the Production skill's points at the best-paying good.
   const selfWorkValue = $derived(ecoValue(data.market.gameConfigSkills, 'production', planner.player?.ecoLevels?.production ?? 0, ownRank('production')) * Math.max(0, ...companies.filter((c) => !c.disabled).map((c) => perPoint[c.good] ?? 0)));
 
@@ -146,7 +147,7 @@
     currentManagementValue: currentManagementValue,
     selfWork: ecoSettings.selfWork,
     trainingsPerDay: trainingsPerDayOf(ecoSettings.trainingsPerDay, Object.values(ecoEmployees).flat()),
-    leadershipValues: leadershipByLevel,
+    cardValues: cardsByLevel,
   });
 
   const fightPoints = $derived(FIGHT_SKILLS.reduce((sum, s) => {
@@ -208,14 +209,14 @@
       {#await import('./EcoEvents.svelte')}
         <p class="muted">Loading the events…</p>
       {:then { default: EcoEvents }}
-        <EcoEvents {companies} {perPoint} {items} prices={data.market.itemPrices} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} {selfWorkValue} selfWork={ecoSettings.selfWork} />
+        <EcoEvents {companies} {perPoint} {items} prices={data.market.itemPrices} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {managementLevel} {selfWorkValue} selfWork={ecoSettings.selfWork} />
       {/await}
     {:else if tab === 'location'}
       <EcoLocation {companies} {perPoint} {items} />
     {:else if tab === 'hiring'}
-      <EcoHiring {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} />
+      <EcoHiring {companies} {perPoint} {items} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {managementLevel} />
     {:else}
-      <EcoTraining {companies} {perPoint} {items} upgrades={data.upgrades} prices={data.market.itemPrices} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {leadership} {selfWorkValue} selfWork={ecoSettings.selfWork} {pointValue} />
+      <EcoTraining {companies} {perPoint} {items} upgrades={data.upgrades} prices={data.market.itemPrices} managementPercent={2 * currentManagementValue} toolboxValue={staffing.toolboxValue} {managementLevel} {selfWorkValue} selfWork={ecoSettings.selfWork} {pointValue} />
     {/if}
   {/if}
 </div>

@@ -4,16 +4,17 @@
  *
  * The game's rules (its web app's config and card list, 2026-10-28):
  *   a session costs 10 energy and deals a hand of 3; one is kept
- *   rarity weights 55 / 25 / 13 / 5 / 2 (common … legendary); each Leadership
- *   level moves +1 / +0.6 / +0.3 / +0.1 from common to uncommon … legendary,
- *   each point of the employee's Luck half that
+ *   rarity weights 55 / 25 / 13 / 5 / 2 (common … legendary); each level of
+ *   the owner's Management (v0.27.3: Leadership is part of it) moves +1 /
+ *   +0.6 / +0.3 / +0.1 from common to uncommon … legendary, each point of
+ *   the employee's Luck half that
  *   Drill: +1 / +2 / +3 / +4 to Production, Luck or Responsibility
  *     (common / uncommon / epic / legendary)
  *   Negotiation: −0.05 / −0.1 / −0.2 wage expectation (common / uncommon /
  *     rare), not below 0.7
  *   Second Wind: +2 / +3 / +4 potential (rare / epic / legendary), up to 15
- *   Rehab: drops a mixed (uncommon) or bad (rare) trait; Rehab All (two or
- *     more bad ones): drops them all (legendary)
+ *   Rehab (rare): drops a bad trait (v0.27.3: bad ones only); Rehab All (two
+ *     or more bad ones): drops them all (legendary)
  *   New habit: a mixed (rare) or good (epic) trait; two good ones (legendary)
  *   Wild Card (uncommon): +1 to a random stat and a random trait of any kind
  * Not in the config: which card of a rarity comes up. Taken as any of that
@@ -28,7 +29,7 @@ import { changeValue, canGain, daysLeftOf, TRAITS, traitName } from './hiring.js
 
 export const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 const BASE_WEIGHTS = { common: 55, uncommon: 25, rare: 13, epic: 5, legendary: 2 };
-const LEADERSHIP_SHIFT = { uncommon: 1, rare: 0.6, epic: 0.3, legendary: 0.1 };
+const MANAGEMENT_SHIFT = { uncommon: 1, rare: 0.6, epic: 0.3, legendary: 0.1 };
 const LUCK_SHIFT = { uncommon: 0.5, rare: 0.3, epic: 0.15, legendary: 0.05 };
 const DRILL_RARITY = ['common', 'uncommon', 'epic', 'legendary'];
 const STATS = ['production', 'luck', 'responsibility'];
@@ -42,12 +43,12 @@ const SPEC_MAX = 20;
 // Days left when nothing says (a candidate's age is 18–45: about 33 days on average).
 const DAYS_UNKNOWN = 33;
 
-/** Rarity weights for a session, with the owner's Leadership level and the employee's Luck. */
-export function rarityWeights(leadership = 0, luck = 0) {
+/** Rarity weights for a session, with the owner's Management level and the employee's Luck. */
+export function rarityWeights(management = 0, luck = 0) {
   const w = { ...BASE_WEIGHTS };
   let moved = 0;
   for (const r of ['uncommon', 'rare', 'epic', 'legendary']) {
-    const d = LEADERSHIP_SHIFT[r] * Math.max(0, leadership) + LUCK_SHIFT[r] * Math.max(0, luck);
+    const d = MANAGEMENT_SHIFT[r] * Math.max(0, management) + LUCK_SHIFT[r] * Math.max(0, luck);
     w[r] += d;
     moved += d;
   }
@@ -64,7 +65,7 @@ export function cardPool(e) {
   const traits = e.traits ?? [];
   const pool = [];
   for (const stat of STATS) DRILL_RARITY.forEach((rarity, i) => pool.push({ card: 'drill', rarity, stat, delta: i + 1 }));
-  for (const t of traits) if (isBad(t) || isMixed(t)) pool.push({ card: 'rehab', rarity: isBad(t) ? 'rare' : 'uncommon', trait: t });
+  for (const t of traits) if (isBad(t)) pool.push({ card: 'rehab', rarity: 'rare', trait: t });
   const bad = traits.filter(isBad);
   if (bad.length >= 2) pool.push({ card: 'rehabAll', rarity: 'legendary', traits: bad });
   const gainable = Object.keys(TRAITS).filter((t) => canGain(t, traits, e.gender));
@@ -122,12 +123,12 @@ export function handValue(values, chances) {
 
 /**
  * Every card for employee `index` of a company model (hiring.js), valued.
- * options: { leadership (the owner's level), now }. Returns { days (left),
+ * options: { management (the owner's Management level), now }. Returns { days (left),
  * left (trainings), perDay (sessions a day), cards: [{ …card, label, perDay,
  * total, chance (in a hand) }] best first, session (the best of a hand,
  * expected, G in all) }.
  */
-export function trainingCards(model, index, { leadership = 0, now = Date.now() } = {}) {
+export function trainingCards(model, index, { management = 0, now = Date.now() } = {}) {
   const e = model.team[index];
   const days = e.daysLeft ?? daysLeftOf(e, now) ?? DAYS_UNKNOWN;
   const left = Math.max(0, (e.potentialMax ?? 0) - (e.potential ?? 0));
@@ -181,7 +182,7 @@ export function trainingCards(model, index, { leadership = 0, now = Date.now() }
     c.total = perDay * days + once;
   }
 
-  const weights = rarityWeights(leadership, luck);
+  const weights = rarityWeights(management, luck);
   const chances = drawChances(pool, weights);
   // Trainings still to come after this one, and how much later they come on average (fewer days to pay).
   const later = Math.max(0, Math.min(left - 1, Math.floor(days * sessions) - 1));
@@ -198,7 +199,7 @@ export function trainingCards(model, index, { leadership = 0, now = Date.now() }
       c.perDay = days > 0 ? total / days : 0;
     } else if (c.card === 'drill' && c.stat === 'luck' && later > 0) {
       // Luck also deals this employee better cards in the sessions left.
-      const better = handValue(pool.map((x) => (x.card === 'secondWind' ? 0 : x.total)), drawChances(pool, rarityWeights(leadership, luck + c.delta))) - base;
+      const better = handValue(pool.map((x) => (x.card === 'secondWind' ? 0 : x.total)), drawChances(pool, rarityWeights(management, luck + c.delta))) - base;
       c.total += better * later * laterShare;
       c.perDay = days > 0 ? c.total / days : c.perDay;
     }
@@ -210,20 +211,21 @@ export function trainingCards(model, index, { leadership = 0, now = Date.now() }
 }
 
 /**
- * What the owner's Leadership adds a day: for every employee still training,
+ * What the owner's Management level adds a day through better training cards
+ * (v0.27.3; Leadership's before): for every employee still training,
  * how much more a session is worth at each level than at 0, times their
  * sessions a day. models: company models (hiring.js). Returns [G a day] by
  * level 0…maxLevel.
  */
-export function leadershipValues(models, maxLevel = 10, now = Date.now()) {
+export function cardValues(models, maxLevel = 10, now = Date.now()) {
   const out = new Array(maxLevel + 1).fill(0);
   for (const model of models) {
     model.team.forEach((e, i) => {
       const left = Math.max(0, (e.potentialMax ?? 0) - (e.potential ?? 0));
       if (!left) return;
       const sessions = Math.min(left, Math.max(1, e.trainingsPerDay ?? 1));
-      // The cards' values don't depend on Leadership, only their odds do.
-      const { cards, session } = trainingCards(model, i, { leadership: 0, now });
+      // The cards' values don't depend on the Management level, only their odds do.
+      const { cards, session } = trainingCards(model, i, { management: 0, now });
       const luck = e.stats?.luck?.total ?? e.luckBase ?? 0;
       const values = cards.map((c) => c.total);
       for (let level = 1; level <= maxLevel; level++) out[level] += (handValue(values, drawChances(cards, rarityWeights(level, luck))) - session) * sessions;

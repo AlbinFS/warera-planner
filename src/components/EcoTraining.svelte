@@ -17,7 +17,7 @@
   import { itemLabel } from '../lib/market.js';
   import TraitChip from './TraitChip.svelte';
 
-  let { companies, perPoint, items, upgrades = {}, prices = {}, managementPercent = 0, toolboxValue = 0, leadership = 0, selfWorkValue = 0, selfWork = true, pointValue = null } = $props();
+  let { companies, perPoint, items, upgrades = {}, prices = {}, managementPercent = 0, toolboxValue = 0, managementLevel = 0, selfWorkValue = 0, selfWork = true, pointValue = null } = $props();
 
   let countries = $state.raw({});
   let regions = $state.raw({});
@@ -42,12 +42,11 @@
   })));
 
   // Every card each employee could be dealt, valued (only those still training).
-  const cards = $derived(Object.fromEntries(workers.filter((w) => (w.potentialMax ?? 0) > (w.potential ?? 0)).map((w) => [w.id, trainingCards(models[w.company.id], w.index, { leadership })])));
+  const cards = $derived(Object.fromEntries(workers.filter((w) => (w.potentialMax ?? 0) > (w.potential ?? 0)).map((w) => [w.id, trainingCards(models[w.company.id], w.index, { management: managementLevel })])));
   const selfWorkNow = $derived(selfWork ? selfWorkValue : 0);
 
   // What replacing someone with a typical candidate (no trait, best nationality and gender) adds per day,
-  // with the firing's one-time cost (coworkers −5 happiness for 24 hours) spread over the days it pays.
-  // Moved in the last 24 hours: the game won't let them be fired yet.
+  // (firing costs coworkers nothing since v0.27.3). Hired in the last 12 hours: the game won't let them be fired yet.
   function replaceValue(w) {
     const model = models[w.company.id];
     if (model.team[w.index]?.fireBlocked) return 0;
@@ -75,10 +74,10 @@
   const actions = $derived([
     ...plan.filter((p) => p.verdict === 'train').map((p) => ({ kind: 'Train', who: p.worker.name, where: p.worker.company, what: `pick the best card you're offered (often ${cards[p.worker.id]?.cards[0]?.label ?? 'a Drill'})`, value: p.perSession, day: perDay(p.perSession, p.days), days: p.days })),
     // Anyone losing money can also be replaced: listed when a typical candidate would do better.
-    ...plan.filter((p) => p.verdict === 'replace' || (p.worker.worth < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new (coworkers −5 happiness for 24 hours, counted)', value: p.replace * p.days, day: p.replace, days: p.days })),
+    ...plan.filter((p) => p.verdict === 'replace' || (p.worker.worth < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new', value: p.replace * p.days, day: p.replace, days: p.days })),
     ...hires.filter((h) => h.value > 0).map((h) => ({ kind: 'Hire', who: 'new employee', where: h.company, what: 'fill a free slot', value: h.value * DAYS_UNKNOWN, day: h.value, days: DAYS_UNKNOWN })),
   ].filter((a) => a.value > 0.005).sort((a, b) => b.value - a.value));
-  // What to pick: the cards most likely to be in a hand (by your Leadership and their Luck), in the
+  // What to pick: the cards most likely to be in a hand (by your Management level and their Luck), in the
   // order to pick them, then the rare ones worth more than all of those: take them if dealt.
   const LIKELY = 6;
   const likely = (list) => [...list].sort((a, b) => b.chance - a.chance || b.total - a.total).slice(0, LIKELY).sort((a, b) => b.total - a.total);
@@ -227,7 +226,7 @@
     "Already trained": trained today, so not again until 00:00 UTC; they come last until then.
     Per point: at the market price of the company's good (what selling it earns), and at the game's point value, as its profit tooltip
     counts it. Pick order: the {LIKELY} cards most likely to be in your hand (the % is the chance it's among your three, with your
-    Leadership and their Luck), best first; then rare cards worth more than all of them, to take if you're dealt one. Anything else:
+    Management level and their Luck), best first; then rare cards worth more than all of them, to take if you're dealt one. Anything else:
     "All cards".
   </p>
 </section>
@@ -237,7 +236,7 @@
   <p class="muted small">
     Every card the game can deal each employee, best first: pick the highest of the three you're offered. Values are what the card adds
     a day (output, toolboxes from Luck, coworkers included, less any wage rise) and in all, over the days they have left. Odds use your
-    Leadership ({leadership}) and their Luck; which card of a rarity comes up isn't in the game's config, so it's taken as any of them, evenly.
+    Management level ({managementLevel}) and their Luck; which card of a rarity comes up isn't in the game's config, so it's taken as any of them, evenly.
   </p>
   {#each workers.filter((w) => cards[w.id]) as w (w.id)}
     {@const r = cards[w.id]}

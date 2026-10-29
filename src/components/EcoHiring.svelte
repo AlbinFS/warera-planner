@@ -15,7 +15,7 @@
   import TraitChip from './TraitChip.svelte';
   import EcoCandidates from './EcoCandidates.svelte';
 
-  let { companies, perPoint, items, managementPercent = 0, toolboxValue = 0, leadership = 0 } = $props();
+  let { companies, perPoint, items, managementPercent = 0, toolboxValue = 0, managementLevel = 0 } = $props();
 
   let countries = $state.raw({});
   let regions = $state.raw({});
@@ -60,7 +60,7 @@
       .sort((a, b) => b.value - a.value);
     const genders = ['male', 'female'].map((g) => ({ gender: g, value: profiles.find((p) => p.plain.gender === g && p.plain.nationality === best.plain.nationality).plain.value }));
     // Each employee still training: their two best cards.
-    const cards = team.map((e, i) => ((e.potentialMax ?? 0) > (e.potential ?? 0) ? { name: e.name, cards: trainingCards(model, i, { leadership }).cards.slice(0, 2) } : null)).filter((x) => x?.cards.length);
+    const cards = team.map((e, i) => ((e.potentialMax ?? 0) > (e.potential ?? 0) ? { name: e.name, cards: trainingCards(model, i, { management: managementLevel }).cards.slice(0, 2) } : null)).filter((x) => x?.cards.length);
     return { company: c, team, full, best, ideal, anyNationality, anyGender, nationalities, genders, cards };
   }
   const plans = $derived(companies.filter((c) => !c.disabled).map(plan));
@@ -114,7 +114,7 @@
       <span class="num value" class:good={p.ideal.value >= 0} class:bad={p.ideal.value < 0}>{signed(p.ideal.value)} G/day</span>
       <span class="muted small">{signed(p.ideal.points, 1)} points a day{#if p.best.pick} · without a trait: {signed(p.best.plain.value)} G/day{/if}</span>
       {#if p.ideal.fireCost > 0.005}
-        <span class="muted small">Firing {p.ideal.replaces} costs once about {fmt(p.ideal.fireCost, 2)} G (every coworker −5 happiness for 24 hours){#if p.ideal.value > 0}: paid back in {payback(p.ideal)}{:else}, and the replacement doesn't pay{/if}.</span>
+        <span class="muted small">Firing {p.ideal.replaces} costs nothing more (no happiness lost since v0.27.3){#if p.ideal.value <= 0}, but the replacement doesn't pay{/if}.</span>
       {/if}
       {#if p.ideal.coworkers.some((c) => Math.abs(c.change) > 0.05)}
         <ul class="effects">

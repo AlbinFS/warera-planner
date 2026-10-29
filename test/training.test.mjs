@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rarityWeights, handValue, cardPool, trainingCards, leadershipValues } from '../src/lib/training.js';
+import { rarityWeights, handValue, cardPool, trainingCards, cardValues } from '../src/lib/training.js';
 import { companyModel } from '../src/lib/hiring.js';
 
 const place = { good: 'iron', raw: true, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
@@ -11,7 +11,7 @@ const emp = (name, traits, extra = {}) => ({
 });
 const model = (employees) => companyModel(employees, place, { perPoint: 0.1, fairWage: 0.5, now: 0 });
 
-test('Leadership and Luck move weight from common cards to rarer ones, as the game does', () => {
+test('Management and Luck move weight from common cards to rarer ones, as the game does', () => {
   assert.deepEqual(rarityWeights(10, 0), { common: 35, uncommon: 35, rare: 19, epic: 8, legendary: 3 });
   const w = rarityWeights(0, 4);
   assert.ok(Math.abs(Object.values(w).reduce((t, x) => t + x, 0) - 100) < 1e-9);
@@ -46,11 +46,11 @@ test('card values: bigger drills more, a Greedy rehab pays its wage back, all ov
   for (let i = 1; i < cards.length; i++) assert.ok(cards[i - 1].total >= cards[i].total);
 });
 
-test('Leadership adds value while employees still train, more with each level', () => {
+test('Better training cards from Management add value while employees still train, more with each level', () => {
   const m = model([emp('A', []), emp('B', [], { potential: 8 })]);
-  const v = leadershipValues([m], 10, 0);
+  const v = cardValues([m], 10, 0);
   assert.equal(v[0], 0);
   for (let l = 1; l <= 10; l++) assert.ok(v[l] > v[l - 1]);
-  // Nobody training: Leadership adds nothing.
-  assert.ok(leadershipValues([model([emp('C', [], { potential: 8 })])], 3, 0).every((x) => x === 0));
+  // Nobody training: better cards add nothing.
+  assert.ok(cardValues([model([emp('C', [], { potential: 8 })])], 3, 0).every((x) => x === 0));
 });

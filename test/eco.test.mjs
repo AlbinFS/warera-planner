@@ -20,7 +20,7 @@ test('trainings a day come from the employees: one each while they have potentia
 
 test('eco skills: with too many trainings for any layout, the one with the most energy', () => {
   const config = {
-    skills: { companies: levels([2, 3]), management: levels([1, 2]), energy: levels([100, 110, 120]), production: levels([30, 33]), leadership: levels([0, 1]) },
+    skills: { companies: levels([2, 3]), management: levels([1, 2]), energy: levels([100, 110, 120]), production: levels([30, 33]) },
     upgrades: { automatedEngine: { levels: { 1: { stats: { dailyProd: 24 } } } } },
   };
   const plan = { companies: [{ id: 'a', good: 'x', engine: 1, employees: [] }], perPoint: { x: 0.1 }, currentManagementValue: 1, selfWork: true, trainingsPerDay: 40 };
@@ -35,7 +35,7 @@ test('eco skills: with too many trainings for any layout, the one with the most 
 test('economy steps: the best-earning layout per number of points, each earning more than the last', async () => {
   const { incomeSteps } = await import('../src/lib/eco.js');
   const config = {
-    skills: { companies: levels([2, 3, 4]), management: levels([1, 2, 3]), energy: levels([100, 110]), production: levels([30, 33]), leadership: levels([0, 1]) },
+    skills: { companies: levels([2, 3, 4]), management: levels([1, 2, 3]), energy: levels([100, 110]), production: levels([30, 33]) },
     upgrades: { automatedEngine: { levels: { 1: { stats: { dailyProd: 24 } } } } },
   };
   const plan = { companies: Array.from({ length: 4 }, (_, i) => ({ id: `c${i}`, good: 'x', engine: 1, employees: [{ production: 4, bonusPercent: 10, payroll: 1 }] })), perPoint: { x: 0.1 }, currentManagementValue: 1, selfWork: false, trainingsPerDay: 0 };

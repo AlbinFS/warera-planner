@@ -13,7 +13,7 @@
   import { cached } from '../lib/warera.js';
   import { fmt } from '../lib/format.js';
 
-  let { companies, perPoint, items, prices = {}, managementPercent = 0, toolboxValue = 0, leadership = 0, selfWorkValue = 0, selfWork = true } = $props();
+  let { companies, perPoint, items, prices = {}, managementPercent = 0, toolboxValue = 0, managementLevel = 0, selfWorkValue = 0, selfWork = true } = $props();
 
   let countries = $state.raw({});
   let regions = $state.raw({});
@@ -56,7 +56,7 @@
   const answers = $derived(picked && one && (!needsTwo || two)
     ? rateEvent(picked, {
       model: models[one.company.id], employees: ecoEmployees[one.company.id] ?? [], self: one.index, partner: needsTwo ? two.index : null,
-      prices, toolboxValue, selfWork: selfWork ? selfWorkValue : 0, leadership,
+      prices, toolboxValue, selfWork: selfWork ? selfWorkValue : 0, management: managementLevel,
     })
     : []);
   const best = $derived(answers.find((a) => a.available) ?? null);
@@ -77,7 +77,7 @@
   <p class="muted small">
     When the game shows an employee event, find it here and pick who it is about: every answer is worked out in gold for your company, from
     the game's own rules (cost, chance and results) and your employees as they are now (stats, traits, happiness, coworkers, days left).
-    A check's chance is the game's: its base, the traits it names, +2 % per level of your Leadership ({leadership} now), the employee's Luck and happiness.
+    A check's chance is the game's: its base, the traits it names, +2 % per level of your Management ({managementLevel} now; Leadership is part of it since v0.27.3), the employee's Luck and happiness.
     Luck decides the result, but this is the best bet.
   </p>
   <input class="search" type="search" bind:value={query} placeholder="Search events: name or trigger (Eureka, tool, Gambler…)" aria-label="Search events" />
@@ -141,7 +141,7 @@
           <span><small>Production</small>{one.e.production}</span>
           <span><small>Happiness</small>{fmt(one.e.happiness?.value ?? 50, 0)}</span>
           <span><small>Luck</small>{one.e.stats?.luck?.total ?? '?'}</span>
-          <span><small>Your Leadership</small>{leadership}</span>
+          <span><small>Your Management</small>{managementLevel}</span>
           {#if one.e.traits?.filter(Boolean).length}<span class="traits"><small>Traits</small>{one.e.traits.filter(Boolean).map(traitName).join(', ')}</span>{/if}
         </div>
       {/if}

@@ -37,7 +37,7 @@
 <section class="card" aria-labelledby="moves-title">
   <h2 id="moves-title">Worth moving?</h2>
   <p class="muted small intro">
-    Moving someone to another of your companies: they lose 5 happiness for 7 days, their wage stays, and in another good their specialization starts over (+1 % a day).
+    Moving someone to another of your companies is free (no happiness lost), their wage stays, and in another good their specialization starts over (+1 % a day).
     What changes is who works with whom: an <strong>Old Friends</strong>, Sweethearts or Nemesis pair (only the one holding the trait gets it, while the other works in the same company), a Comic, Girl Power, a Xenophobe, the region's tax… Both companies are counted, day by day over {MOVE_DAYS} days. A full company (break room level) takes someone only as a swap.
   </p>
 

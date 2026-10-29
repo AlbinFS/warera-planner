@@ -38,7 +38,7 @@ test('eco values go on past level 10 with prestige, as the game\'s do', () => {
 
 test('the eco optimizer places prestige points, and they save skill points', () => {
   const config = {
-    skills: { companies: table(2, 1), management: table(1, 1), energy: table(100, 10), production: table(30, 3), leadership: table(0, 1) },
+    skills: { companies: table(2, 1), management: table(1, 1), energy: table(100, 10), production: table(30, 3) },
     upgrades: { automatedEngine: { levels: { 1: { stats: { dailyProd: 24 } } } } },
   };
   const plan = { companies: [{ id: 'a', good: 'x', engine: 1, employees: [] }], perPoint: { x: 0.1 }, currentManagementValue: 1, selfWork: true, trainingsPerDay: 0 };

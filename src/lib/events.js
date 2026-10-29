@@ -7,15 +7,15 @@
  * The rules are the game's own (employee-events.json, read from its
  * web app). A check's chance, as the game explains it:
  *   base + its trait modifiers
- *   + 2 % per level of your Leadership
- *   + Luck: 4 % a point above 3 on a Luck check, 2 % on any other (minus below 3)
+ *   + 2 % per level of your Management (v0.27.3: Leadership is part of it)
+ *   + Luck: 4 % a point on a Luck check, 2 % on any other (v0.27.3: from the
+ *     first point; the first 3 used to do nothing)
  *   + 1 % per 5 happiness above 50 (minus below)
  *   held in 5–90 %. A tenth of successes are critical, a tenth of failures
  *   critically bad (a fifth each for a Gambler).
  *
  * How results are valued (G):
- *   happiness: a point is 1 % output for its hours (losses after the
- *     Responsibility shield, halved for Loyal);
+ *   happiness: a point is 1 % output for its hours (losses halved for Loyal);
  *   production %: its share of output for its hours; away: no output for them;
  *   a stat point: what it adds a day over the days they have left, coworkers
  *     included (Production also raises the wage); if it uses Potential, less
@@ -46,7 +46,7 @@ const SPEC_MAX = 20;
 const TOOL_WEAR_PER_DAY = 100 / 500 * 24;
 const TOOL_RANGES = [[3, 6], [7, 12], [13, 20], [21, 30], [31, 45], [46, 65]];
 // The game's trait pools for a random trait (polarity, weight).
-const POSITIVE = { bandOfBrothers: 5, cosmopolitan: 10, diamondInTheRough: 2, expat: 10, foreman: 5, girlPower: 5, handy: 5, improviser: 5, lateBloomer: 5, loner: 5, loyal: 5, luckyCharm: 5, modest: 10, nationalist: 10, patriot: 10, quickStudy: 10, recruiter: 2, salvager: 5, specialist: 10, sprinter: 5, statist: 10, stockpiler: 10, trainer: 5, veteran: 5 };
+const POSITIVE = { bandOfBrothers: 5, cosmopolitan: 10, diamondInTheRough: 2, expat: 10, foreman: 5, girlPower: 5, handy: 5, improviser: 5, lateBloomer: 5, loner: 5, loyal: 5, luckyCharm: 5, modest: 10, nationalist: 10, patriot: 10, quickStudy: 10, recruiter: 2, salvager: 5, specialist: 10, earlyBloomer: 5, statist: 10, stockpiler: 10, trainer: 5, veteran: 5 };
 const NEGATIVE = { burnout: 2, claustrophobe: 5, climber: 10, creatureOfHabit: 10, envious: 10, flightRisk: 10, greedy: 10, homesick: 10, jinx: 10, manHater: 5, misogynist: 5, taxShy: 10, wornOut: 10, xenophobe: 10 };
 const RESULT = { crit: 'Critical success', success: 'Success', fail: 'Failure', critFail: 'Critical failure' };
 export const resultLabel = (k) => RESULT[k] ?? k;
@@ -55,16 +55,16 @@ const markupOf = (traits) => (traits.includes('greedy') ? 1.2 : 1) * (traits.inc
 
 /**
  * The chance a check succeeds (0–1). who: the employee (traits, happiness,
- * stats.luck), partner (two-person events: their traits count too), leadership.
+ * stats.luck), partner (two-person events: their traits count too), management (the owner's level).
  */
-export function checkChance(check, { who, partner = null, leadership = 0 }) {
+export function checkChance(check, { who, partner = null, management = 0 }) {
   if (!check) return 1;
   const traits = [...(who?.traits ?? []), ...(partner?.traits ?? [])];
   const mods = Object.entries(check.traitMods ?? {}).reduce((s, [t, v]) => s + (traits.includes(t) ? v : 0), 0);
   const luck = who?.stats?.luck?.total ?? 3;
   const luckPer = check.type === 'luck' ? DATA.check.statPerPoint : DATA.check.luckPerPoint;
   const happiness = who?.happiness?.value ?? 50;
-  const percent = check.base + mods + DATA.check.skillPerLevel * leadership
+  const percent = check.base + mods + DATA.check.skillPerLevel * management
     + (luck - DATA.check.statPivot) * luckPer + (happiness - 50) / DATA.check.happinessDivisor;
   return Math.min(DATA.chance.max, Math.max(DATA.chance.min, percent)) / 100;
 }
@@ -85,14 +85,14 @@ function resultOdds(option, chance, gambler) {
  * What every answer of an event is worth. ctx: { model (hiring.js
  * companyModel), employees (as loaded: their tools), self, partner (indexes),
  * prices (item prices), toolboxValue, selfWork (G 10 energy makes),
- * leadership }. Returns [{ key, label, available, chance, cost, ev, results:
+ * management }. Returns [{ key, label, available, chance, cost, ev, results:
  * [{ kind, p, value, effects: [{ text, value }] }], always: [...] }], best first.
  */
 export function rateEvent(code, ctx, depth = 0) {
   const event = EVENTS[code];
   const text = TEXTS[code] ?? {};
   if (!event) return [];
-  const { model, employees = [], self, partner = null, prices = {}, toolboxValue = 0, selfWork = 0, leadership = 0 } = ctx;
+  const { model, employees = [], self, partner = null, prices = {}, toolboxValue = 0, selfWork = 0, management = 0 } = ctx;
   const team = model.team;
   const pp = model.perPoint;
   const raw = employees[self] ?? team[self];
@@ -101,10 +101,11 @@ export function rateEvent(code, ctx, depth = 0) {
   // Points a day one percent of bonus is, and output now.
   const perPercent = (i) => ((team[i]?.prod ?? 0) / 4) * 24 / 100;
   const output = (i) => perPercent(i) * (100 + (employees[i]?.bonusPercent ?? 0));
-  const lossFactor = (i) => (1 - Math.min(1, (team[i]?.resp ?? 0) / 10)) * (team[i]?.traits?.includes('loyal') ? 0.5 : 1);
+  // Loyal halves happiness losses (Responsibility no longer shields them since v0.27.3: it adds +3 a point).
+  const lossFactor = (i) => (team[i]?.traits?.includes('loyal') ? 0.5 : 1);
   const sessions = new Map();
   const potentialWorth = (i) => {
-    if (!sessions.has(i)) sessions.set(i, Math.max(0, (trainingCards(model, i, { leadership }).session ?? 0) - selfWork));
+    if (!sessions.has(i)) sessions.set(i, Math.max(0, (trainingCards(model, i, { management }).session ?? 0) - selfWork));
     return sessions.get(i);
   };
   const potentialLeft = (i) => Math.max(0, (team[i]?.potentialMax ?? 0) - (team[i]?.potential ?? 0));
@@ -234,7 +235,7 @@ export function rateEvent(code, ctx, depth = 0) {
   const gambler = team[self]?.traits?.includes('gambler');
   const options = event.options.map((o) => {
     const available = !o.requires?.traitsAny || o.requires.traitsAny.some((t) => team[self]?.traits?.includes(t));
-    const chance = checkChance(o.check, { who: raw, partner: partner != null ? employees[partner] ?? team[partner] : null, leadership });
+    const chance = checkChance(o.check, { who: raw, partner: partner != null ? employees[partner] ?? team[partner] : null, management });
     const costs = (o.costs ?? []).map(cost);
     const always = (o.always ?? []).flatMap((f) => effect(f, o));
     const results = resultOdds(o, chance, gambler).map(([kind, p]) => {

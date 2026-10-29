@@ -7,16 +7,15 @@
   import { prestigeUsed } from '../lib/prestige.js';
   import { fmt } from '../lib/format.js';
   import Icon from './Icon.svelte';
-  import { mdiFactory, mdiLightningBolt, mdiAccountGroup, mdiCrown, mdiAccountStar } from '@mdi/js';
+  import { mdiFactory, mdiLightningBolt, mdiAccountGroup, mdiCrown } from '@mdi/js';
 
   let { plan, config, fightPoints, estimate, estimateNote = "from today's prices" } = $props();
 
   const META = {
     companies: { label: 'Companies', icon: mdiAccountGroup, what: 'How many companies run at once (engines and employees only work in running companies).' },
-    management: { label: 'Management', icon: mdiCrown, what: '+2% output for every employee per point (its value is level + 1).' },
+    management: { label: 'Management', icon: mdiCrown, what: '+2% output for every employee per point (its value is level + 1), and per level better training cards and +2% event odds (Leadership is part of it since v0.27.3). The cards are value, not money, but counted.' },
     energy: { label: 'Energy', icon: mdiLightningBolt, what: 'Pays for hiring, training and self-work (10 each); refills a tenth of the bar an hour.' },
     production: { label: 'Production', icon: mdiFactory, what: 'Production points from each self-work.' },
-    leadership: { label: 'Leadership', icon: mdiAccountStar, what: 'Better training cards (and event odds): worth what the better cards add to your employees still training. Not money, but counted.' },
   };
 
   const skills = $derived(config.skills);
@@ -110,7 +109,7 @@
     <dl class="big">
       <div><dt>Money per day now</dt><dd class="num">{fmt(now.total, 1)} G</dd></div>
       <div><dt>With the best skills</dt><dd class="num good">{fmt(best.result.total, 1)} G</dd></div>
-      {#if best.result.leadership > 0.05 || now.leadership > 0.05}<div><dt>Better training cards</dt><dd class="num">{fmt(best.result.leadership, 1)} G</dd><small class="muted">Leadership {best.levels.leadership}: value, not money (now {fmt(now.leadership, 1)})</small></div>{/if}
+      {#if best.result.cards > 0.05 || now.cards > 0.05}<div><dt>Better training cards</dt><dd class="num">{fmt(best.result.cards, 1)} G</dd><small class="muted">Management {best.effective.management}: value, not money (now {fmt(now.cards, 1)})</small></div>{/if}
       <div><dt>Difference</dt><dd class="num">{best.result.value >= now.value ? '+' : ''}{fmt(best.result.value - now.value, 1)} G</dd></div>
       <div><dt>Points used</dt><dd class="num">{best.spent} <small class="muted">of {budget}</small></dd></div>
       {#if prestigePoints > 0}<div><dt>★ Prestige points</dt><dd class="num">{prestigeUsed(best.ranks)} <small class="muted">of {prestigePoints}</small></dd><small class="muted">each rank is a level without skill points</small></div>{/if}
@@ -137,7 +136,7 @@
       <li>Energy: {fmt(best.result.energyPerDay, 0)} a day; {fmt(best.result.trainingEnergy, 0)} for trainings{#if plan.selfWork}, {best.result.selfWorkActions} self-works → {fmt(best.result.selfWorkPoints, 0)} points = <strong>{fmt(best.result.selfWork, 1)} G</strong>{/if}</li>
       {#if best.result.energyShort}<li class="warn">No layout within {budget} points has the energy for all {plan.trainingsPerDay} trainings a day: this one has the most ({fmt(best.result.energyPerDay / 10, 0)} actions).</li>{/if}
     </ul>
-    <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27 gave everyone one free reset). The model: engine and employee output at today's prices for each company's good, employees' output and payroll as the game shows them, Management +2% per point of its value on employee output.</p>
+    <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27.3 gave everyone a free reset with no cooldown, and refunded Leadership's points). The model: engine and employee output at the game's value of a point of each company's good, employees' output and payroll as the game shows them, Management +2% per point of its value on employee output.</p>
   </section>
 {:else}
   <section class="card"><p class="warn">No layout fits within {budget} points.</p></section>
