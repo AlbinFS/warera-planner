@@ -138,3 +138,23 @@ export function bestMoves(sides, { days = MOVE_DAYS } = {}) {
   }));
   return out.sort((x, y) => y.total - x.total);
 }
+
+/**
+ * The moves to make, from bestMoves' list: best first, then only moves that
+ * touch nobody and no company an earlier pick already changed (each was
+ * worked out with the teams as they are now, and you'd take the best one for
+ * a person anyway). After moving, reload to see what's worth doing next.
+ */
+export function movePlan(moves) {
+  const people = new Set();
+  const places = new Set();
+  const plan = [];
+  for (const m of moves) {
+    const who = [`${m.from.id}:${m.index}`, ...(m.swap == null ? [] : [`${m.to.id}:${m.swap}`])];
+    if (who.some((w) => people.has(w)) || places.has(m.from.id) || places.has(m.to.id)) continue;
+    plan.push(m);
+    who.forEach((w) => people.add(w));
+    places.add(m.from.id).add(m.to.id);
+  }
+  return plan;
+}

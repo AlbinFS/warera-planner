@@ -4,7 +4,7 @@
    * into a full company) that pay over 30 days, and any one move checked by hand.
    */
   import { ecoEmployees } from '../lib/eco.svelte.js';
-  import { moveValue, bestMoves, MOVE_DAYS } from '../lib/moving.js';
+  import { moveValue, bestMoves, movePlan, MOVE_DAYS } from '../lib/moving.js';
   import { fmt } from '../lib/format.js';
   import { itemImage } from '../lib/visual.js';
 
@@ -14,7 +14,8 @@
   const running = $derived(companies.filter((c) => !c.disabled));
   const sides = $derived(running.map((c, i) => ({ id: c.id, name: c.name, good: c.good, capacity: c.breakRoom ?? 1, manager: c.manager && !c.manager.inactive ? c.manager.bonusPercent : 0, employees: ecoEmployees[c.id] ?? [], model: models[i] }))
     .filter((s) => s.model));
-  const moves = $derived(sides.length > 1 ? bestMoves(sides) : []);
+  // Each person and company once, the best move first.
+  const moves = $derived(sides.length > 1 ? movePlan(bestMoves(sides)) : []);
 
   // Check a move by hand.
   let pick = $state('');
@@ -47,6 +48,7 @@
       {/each}
     </ul>
     {#if moves.length > 8}<p class="muted small">{moves.length - 8} more moves pay less.</p>{/if}
+    <p class="muted small">Each person and each company shows up once, in the move worth the most for them: the others were worked out with today's teams. After moving, press Refresh to see what's worth doing next.</p>
   {:else if sides.length > 1}
     <p class="muted">No move or swap pays over {MOVE_DAYS} days right now.</p>
   {/if}

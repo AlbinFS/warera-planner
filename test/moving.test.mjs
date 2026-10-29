@@ -46,3 +46,15 @@ test('a hired manager\'s bonus stays with their company', () => {
   const moved = moveValue(a, 0, b);
   assert.ok(moved.changes[0].change < 0, 'leaving the manager costs the one moved');
 });
+
+test('the plan lists each person and company once, best first', async () => {
+  const { movePlan } = await import('../src/lib/moving.js');
+  const a = { id: 'A' }, b = { id: 'B' }, c = { id: 'C' }, d = { id: 'D' };
+  const plan = movePlan([
+    { from: a, to: b, index: 0, swap: 1, total: 9 },
+    { from: c, to: b, index: 0, swap: 1, total: 8 }, // B's person again
+    { from: a, to: c, index: 2, swap: null, total: 7 }, // company A again
+    { from: c, to: d, index: 0, swap: null, total: 6 },
+  ]);
+  assert.deepEqual(plan.map((m) => m.total), [9, 6]);
+});
