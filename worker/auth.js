@@ -120,7 +120,13 @@ async function ensureAuthSchema(db) {
 /** The visitor's session if their cookie is valid (or they're the admin), else null. */
 export async function currentSession(env, request) {
   await ensureAuthSchema(env.DB);
-  if (await isAdmin(env, request)) return { admin: true };
+  // The admin may also be signed in as their player (a manager, say): keep both.
+  const player = await playerSession(env, request);
+  if (await isAdmin(env, request)) return { ...player, admin: true };
+  return player;
+}
+
+async function playerSession(env, request) {
   const token = cookies(request)[SESSION_COOKIE];
   if (!token) return null;
   const hash = await sha256(token);
