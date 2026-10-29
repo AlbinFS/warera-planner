@@ -155,6 +155,9 @@ export const doneForToday = (e, now = Date.now()) => trainedToday(e, now) >= Mat
 /** When the next day's trainings open (00:00 UTC). */
 export const nextTrainingDay = (now = Date.now()) => (Math.floor(now / DAY_MS) + 1) * DAY_MS;
 
+// A replacement must add at least this much a day (G) to be suggested for someone who makes money.
+const MIN_REPLACE_GAIN = 0.05;
+
 /**
  * Who to train, and who to replace. workers: [{ id, name, company, perPoint,
  * production, bonusPercent, payroll, wageExpectation, potential,
@@ -165,8 +168,14 @@ export const nextTrainingDay = (now = Date.now()) => (Math.floor(now / DAY_MS) +
  * 10 energy of self-work makes; pointValue: the game's value of a point (its
  * profit tooltip uses it; the plan values output at the good's market price).
  * Trained today (doneForToday) is 'trained', after everyone who can train now.
- * Each: { worker, margin, gameMargin, left, days, verdict, perSession (G in
- * all for the next 10 energy), replace (G a day), why }.
+ * Replace: someone losing money for the company, when a new hire adds more
+ * than training them; or someone who makes money, when a typical new hire
+ * (replaceValue: the whole company's change, coworkers included) adds more
+ * over the days they have left than all their training left would, less the
+ * hire's 10 energy (worth what self-work makes with it). Firing costs nothing
+ * since v0.27.3. Each: { worker, margin, gameMargin, left, days, verdict,
+ * perSession (G in all for the next 10 energy), replace (G a day), keep (G in
+ * all their training left is worth), why }.
  */
 export function trainingPlan(workers, fairWage, replaceValue = () => 0, { sessionOf = null, selfWork = 0, pointValue = null, now = Date.now() } = {}) {
   const order = { train: 0, replace: 0, skip: 1, trained: 2, done: 3 };
@@ -182,12 +191,19 @@ export function trainingPlan(workers, fairWage, replaceValue = () => 0, { sessio
     const days = w.daysLeft ?? DAYS_UNKNOWN;
     const replace = replaceValue(w);
     const session = left > 0 ? (sessionOf ? sessionOf(w) : DRILL_AVERAGE * margin * days) : 0;
+    // What keeping them can still grow into: every training left at about a session's worth.
+    const keep = session * left;
+    const worth = w.worth ?? w.profit;
     let verdict;
     let why;
     // Losing money counts what they do for their coworkers too (worth, hiring.js employeeWorth), not only their own output.
-    if ((w.worth ?? w.profit) < 0 && replace > 0 && replace * days > session) {
+    if (worth < 0 && replace > 0 && replace * days > session) {
       verdict = 'replace';
       why = floorMargin <= 0 ? 'loses money even at the lowest wage' : 'loses money, and a new hire adds more than training them';
+    } else if (worth >= 0 && replace >= MIN_REPLACE_GAIN && replace * days - selfWork > keep) {
+      // Makes money, but a typical new hire would make more for the company over the days they have left.
+      verdict = 'replace';
+      why = `makes ${worth.toFixed(2)} G a day for the company, but a typical new hire would add ${replace.toFixed(2)} G a day more: about ${(replace * days).toFixed(1)} G over the ${Math.round(days)} days they have left${left > 0 ? `, more than their ${left} training${left === 1 ? '' : 's'} left would (about ${keep.toFixed(1)} G)` : ' (no training left)'}`;
     } else if (left === 0) {
       verdict = 'done';
       why = 'no training left';
@@ -202,7 +218,7 @@ export function trainingPlan(workers, fairWage, replaceValue = () => 0, { sessio
       verdict = 'skip';
       why = session > 0 ? `self-work makes more with the energy (${selfWork.toFixed(1)} G against ${session.toFixed(1)} G)` : 'no card pays: their Production barely pays its own wage';
     }
-    return { worker: w, margin, gameMargin, left, days, verdict, perSession: session, replace, why };
+    return { worker: w, margin, gameMargin, left, days, verdict, perSession: session, replace, keep, why };
   }).sort((a, b) => order[a.verdict] - order[b.verdict] || b.perSession - a.perSession);
 }
 

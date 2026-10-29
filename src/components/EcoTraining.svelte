@@ -194,6 +194,7 @@
           <span class="tile"><small>Wage</small>{fmt(w.payroll ?? 0, 2)} G/day</span>
           <span class="tile" class:good={w.profit > 0} class:bad={w.profit < 0}><small>Profit now</small>{signed(w.profit)} G/day</span>
           {#if Math.abs(w.worth - w.profit) > 0.005}<span class="tile" class:good={w.worth > 0} class:bad={w.worth < 0} title="Their own output plus what they do for their coworkers (a Mentor's lift, a Comic's mood, …), minus their wage"><small>Value to company</small>{signed(w.worth)} G/day</span>{/if}
+          {#if Number.isFinite(p.replace) && Math.abs(p.replace) > 0.005}<span class="tile" class:good={p.replace < 0} class:bad={p.replace > 0} title="What a typical new hire in their place would add (+) or lose (−) for the company a day, coworkers included"><small>A new hire instead</small>{signed(p.replace)} G/day</span>{/if}
           <span class="tile"><small>Days left</small>{fmt(p.days, 0)}</span>
         </div>
         <div class="values">

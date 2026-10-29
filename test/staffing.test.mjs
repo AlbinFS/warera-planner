@@ -100,3 +100,21 @@ test('trained today: the API\'s count only holds on the day of the last training
   // At the game's point value one more point earns less than at this good's price.
   assert.ok(plan[0].gameMargin < plan[0].margin);
 });
+
+test('replace someone who makes money when a typical hire adds more over their days than their training left', () => {
+  const base = { company: 'c', perPoint: 0.1, production: 1, bonusPercent: 10, wageExpectation: 1, payroll: 0.6, potential: 4, potentialMax: 5, daysLeft: 40, profit: 0.05, worth: 0.1 };
+  const session = () => 2; // each training left is worth about 2 G
+  // A hire adding 0.5 G a day for 40 days (20 G, less 1 G of energy) beats one training left (2 G).
+  const [weak] = trainingPlan([{ ...base, id: 'weak', name: 'weak' }], 0.6, () => 0.5, { sessionOf: session, selfWork: 1 });
+  assert.equal(weak.verdict, 'replace');
+  assert.match(weak.why, /makes 0\.10 G a day/);
+  // Lots of training left: keeping them can still grow past a new hire.
+  const [young] = trainingPlan([{ ...base, id: 'young', name: 'young', potential: 0, potentialMax: 15 }], 0.6, () => 0.5, { sessionOf: session, selfWork: 1 });
+  assert.notEqual(young.verdict, 'replace');
+  // Retiring in two days: not worth the hire.
+  const [old] = trainingPlan([{ ...base, id: 'old', name: 'old', daysLeft: 2 }], 0.6, () => 0.5, { sessionOf: session, selfWork: 1 });
+  assert.notEqual(old.verdict, 'replace');
+  // A hire that adds next to nothing: keep them.
+  const [fine] = trainingPlan([{ ...base, id: 'fine', name: 'fine' }], 0.6, () => 0.02, { sessionOf: session, selfWork: 1 });
+  assert.notEqual(fine.verdict, 'replace');
+});
