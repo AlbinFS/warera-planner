@@ -16,6 +16,7 @@
   import InvitesPage from './components/InvitesPage.svelte';
   import ComparisonsPage from './components/ComparisonsPage.svelte';
   import BreakpointPanel from './components/BreakpointPanel.svelte';
+  import Changelog from './components/Changelog.svelte';
   import { getApiKey } from './lib/warera.js';
   import { apiKeyState } from './lib/eco.svelte.js';
   import Dialog from './components/Dialog.svelte';
@@ -149,6 +150,7 @@
     <OptimizePanel {data} {current} show={optimizing} />
   </Dialog>
 {/if}
+<Changelog />
 
 <style>
   header {

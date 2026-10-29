@@ -28,6 +28,8 @@
     border: 1px solid var(--line); border-radius: 12px; padding: 0;
     background: var(--surface); color: var(--text);
     width: min(720px, calc(100vw - 24px)); max-height: calc(100vh - 48px);
+    /* Only up and down: a sideways scrollbar showed while the content settled in. */
+    overflow-x: hidden;
   }
   dialog::backdrop { background: rgb(0 0 0 / .55); }
   .body { padding: 16px var(--gap) var(--gap); }
