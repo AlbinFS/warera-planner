@@ -60,10 +60,12 @@
   const totals = $derived(companies.reduce((acc, c) => {
     for (const e of ecoEmployees[c.id] ?? []) {
       const d = day(e, c);
-      acc.count++; acc.points += d.points; acc.wage += d.wage; acc.profit += d.profit;
+      acc.count++; acc.points += d.points; acc.wage += d.wage; acc.profit += d.profit; acc.game += gameEstimate(d);
     }
     return acc;
-  }, { count: 0, points: 0, wage: 0, profit: 0 }));
+  }, { count: 0, points: 0, wage: 0, profit: 0, game: 0 }));
+  // The goods' own value per point, averaged over the points (one number when every company makes the same good).
+  const goodsPerPoint = $derived(totals.points > 0 ? (totals.profit + totals.wage) / totals.points : 0);
 </script>
 
 <section class="card">
@@ -78,8 +80,14 @@
     <div><dt>Employees</dt><dd class="num">{totals.count}</dd></div>
     <div><dt>Points per day</dt><dd class="num">{fmt(totals.points, 0)}</dd></div>
     <div><dt>Payroll per day</dt><dd class="num">{fmt(totals.wage, 2)} G</dd></div>
-    <div><dt>Profit per day</dt><dd class="num" class:good={totals.profit >= 0} class:bad={totals.profit < 0}>{fmt(totals.profit, 2)} G</dd><small class="muted">at what your goods sell for</small></div>
+    <div><dt>Profit per day (game)</dt><dd class="num" class:good={totals.game >= 0} class:bad={totals.game < 0}>{fmt(totals.game, 2)} G</dd><small class="muted">as the game shows it: {fmt(pointValue, 4)} G a point</small></div>
+    <div><dt>Profit per day (at your goods' prices)</dt><dd class="num" class:good={totals.profit >= 0} class:bad={totals.profit < 0}>{fmt(totals.profit, 2)} G</dd><small class="muted">{fmt(goodsPerPoint, 4)} G a point on average</small></div>
   </dl>
+  <p class="muted small why">
+    <strong>Why two numbers:</strong> the game values every production point the same ({fmt(pointValue, 4)} G, from raw-material trades), whatever the company makes.
+    The second one uses what each company's good sells for today, minus the materials it uses, per point. That is what you earn if you sell the goods at market price;
+    if you use them yourself or sell cheaper, the game's number is the safer one. The difference here: {fmt(totals.points, 0)} points × {signed(goodsPerPoint - pointValue, 4)} G = {signed(totals.profit - totals.game)} G a day.
+  </p>
 </section>
 
 {#if all.length > 1}
@@ -201,6 +209,7 @@
   .big dt { color: var(--muted); font-size: 12px; }
   .big dd { margin: 2px 0 0; font-size: 22px; font-weight: 700; }
   .big small { font-size: 11px; }
+  .why { margin: 10px 0 0; max-width: 760px; line-height: 1.45; }
   .good { color: var(--good); }
   .bad { color: var(--bad); }
   .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
