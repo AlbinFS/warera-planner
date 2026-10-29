@@ -13,7 +13,7 @@
   import { trainingCards } from '../lib/training.js';
   import { cached } from '../lib/warera.js';
   import { fmt } from '../lib/format.js';
-  import { itemImage } from '../lib/visual.js';
+  import { itemImage, flagImage } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
   import TraitChip from './TraitChip.svelte';
 
@@ -142,9 +142,13 @@
     <ol class="actions">
       {#each actions.slice(0, 10) as a, i (i)}
         <li>
+          <span class="rank">{i + 1}</span>
           <span class="kind" data-kind={a.kind}>{a.kind}</span>
-          <span><strong>{a.who}</strong> <span class="muted">· {a.where.name} ({itemLabel(a.where.good) || a.where.good})</span> · {a.what}</span>
-          <span class="num good" title="{fmt(a.value, 1)} G in all">{signed(a.day, 2)} G a day <small class="muted">· {fmt(a.value, 1)} G over {fmt(a.days, 0)} days</small></span>
+          <span class="act">
+            <span><strong>{a.who}</strong> <span class="muted"><img src={itemImage(a.where.good, items)} alt="" width="14" height="14" class="mini" /> {a.where.name}</span></span>
+            <small class="muted">{a.what}</small>
+          </span>
+          <span class="gain num" title="{fmt(a.value, 1)} G in all"><strong>{signed(a.day, 2)} G/day</strong><small class="muted">{fmt(a.value, 1)} G over {fmt(a.days, 0)} days</small></span>
         </li>
       {/each}
     </ol>
@@ -160,34 +164,52 @@
     Wages rise with Production: one more point earns its output (6 points a day × their bonus × the value of a point) less a fair wage of
     {fmt(fairWage, 3)} G × their wage expectation. What a card adds lasts until they retire, so the young pay back more.
   </p>
-  <div class="scroll">
-    <table>
-      <thead><tr><th>Employee</th><th>Company</th><th class="num" title="G a day one more Production point adds, after its wage: at the market price of the company's good, and (second) at the game's point value, which its profit tooltip uses">Per Production point</th><th class="num">Profit now</th><th class="num" title="Days until they ask to retire">Days left</th><th class="num">Trainings left</th><th>Do</th><th class="num" title="What the next training adds a day, on average over the cards you may be offered, and in all until they retire">Next session</th><th>Best cards to pick</th></tr></thead>
-      <tbody>
-        {#each plan as p (p.worker.id)}
-          <tr>
-            <td>{p.worker.name}{#each p.worker.traits as t (t)} <TraitChip code={t} />{/each}</td>
-            <td><img src={itemImage(p.worker.good, items)} alt="" width="16" height="16" class="mini" /> {p.worker.company.name}</td>
-            <td class="num"><span class:good={p.margin > 0} class:bad={p.margin < 0}>{signed(p.margin, 3)}</span>{#if p.gameMargin != null}<br /><small class="muted" title="At the game's point value ({fmt(pointValue, 4)} G), as its profit tooltip counts it">{signed(p.gameMargin, 3)} in game</small>{/if}</td>
-            <td class="num" class:good={p.worker.profit > 0} class:bad={p.worker.profit < 0}>{signed(p.worker.profit)}</td>
-            <td class="num">{fmt(p.days, 0)}</td>
-            <td class="num">{p.left}</td>
-            <td><span class="verdict" data-verdict={p.verdict} title={p.why}>{VERDICT[p.verdict]}</span></td>
-            <td class="num">{#if p.left}{signed(perDay(p.perSession, p.days), 2)} G a day<br /><small class="muted">{fmt(p.perSession, 1)} G in all</small>{:else}–{/if}</td>
-            <td class="picks">
-              {#if cards[p.worker.id]}
-                {#each likely(cards[p.worker.id].cards) as c, i (i)}<span>{i + 1}. {c.label} <small class="muted">{signed(c.perDay, 2)}/day · {fmt(c.chance * 100, 0)}%</small></span>{/each}
-                {#if rareBetter(cards[p.worker.id].cards).length}<span class="rare">Rarer but better, take if dealt: {rareBetter(cards[p.worker.id].cards).map((c) => `${c.label} (${c.chance >= 0.001 ? fmt(c.chance * 100, 1) : '<0.1'}%)`).join(' · ')}</span>{/if}
-                <button class="link" onclick={() => showCards(p.worker.id)}>All cards</button>
-              {:else}<span class="muted">–</span>{/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+  <div class="people">
+    {#each plan as p (p.worker.id)}
+      {@const w = p.worker}
+      {@const r = cards[w.id]}
+      <article class="person" data-state={p.verdict}>
+        <header>
+          {#if countries[w.nationality]?.code}<img class="flag" src={flagImage(countries[w.nationality].code)} alt={countries[w.nationality]?.name ?? ''} title={countries[w.nationality]?.name ?? ''} width="20" height="14" />{/if}
+          <strong class="pname">{w.name}</strong>
+          <span class="muted small">{w.gender === 'female' ? '♀' : w.gender === 'male' ? '♂' : ''}{w.age ?? ''}</span>
+          <span class="company"><img src={itemImage(w.good, items)} alt="" width="16" height="16" class="mini" /> {w.company.name}</span>
+          <span class="verdict" data-verdict={p.verdict} title={p.why}>{VERDICT[p.verdict]}</span>
+        </header>
+        {#if w.traits.length}<div class="ptraits">{#each w.traits as t (t)}<TraitChip code={t} />{/each}</div>{/if}
+        <div class="tiles">
+          <span class="tile" data-stat="production"><small>Production</small>{w.stats?.production?.revealed === false ? '?' : w.stats?.production?.total ?? w.production}{#if w.stats?.production?.trained}<em>+{w.stats.production.trained} trained</em>{/if}</span>
+          <span class="tile" data-stat="luck"><small>Luck</small>{w.stats?.luck?.revealed === false ? '?' : w.stats?.luck?.total ?? '?'}</span>
+          <span class="tile" data-stat="responsibility"><small>Responsibility</small>{w.stats?.responsibility?.revealed === false ? '?' : w.stats?.responsibility?.total ?? '?'}</span>
+          <span class="tile"><small>Potential</small>{w.potential ?? '?'} / {w.potentialMax ?? '?'}</span>
+          <span class="tile"><small>Happiness</small>{fmt(w.happiness?.value ?? 50, 0)}</span>
+          <span class="tile"><small>Wage</small>{fmt(w.payroll ?? 0, 2)} G/day</span>
+          <span class="tile" class:good={w.profit > 0} class:bad={w.profit < 0}><small>Profit now</small>{signed(w.profit)} G/day</span>
+          <span class="tile"><small>Days left</small>{fmt(p.days, 0)}</span>
+        </div>
+        <div class="values">
+          <span title="G a day one more Production point adds, after its wage, at the market price of the company's good">Per Production point <strong class:good={p.margin > 0} class:bad={p.margin < 0}>{signed(p.margin, 3)}</strong>{#if p.gameMargin != null} <small class="muted" title="At the game's point value ({fmt(pointValue, 4)} G), as its profit tooltip counts it">({signed(p.gameMargin, 3)} in game)</small>{/if}</span>
+          <span>Trainings left <strong>{p.left}</strong></span>
+          {#if p.left}<span title="What the next training adds, on average over the cards you may be offered">Next session <strong class="good">{signed(perDay(p.perSession, p.days), 2)} G/day</strong> <small class="muted">({fmt(p.perSession, 1)} G in all)</small></span>{/if}
+        </div>
+        <p class="why">{p.why}</p>
+        {#if r}
+          <div class="picks">
+            <span class="plabel">Pick, in this order</span>
+            <ol>
+              {#each likely(r.cards) as c, i (i)}
+                <li><span class="rarity" data-rarity={c.rarity}>{RARITY_SHORT[c.rarity]}</span> {c.label} <small class="muted">{signed(c.perDay, 2)}/day · {fmt(c.chance * 100, 0)} % in hand</small></li>
+              {/each}
+            </ol>
+            {#if rareBetter(r.cards).length}<p class="rare">Rarer but better, take if dealt: {rareBetter(r.cards).map((c) => `${c.label} (${c.chance >= 0.001 ? fmt(c.chance * 100, 1) : '<0.1'} %)`).join(' · ')}</p>{/if}
+            <button class="link" onclick={() => showCards(w.id)}>All cards</button>
+          </div>
+        {/if}
+      </article>
+    {/each}
   </div>
   <p class="muted small">
-    Hover the verdict for why. "Already trained": trained today, so not again until 00:00 UTC; they come last until then.
+    "Already trained": trained today, so not again until 00:00 UTC; they come last until then.
     Per point: at the market price of the company's good (what selling it earns), and at the game's point value, as its profit tooltip
     counts it. Pick order: the {LIKELY} cards most likely to be in your hand (the % is the chance it's among your three, with your
     Leadership and their Luck), best first; then rare cards worth more than all of them, to take if you're dealt one. Anything else:
@@ -322,8 +344,14 @@
   td :global(.trait) { margin-left: 4px; }
   .mini { vertical-align: middle; border-radius: 4px; }
   tr.move td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-  .actions { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 6px; }
-  .actions li { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: center; }
+  .actions { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+  .actions li { display: grid; grid-template-columns: 22px 68px 1fr auto; gap: 10px; align-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; }
+  .actions .rank { font-weight: 700; color: var(--muted); text-align: center; }
+  .actions .act { display: grid; gap: 2px; min-width: 0; }
+  .actions .act small { font-size: 12px; }
+  .actions .gain { display: grid; justify-items: end; gap: 2px; color: var(--good); }
+  .actions .gain small { font-size: 11px; }
+  @media (max-width: 520px) { .actions li { grid-template-columns: 22px 1fr auto; } .actions .kind { display: none; } }
   .kind, .verdict { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); text-align: center; white-space: nowrap; }
   [data-kind='Train'], [data-verdict='train'] { color: var(--good); border-color: var(--good); }
   [data-verdict='negotiate'] { color: var(--accent); border-color: var(--accent); }
@@ -334,9 +362,30 @@
   summary { cursor: pointer; font-size: 13px; }
   table.cards { margin: 6px 0; }
   tr.bad-row td:first-child { color: var(--bad); }
-  .picks { font-size: 12px; }
-  .picks span { display: block; white-space: nowrap; }
-  .picks .rare { white-space: normal; color: var(--accent); margin-top: 2px; }
+  .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; margin-top: 10px; }
+  .person { display: grid; gap: 8px; align-content: start; background: var(--surface-2); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+  .person[data-state='train'] { border-left-color: var(--good); }
+  .person[data-state='replace'] { border-left-color: var(--bad); }
+  .person header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .person .pname { font-size: 15px; }
+  .person .company { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+  .person header .verdict { margin-left: auto; }
+  .flag { border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); }
+  .ptraits { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .tile { display: grid; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 8px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile small { font-size: 10px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+  .tile em { font-style: normal; font-size: 11px; font-weight: 500; color: var(--good); }
+  .tile[data-stat='production'] small { color: var(--c-economy); }
+  .tile[data-stat='luck'] small { color: var(--good); }
+  .tile[data-stat='responsibility'] small { color: var(--info); }
+  .values { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+  .why { margin: 0; font-size: 12px; color: var(--muted); }
+  .picks { border-top: 1px solid var(--line); padding-top: 8px; font-size: 13px; }
+  .plabel { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .picks ol { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 3px; }
+  .picks .rare { margin: 6px 0 0; font-size: 12px; color: var(--accent); }
+  @media (max-width: 420px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
   .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
   .rarity { display: inline-block; min-width: 18px; text-align: center; font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 4px; border: 1px solid var(--line); }
   .rarity[data-rarity='uncommon'] { color: var(--good); border-color: var(--good); }

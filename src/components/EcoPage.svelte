@@ -151,9 +151,11 @@
   .intro p { margin: 0; }
   .warn { color: var(--accent); margin-top: 8px !important; }
   .error { color: var(--bad); }
-  .tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
   .tabs button {
-    display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: none; border: 0;
-    color: var(--muted); cursor: pointer; font: inherit; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--text); cursor: pointer; font: inherit; font-size: 14px; font-weight: 500;
+    transition: background .15s, border-color .15s, color .15s;
   }
-  .tabs button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }</style>
+  .tabs button:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+  .tabs button[aria-selected='true'] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }</style>
