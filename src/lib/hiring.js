@@ -294,7 +294,8 @@ export function companyModel(employees, placeIn, { perPoint, fairWage, managemen
   // Each employee's numbers with today's trait effects taken out, so they can be put back for any team.
   const team = employees.map((e) => {
     const base = {
-      ...e, traits: e.traits.filter(Boolean), prod: e.production, resp: e.stats?.responsibility?.total ?? AVERAGE_STAT, wage: e.payroll, tool: e.hasTool,
+      // prod: Production before trait effects (base + trained): what Mentor and Rival compare, as the game does.
+      ...e, traits: e.traits.filter(Boolean), prod: e.ownProduction ?? e.production, resp: e.stats?.responsibility?.total ?? AVERAGE_STAT, wage: e.payroll, tool: e.hasTool,
       daysLeft: daysLeftOf(e, at), tenure: e.hiredAt ? Math.max(0, (at - Date.parse(e.hiredAt)) / DAY) : null,
     };
     const now = effects(base, employees.filter((c) => c !== e).map(asCoworker), place);
@@ -307,7 +308,7 @@ export function companyModel(employees, placeIn, { perPoint, fairWage, managemen
     const moved = reasons.find((r) => r.reason === 'recentlyMoved' && r.until);
     return {
       ...base,
-      prodBase: base.prod - now.prod,
+      prodBase: e.production - now.prod,
       resp: base.resp - now.resp,
       luckBase: (e.stats?.luck?.total ?? AVERAGE_STAT) - now.luck,
       bonusBase: e.bonusPercent - now.percent - (happinessNow - 50),
@@ -377,7 +378,7 @@ export function rankTraits(model, profile, options = {}) {
 const MATCH = 0.2;
 
 function asCoworker(e) {
-  return { id: e.id, nationality: e.nationality, gender: e.gender, traits: (e.traits ?? []).filter(Boolean), prod: e.prod ?? e.production, wage: e.wage ?? e.payroll };
+  return { id: e.id, nationality: e.nationality, gender: e.gender, traits: (e.traits ?? []).filter(Boolean), prod: e.prod ?? e.ownProduction ?? e.production, wage: e.wage ?? e.payroll };
 }
 
 /** Points per day of the whole team, each with the effects of the rest. */

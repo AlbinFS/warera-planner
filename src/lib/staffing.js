@@ -158,7 +158,7 @@ export const nextTrainingDay = (now = Date.now()) => (Math.floor(now / DAY_MS) +
 /**
  * Who to train, and who to replace. workers: [{ id, name, company, perPoint,
  * production, bonusPercent, payroll, wageExpectation, potential,
- * potentialMax, profit, traits, daysLeft }]; fairWage per Production point
+ * potentialMax, profit, worth?, traits, daysLeft }]; fairWage per Production point
  * per day; replaceValue(worker) → G a day a typical replacement would add
  * (hiring.js). options: sessionOf(worker) → what a session is worth, G in all
  * (training.js; without it, an average Production drill); selfWork: G that
@@ -184,7 +184,8 @@ export function trainingPlan(workers, fairWage, replaceValue = () => 0, { sessio
     const session = left > 0 ? (sessionOf ? sessionOf(w) : DRILL_AVERAGE * margin * days) : 0;
     let verdict;
     let why;
-    if (w.profit < 0 && replace > 0 && replace * days > session) {
+    // Losing money counts what they do for their coworkers too (worth, hiring.js employeeWorth), not only their own output.
+    if ((w.worth ?? w.profit) < 0 && replace > 0 && replace * days > session) {
       verdict = 'replace';
       why = floorMargin <= 0 ? 'loses money even at the lowest wage' : 'loses money, and a new hire adds more than training them';
     } else if (left === 0) {

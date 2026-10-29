@@ -163,3 +163,15 @@ test('a Comic who makes less themselves can be worth the most to the company', (
   assert.ok(c.value > a.value);
   assert.equal(c.coworkers.length, 2);
 });
+
+test('Mentor compares Production before traits, as the game does', () => {
+  // The game's cards: Ulf 3 own, shown 2 (−1 Mentor); Isak 1 own, shown 3 (+2 from Ulf).
+  const ulf = { ...emp('Ulf', 'se', 'male', ['mentor'], { production: 2 }), ownProduction: 3, payroll: 1.8 };
+  const isak = { ...emp('Isak', 'se', 'male', [], { production: 3 }), ownProduction: 1, payroll: 0.6 };
+  const model = companyModel([ulf, isak], place, opts);
+  assert.equal(model.team[0].prodBase, 3);
+  assert.equal(model.team[1].prodBase, 1);
+  const w = employeeWorth(model, 0);
+  assert.ok(w.others > 0, 'Ulf lifts Isak');
+  assert.equal(w.coworkers[0].name, 'Isak');
+});

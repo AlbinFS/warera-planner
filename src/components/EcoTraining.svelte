@@ -8,7 +8,7 @@
   import { ecoEmployees, spareTools } from '../lib/eco.svelte.js';
   import { employeeDay, engineDaily } from '../lib/eco.js';
   import { switchValue, toolSwitchPlan, SWITCH_CONCRETE, SWITCH_DAYS } from '../lib/switching.js';
-  import { companyModel, hireValue, bestHires, placeOf, fairWageOf, daysLeftOf } from '../lib/hiring.js';
+  import { companyModel, hireValue, bestHires, placeOf, fairWageOf, daysLeftOf, employeeWorth } from '../lib/hiring.js';
   import { assignTools, trainingPlan, toolKindFor, toolKind, TOOL_KINDS, TOOL_GOODS, DAYS_UNKNOWN } from '../lib/staffing.js';
   import { trainingCards } from '../lib/training.js';
   import { cached } from '../lib/warera.js';
@@ -36,7 +36,9 @@
   // Everyone, with what the plans need.
   const workers = $derived(active.flatMap((c) => (ecoEmployees[c.id] ?? []).map((e, index) => {
     const d = employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 });
-    return { ...e, id: e.id ?? `${c.id}-${index}`, index, company: c, good: c.good, perPoint: perPoint[c.good] ?? 0, traits: (e.traits ?? []).filter(Boolean), profit: d.profit, daysLeft: daysLeftOf(e) };
+    return { ...e, id: e.id ?? `${c.id}-${index}`, index, company: c, good: c.good, perPoint: perPoint[c.good] ?? 0, traits: (e.traits ?? []).filter(Boolean), profit: d.profit, daysLeft: daysLeftOf(e),
+      // What they're worth to the company: their own output plus what they do for coworkers (a Mentor's lift), minus wage.
+      worth: models[c.id] ? employeeWorth(models[c.id], index).value : d.profit };
   })));
 
   // Every card each employee could be dealt, valued (only those still training).
@@ -73,7 +75,7 @@
   const actions = $derived([
     ...plan.filter((p) => p.verdict === 'train').map((p) => ({ kind: 'Train', who: p.worker.name, where: p.worker.company, what: `pick the best card you're offered (often ${cards[p.worker.id]?.cards[0]?.label ?? 'a Drill'})`, value: p.perSession, day: perDay(p.perSession, p.days), days: p.days })),
     // Anyone losing money can also be replaced: listed when a typical candidate would do better.
-    ...plan.filter((p) => p.verdict === 'replace' || (p.worker.profit < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new (coworkers −5 happiness for 24 hours, counted)', value: p.replace * p.days, day: p.replace, days: p.days })),
+    ...plan.filter((p) => p.verdict === 'replace' || (p.worker.worth < 0 && p.replace > 0)).map((p) => ({ kind: 'Replace', who: p.worker.name, where: p.worker.company, what: 'fire and hire someone new (coworkers −5 happiness for 24 hours, counted)', value: p.replace * p.days, day: p.replace, days: p.days })),
     ...hires.filter((h) => h.value > 0).map((h) => ({ kind: 'Hire', who: 'new employee', where: h.company, what: 'fill a free slot', value: h.value * DAYS_UNKNOWN, day: h.value, days: DAYS_UNKNOWN })),
   ].filter((a) => a.value > 0.005).sort((a, b) => b.value - a.value));
   // What to pick: the cards most likely to be in a hand (by your Leadership and their Luck), in the
@@ -192,6 +194,7 @@
           <span class="tile"><small>Happiness</small>{fmt(w.happiness?.value ?? 50, 0)}</span>
           <span class="tile"><small>Wage</small>{fmt(w.payroll ?? 0, 2)} G/day</span>
           <span class="tile" class:good={w.profit > 0} class:bad={w.profit < 0}><small>Profit now</small>{signed(w.profit)} G/day</span>
+          {#if Math.abs(w.worth - w.profit) > 0.005}<span class="tile" class:good={w.worth > 0} class:bad={w.worth < 0} title="Their own output plus what they do for their coworkers (a Mentor's lift, a Comic's mood, …), minus their wage"><small>Value to company</small>{signed(w.worth)} G/day</span>{/if}
           <span class="tile"><small>Days left</small>{fmt(p.days, 0)}</span>
         </div>
         <div class="values">
