@@ -662,7 +662,8 @@ export function layoutSpace(config, { start, searched = FIGHT, budget, playerLev
   };
   const trim = (l) => {
     l = { ...l };
-    while (used(l) > budget) {
+    // (A planned level below what the kept skills use leaves no budget: stop at all zeros.)
+    while (used(l) > budget && searched.some((s) => (l[s] ?? 0) > 0)) {
       const top = searched.reduce((a, b) => ((l[b] ?? 0) > (l[a] ?? 0) ? b : a));
       l[top]--;
     }

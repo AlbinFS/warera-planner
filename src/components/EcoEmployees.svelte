@@ -2,11 +2,13 @@
   /**
    * Employees as the game has them (loaded with the companies): what each one
    * makes and costs, their bonus and happiness with every source, traits,
-   * potential and training.
+   * potential and training, and what each is worth to their company: their
+   * own output plus what they do for their coworkers (hiring.js employeeWorth).
    */
   import { ecoEmployees, ecoSettings, employeesStatus, words } from '../lib/eco.svelte.js';
   import { employeeDay } from '../lib/eco.js';
   import { trainedToday } from '../lib/staffing.js';
+  import { employeeWorth } from '../lib/hiring.js';
   import { fmt } from '../lib/format.js';
   import { itemImage } from '../lib/visual.js';
   import { itemLabel } from '../lib/market.js';
@@ -14,26 +16,36 @@
   import TraitChip from './TraitChip.svelte';
   import { mdiPickaxe, mdiClover, mdiTie, mdiEmoticonOutline } from '@mdi/js';
 
-  let { companies, perPoint, pointValue, items, estimateNote = "from today's prices" } = $props();
+  let { companies, perPoint, pointValue, items, estimateNote = "from today's prices", models = [] } = $props();
+
+  // What each employee is worth to their company (the models are the running companies', in order).
+  const running = $derived(companies.filter((c) => !c.disabled));
+  const worthOf = (c, i) => {
+    const m = models[running.indexOf(c)];
+    return m && i < m.team.length ? employeeWorth(m, i) : null;
+  };
 
   // The card's bonus already includes Management, so nothing is swapped here.
   const day = (e, c) => employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: perPoint[c.good] ?? 0 });
   // The game's own estimate values output at the market value of a point.
   const gameEstimate = (d) => d.points * pointValue - d.wage;
   const signed = (n, digits = 2) => `${n >= 0 ? '+' : ''}${fmt(n, digits)}`;
+  const worthTip = (w) => `Own output ${signed(w.own)}, for coworkers ${signed(w.others)}${Math.abs(w.toolboxes) > 0.005 ? `, toolboxes ${signed(w.toolboxes)}` : ''}, wage ${signed(-w.wage)} (G a day)`;
   const daysAgo = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400000));
   const date = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const STATS = [['production', mdiPickaxe, 'Production'], ['responsibility', mdiTie, 'Responsibility'], ['luck', mdiClover, 'Luck']];
 
   // Workforce overview: every employee, sortable.
-  const all = $derived(companies.filter((c) => !c.disabled).flatMap((c) => (ecoEmployees[c.id] ?? []).map((e) => {
+  const all = $derived(companies.filter((c) => !c.disabled).flatMap((c) => (ecoEmployees[c.id] ?? []).map((e, i) => {
     const d = day(e, c);
+    const w = worthOf(c, i);
     // Potential: trainings used of the most they can take; sorted by how many are left.
     const left = e.potentialMax != null ? Math.max(0, e.potentialMax - (e.potential ?? 0)) : -1;
-    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, potential: left, used: e.potential, max: e.potentialMax, points: d.points, payroll: d.wage, profit: gameEstimate(d), breakEven: d.points * pointValue };
+    return { company: c.name, good: c.good, name: e.name || '(no name)', production: e.production ?? 0, potential: left, used: e.potential, max: e.potentialMax, points: d.points, payroll: d.wage, profit: gameEstimate(d), breakEven: d.points * pointValue,
+      others: w ? w.others + w.toolboxes : 0, value: w ? w.value : gameEstimate(d), worth: w };
   })));
-  const COLS = { company: 'Company', name: 'Name', production: 'Production', potential: 'Potential', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit (game)' };
-  let sortKey = $state('profit');
+  const COLS = { company: 'Company', name: 'Name', production: 'Production', potential: 'Potential', points: 'Points / day', payroll: 'Payroll / day', breakEven: 'Break-even payroll', profit: 'Profit (game)', others: 'For coworkers', value: 'Value to company' };
+  let sortKey = $state('value');
   let sortDesc = $state(true);
   function sortBy(k) {
     if (sortKey === k) sortDesc = !sortDesc;
@@ -93,12 +105,15 @@
               <td class="num">{fmt(r.payroll, 2)}</td>
               <td class="num" title="Payroll at which this employee would make exactly nothing">{fmt(r.breakEven, 2)}</td>
               <td class="num"><strong class:good={r.profit >= 0} class:bad={r.profit < 0}>{signed(r.profit)}</strong></td>
+              <td class="num" title={r.worth ? worthTip(r.worth) : ''}><span class:good={r.others > 0.005} class:bad={r.others < -0.005} class:muted={Math.abs(r.others) <= 0.005}>{signed(r.others)}</span></td>
+              <td class="num" title={r.worth ? worthTip(r.worth) : ''}><strong class:good={r.value >= 0} class:bad={r.value < 0}>{signed(r.value)}</strong></td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
     <p class="muted small">Break-even payroll: the most an employee could be paid per day before they cost more than they make (at the game's point value). Far below it is a keeper; above it, train their wage down or replace them.</p>
+    <p class="muted small"><strong>Value to company</strong>: what the company makes a day with them against without them, minus their wage, at what its good sells for. It counts what they do for their coworkers (<strong>For coworkers</strong>: a Comic's +10 happiness for everyone, a Xenophobe's drag on foreigners, Girl Power, Luck traits' toolboxes, …), so someone who makes little themselves can be worth the most. Not counted: training help (a Trainer's extra training) and anything that takes weeks.</p>
   </section>
 {/if}
 
@@ -114,6 +129,7 @@
         {#each list as e (e.id ?? e.name)}
           {@const d = day(e, c)}
           {@const g = gameEstimate(d)}
+          {@const w = worthOf(c, list.indexOf(e))}
           <article class="emp" class:losing={g < 0}>
             <header>
               <strong>{e.name || '(no name)'}</strong>
@@ -133,6 +149,17 @@
               <div><dt title="Points × the value of 1 production point − payroll, as the game shows it">Profit (game)</dt><dd class="num" class:good={g >= 0} class:bad={g < 0}>{signed(g)}</dd></div>
               <div><dt title="Points × what {itemLabel(c.good) || c.good} sells for per point − payroll">At {itemLabel(c.good) || c.good}'s price</dt><dd class="num" class:good={d.profit >= 0} class:bad={d.profit < 0}>{signed(d.profit)}</dd></div>
             </dl>
+            {#if w}
+              <details class="worth">
+                <summary title="The company with them against without them, minus their wage: their own output and what they do for their coworkers">Value to company <strong class="num" class:good={w.value >= 0} class:bad={w.value < 0}>{signed(w.value)}</strong></summary>
+                <ul class="parts">
+                  <li><span>Own output</span><span class="num">{signed(w.own)}</span></li>
+                  {#each w.coworkers.filter((x) => Math.abs(x.change) > 0.005) as x, i (i)}<li><span>{x.change > 0 ? 'Lifts' : 'Drags'} {x.name || '(no name)'}</span><span class="num" class:good={x.change > 0} class:bad={x.change < 0}>{signed(x.change)}</span></li>{/each}
+                  {#if Math.abs(w.toolboxes) > 0.005}<li><span>Toolboxes (Luck)</span><span class="num">{signed(w.toolboxes)}</span></li>{/if}
+                  <li><span>Wage</span><span class="num">{signed(-w.wage)}</span></li>
+                </ul>
+              </details>
+            {/if}
             <details>
               <summary><Icon path={mdiPickaxe} size={13} /> Production bonus <strong class="num">+{fmt(e.bonusPercent, 1)}%</strong></summary>
               <ul class="parts">{#each e.bonus ?? [] as b (b.source)}<li><span>{words(b.source)}</span><span class="num">{signed(b.percent, 1)}%</span></li>{/each}</ul>
@@ -204,4 +231,7 @@
   .parts li.bad { color: var(--bad); }
   .traits { display: flex; gap: 6px; flex-wrap: wrap; }
   .facts { margin: 0; }
+  details.worth summary { font-weight: 600; }
+  .parts .good { color: var(--good); }
+  .parts .bad { color: var(--bad); }
 </style>

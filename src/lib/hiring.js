@@ -413,6 +413,26 @@ export function changesValue(model, changes) {
   return teamWorth(model, team) - worthNow.get(model);
 }
 
+/**
+ * What one employee is worth to the company a day, beyond their own output:
+ * the team with them against the team without them. own: their points (with
+ * what coworkers do to them); others: what they change for every coworker (a
+ * Comic's mood, a Xenophobe's drag, Girl Power, …); toolboxes: what their Luck
+ * finds (and does to others' Luck); minus their wage. G a day.
+ * coworkers: [{ name, change (G a day) }].
+ */
+export function employeeWorth(model, index) {
+  const before = teamPoints(model.team, model.place);
+  const rest = model.team.filter((_, i) => i !== index);
+  const without = teamPoints(rest, model.place);
+  const coworkers = rest.map((c, i) => ({ name: c.name, change: (before[model.team.indexOf(c)] - without[i]) * model.perPoint }));
+  const own = before[index] * model.perPoint;
+  const others = coworkers.reduce((s, c) => s + c.change, 0);
+  const toolboxes = (teamToolboxes(model.team, model.place) - teamToolboxes(rest, model.place)) * (model.toolboxValue ?? 0);
+  const wage = model.team[index].wage ?? 0;
+  return { own, others, toolboxes, wage, value: own + others + toolboxes - wage, coworkers };
+}
+
 /** A typical candidate with this nationality, gender and trait. */
 /**
  * A candidate: a typical one (average stats, a little training, a fair wage),

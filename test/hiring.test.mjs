@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { companyModel, hireValue, bestHires, traitChance, rankTraits, tierOf, rateCandidate, placeValue } from '../src/lib/hiring.js';
+import { companyModel, hireValue, bestHires, traitChance, rankTraits, tierOf, rateCandidate, placeValue, employeeWorth } from '../src/lib/hiring.js';
 import { trainingCards } from '../src/lib/training.js';
 
 const place = { raw: false, storage: 3, country: 'se', homeCountry: 'se', tax: 0 };
@@ -151,4 +151,15 @@ test('a lost core region: its tax costs happiness every day, and moving pays bac
   assert.ok(Math.abs(moved.moveCost / (moved.worth - now) - 70 / 15) < 1e-6);
   // Out of a core region, the +5 % goes with it.
   assert.ok(placeValue(model, { country: 'se', tax: 0, core: false }).worth < moved.worth);
+});
+
+test('a Comic who makes less themselves can be worth the most to the company', () => {
+  // The game's numbers: the Comic's −1 Production and the others' +10 happiness are already in.
+  const team = [emp('A', 'se', 'male', [], { happiness: 60 }), emp('B', 'se', 'male', [], { happiness: 60 }), emp('C', 'se', 'male', ['comic'], { production: 3 })];
+  const model = companyModel(team, place, opts);
+  const [a, , c] = [0, 1, 2].map((i) => employeeWorth(model, i));
+  assert.ok(c.own < a.own);
+  assert.ok(c.others > 0 && a.others === 0);
+  assert.ok(c.value > a.value);
+  assert.equal(c.coworkers.length, 2);
 });

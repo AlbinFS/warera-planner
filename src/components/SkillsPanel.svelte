@@ -45,7 +45,7 @@
   }
   function setPoints(n) {
     if (!planner.player) return;
-    planner.player.prestigePoints = Math.max(ranksUsed, Math.min(31, Math.round(Number(n) || 0)));
+    planner.player.prestigePoints = Math.max(0, Math.min(31, Math.round(Number(n) || 0)));
   }
   // Prestiging: back to level 25 (the game takes 65,000 XP of level 50's 86,600) for one more point.
   function planPrestige() {
@@ -84,28 +84,32 @@
   </div>
   {#if planner.player}
     <div class="plan">
-      <div class="field">Level
+      <div class="field">
+        <span class="lbl">Level</span>
         <span class="mini">
           <button type="button" onclick={() => setPlayerLevel(level - 1)} disabled={level <= 1} aria-label="Lower the level">−</button>
           <input type="number" min="1" max={PRESTIGE_LEVEL} value={level} onchange={(e) => setPlayerLevel(e.currentTarget.value)} aria-label="Planned level" />
           <button type="button" onclick={() => setPlayerLevel(level + 1)} disabled={level >= PRESTIGE_LEVEL} aria-label="Raise the level">+</button>
         </span>
-        {#if ownState && level !== ownState.level}<small class="muted">you're {ownState.level}</small>{/if}
+        <small class="muted">{ownState && level !== ownState.level ? `you're ${ownState.level}` : `${budget} skill points`}</small>
       </div>
-      <div class="field prestige" title="One prestige point per prestige. A skill's next rank costs 2 to the power of the ranks it has (1, 2, 4, 8) and counts as one more level of it.">★ Prestige points
+      <div class="field prestige" title="One prestige point per prestige. A skill's next rank costs 2 to the power of the ranks it has (1, 2, 4, 8) and counts as one more level of it.">
+        <span class="lbl">★ Prestige points</span>
         <span class="mini">
-          <button type="button" onclick={() => setPoints(points - 1)} disabled={points <= ranksUsed} aria-label="One prestige point less">−</button>
-          <input type="number" min={ranksUsed} max="31" value={points} onchange={(e) => setPoints(e.currentTarget.value)} aria-label="Prestige points" />
+          <button type="button" onclick={() => setPoints(points - 1)} disabled={points <= 0} aria-label="One prestige point less">−</button>
+          <input type="number" min="0" max="31" value={points} onchange={(e) => setPoints(e.currentTarget.value)} aria-label="Prestige points" />
           <button type="button" onclick={() => setPoints(points + 1)} disabled={points >= 31} aria-label="One prestige point more">+</button>
         </span>
-        <small class="muted">{ranksUsed} on skills{pointsLeft > 0 ? ` · ${pointsLeft} free` : ''}</small>
+        <small class="muted" class:over={pointsLeft < 0}>{ranksUsed} on skills{pointsLeft > 0 ? ` · ${pointsLeft} free` : ''}{ownState && points !== ownState.prestigePoints ? ` · you have ${ownState.prestigePoints}` : ''}</small>
+        {#if ownState && points < ownState.prestigePoints}<small class="muted">the optimizers still use your {ownState.prestigePoints}</small>{/if}
       </div>
       {#if level >= PRESTIGE_LEVEL}
-        <button type="button" class="reset" onclick={planPrestige} title="Plan the next prestige: back to level 25 (65,000 XP), one more prestige point">Plan a prestige</button>
+        <button type="button" class="reset plan-prestige" onclick={planPrestige} title="Plan the next prestige: back to level 25 (65,000 XP), one more prestige point">Plan a prestige</button>
       {/if}
     </div>
   {/if}
   {#if used > budget}<p class="warn" role="status">This layout uses {used - budget} more points than level {level} has.</p>{/if}
+  {#if pointsLeft < 0}<p class="warn" role="status">The ★ ranks on skills use {ranksUsed} prestige points, {-pointsLeft} more than the {points} planned: take {-pointsLeft === 1 ? 'one' : 'some'} off.</p>{/if}
   {#if pointsLeft > 0}<p class="note prestige-note">{pointsLeft} prestige point{pointsLeft === 1 ? '' : 's'} not on a skill: use ★ on a skill (or let the optimizers place {pointsLeft === 1 ? 'it' : 'them'}).</p>{/if}
   <ul class="skills">
     {#each FIGHT_SKILLS as s (s)}{@render row(s)}{/each}
@@ -180,10 +184,13 @@
   .pip.on { background: var(--skill); border-color: var(--skill); }
   .pip.locked { opacity: .3; cursor: default; }
   .link { background: none; border: 0; color: var(--info); padding: 10px 0 2px; cursor: pointer; }
-  .plan { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 18px; margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
-  .field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
-  .field.prestige { color: var(--r-legendary); }
-  .field small { font-size: 11px; }
+  .plan { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 28px; margin: 4px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
+  .field { display: grid; gap: 5px; justify-items: start; }
+  .lbl { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); line-height: 1; }
+  .field.prestige .lbl { color: var(--r-legendary); }
+  .field small { font-size: 11px; line-height: 1.2; }
+  .field small.over { color: var(--bad); }
+  .plan-prestige { align-self: center; }
   .mini { display: inline-flex; align-items: center; gap: 4px; }
   .mini button { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; line-height: 1; }
   .mini button:disabled { opacity: .3; cursor: default; }

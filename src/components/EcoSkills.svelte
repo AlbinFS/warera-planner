@@ -31,7 +31,8 @@
     : Math.max(0, level * 4 - fightPoints));
   // Prestige points for eco: all of them for pure eco, else what the fight skills' ranks leave.
   const prestigePoints = $derived.by(() => {
-    const total = Math.max(planner.player?.prestigePoints ?? 0, prestigeUsed(planner.player?.prestige));
+    // Never fewer than the player really has (a lower number typed in is for looking only).
+    const total = Math.max(planner.player?.prestigePoints ?? prestigeUsed(planner.player?.prestige), planner.player?.own?.prestigePoints ?? 0);
     if (ecoSettings.budgetMode === 'all') return total;
     return Math.max(0, total - prestigeUsed(Object.fromEntries(FIGHT_SKILLS.map((s) => [s, planner.player?.prestige?.[s] ?? 0]))));
   });

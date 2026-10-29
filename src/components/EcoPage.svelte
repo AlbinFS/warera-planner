@@ -196,7 +196,7 @@
       <EcoSwitch {companies} {perPoint} {items} upgrades={data.upgrades} prices={data.market.itemPrices} managementPercent={2 * currentManagementValue} />
       <EcoManagers {companies} {perPoint} {items} />
     {:else if tab === 'employees'}
-      <EcoEmployees {companies} {perPoint} {pointValue} {items} {estimateNote} />
+      <EcoEmployees {companies} {perPoint} {pointValue} {items} {estimateNote} models={staffing.models} />
     {:else if tab === 'events'}
       <!-- Loaded when opened: it carries the game's event rules. -->
       {#await import('./EcoEvents.svelte')}

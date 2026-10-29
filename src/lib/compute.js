@@ -32,7 +32,8 @@ export function playerOf(planner, prestige = planner.player?.prestige) {
   const p = planner.player;
   return {
     level: p?.level ?? 1, militaryRankPercent: p?.militaryRankPercent ?? 0, prestige: prestige ?? {},
-    prestigePoints: Math.max(p?.prestigePoints ?? 0, prestigeUsed(p?.prestige)),
+    // Never fewer than the player really has: a lower number typed in is for looking only.
+    prestigePoints: Math.max(p?.prestigePoints ?? prestigeUsed(p?.prestige), p?.own?.prestigePoints ?? 0),
   };
 }
 
