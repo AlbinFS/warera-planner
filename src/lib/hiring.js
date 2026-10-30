@@ -522,13 +522,14 @@ export function placeValue(model, place) {
 /**
  * The best next hire: every nationality worth trying (each one already in
  * the company, the company's country, and any other), both genders, and every
- * trait a candidate can have (they always have one since v0.27.3), ranked by G per day. A full company
+ * trait a candidate can have (they always have one since v0.27.3; `traits` to try
+ * others, null for the no-trait baseline the traits are compared with), ranked by G per day. A full company
  * (`full`) hires by replacing someone: each employee is tried as the one
  * who leaves.
  */
-export function bestHires(model, { otherNationality = 'other', full = false } = {}) {
+export function bestHires(model, { otherNationality = 'other', full = false, traits: only = null } = {}) {
   const nationalities = [...new Set([...model.team.map((e) => e.nationality), model.place.country, model.place.homeCountry, otherNationality].filter(Boolean))];
-  const traits = Object.keys(TRAITS).filter((t) => !EVENT_ONLY.has(t));
+  const traits = only ?? Object.keys(TRAITS).filter((t) => !EVENT_ONLY.has(t));
   const slots = full ? fireable(model) : [null];
   const all = [];
   for (const nationality of nationalities) {

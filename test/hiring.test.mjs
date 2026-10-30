@@ -189,3 +189,9 @@ test('Mentor compares Production before traits, as the game does', () => {
   assert.ok(w.others > 0, 'Ulf lifts Isak');
   assert.equal(w.coworkers[0].name, 'Isak');
 });
+
+test('the no-trait baseline the Next employee tab compares traits with', () => {
+  const model = companyModel([emp('A', 'se', 'female', []), emp('B', 'se', 'female', [])], place, opts);
+  const plain = bestHires(model, { traits: [null] });
+  assert.ok(plain.length > 0 && plain.every((h) => !h.trait));
+});

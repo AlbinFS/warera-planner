@@ -41,8 +41,9 @@
     const place = placeOf(c, { regions, countries, items });
     const model = companyModel(team, place, { perPoint: perPoint[c.good] ?? 0, fairWage, management: managementPercent, toolboxValue });
     const full = team.length >= (c.breakRoom ?? 1);
-    const all = bestHires(model, { otherNationality: OTHER, full });
-    const profiles = all.filter((h) => !h.trait).map((plain) => {
+    // The no-trait baseline for each nationality and gender; the traits are ranked against it.
+    const all = bestHires(model, { otherNationality: OTHER, full, traits: [null] });
+    const profiles = all.map((plain) => {
       const replace = full ? team.findIndex((e) => e.name === plain.replaces) : null;
       const ranked = rankTraits(model, { nationality: plain.nationality, gender: plain.gender }, { replace });
       const pick = ranked.matches[0] ?? ranked.lookFor[0] ?? null;
