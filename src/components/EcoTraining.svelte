@@ -17,7 +17,7 @@
   import { itemLabel } from '../lib/market.js';
   import TraitChip from './TraitChip.svelte';
 
-  let { companies, perPoint, items, upgrades = {}, prices = {}, managementPercent = 0, toolboxValue = 0, managementLevel = 0, selfWorkValue = 0, selfWork = true, pointValue = null } = $props();
+  let { companies, perPoint, items, upgrades = {}, prices = {}, managementPercent = 0, toolboxValue = 0, managementLevel = 0, selfWorkValue = 0, selfWork = true } = $props();
 
   let countries = $state.raw({});
   let regions = $state.raw({});
@@ -59,7 +59,7 @@
     }
     return best;
   }
-  const plan = $derived(trainingPlan(workers, fairWage, replaceValue, { sessionOf: (w) => cards[w.id]?.session ?? 0, selfWork: selfWorkNow, pointValue }));
+  const plan = $derived(trainingPlan(workers, fairWage, replaceValue, { sessionOf: (w) => cards[w.id]?.session ?? 0, selfWork: selfWorkNow }));
 
   // Free slots: hiring a typical candidate there.
   const hires = $derived(active.filter((c) => (ecoEmployees[c.id] ?? []).length < (c.breakRoom ?? 1)).map((c) => {
@@ -198,7 +198,7 @@
           <span class="tile"><small>Days left</small>{fmt(p.days, 0)}</span>
         </div>
         <div class="values">
-          <span title="G a day one more Production point adds, after its wage, at the market price of the company's good">Per Production point <strong class:good={p.margin > 0} class:bad={p.margin < 0}>{signed(p.margin, 3)}</strong>{#if p.gameMargin != null} <small class="muted" title="At the game's point value ({fmt(pointValue, 4)} G), as its profit tooltip counts it">({signed(p.gameMargin, 3)} in game)</small>{/if}</span>
+          <span title="G a day one more Production point adds, after its wage, at the game's value of the company's good">Per Production point <strong class:good={p.margin > 0} class:bad={p.margin < 0}>{signed(p.margin, 3)}</strong></span>
           <span>Trainings left <strong>{p.left}</strong></span>
           {#if p.left}<span title="What the next training adds, on average over the cards you may be offered">Next session <strong class="good">{signed(perDay(p.perSession, p.days), 2)} G/day</strong> <small class="muted">({fmt(p.perSession, 1)} G in all)</small></span>{/if}
         </div>
@@ -225,7 +225,7 @@
   </div>
   <p class="muted small">
     "Already trained": trained today, so not again until 00:00 UTC; they come last until then.
-    Per point: at the market price of the company's good (what selling it earns), and at the game's point value, as its profit tooltip
+    Per point: at the game's value of the company's good (what selling it earns), and at the game's point value, as its profit tooltip
     counts it. Pick order: the {LIKELY} cards most likely to be in your hand (the % is the chance it's among your three, with your
     Management level and their Luck), best first; then rare cards worth more than all of them, to take if you're dealt one. Anything else:
     "All cards".

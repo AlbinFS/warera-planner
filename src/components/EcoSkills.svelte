@@ -9,7 +9,7 @@
   import Icon from './Icon.svelte';
   import { mdiFactory, mdiLightningBolt, mdiAccountGroup, mdiCrown } from '@mdi/js';
 
-  let { plan, config, fightPoints, estimate, estimateNote = "from today's prices" } = $props();
+  let { plan, config, fightPoints, pointValue, estimateNote = '' } = $props();
 
   const META = {
     companies: { label: 'Companies', icon: mdiAccountGroup, what: 'How many companies run at once (engines and employees only work in running companies).' },
@@ -77,11 +77,11 @@
     {#if ecoSettings.budgetMode === 'custom'}
       <label><span>Points</span><input type="number" min="0" max={level * 4} bind:value={ecoSettings.customBudget} /></label>
     {/if}
-    <label>
+    <div class="readout">
       <span>Value of 1 production point (G)</span>
-      <input type="number" step="0.0001" min="0" bind:value={ecoSettings.pointValue} placeholder={estimate.toFixed(4)} />
-      <small class="help">Empty: {estimate.toFixed(4)}, {estimateNote}. If it has changed, hover any employee's profit in the game: it shows "points × <strong>value</strong>".</small>
-    </label>
+      <strong class="num">{pointValue.toFixed(4)}</strong>
+      <small class="help">Live from the game: {estimateNote}. It's the "Market value" in the game's Cost per production point.</small>
+    </div>
     <label>
       <span>Trainings per day</span>
       <input type="number" min="0" max="60" bind:value={ecoSettings.trainingsPerDay} placeholder={String(autoTrainings)} />
@@ -144,6 +144,8 @@
 
 <style>
   .inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; align-items: start; }
+  .readout { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  .readout strong { color: var(--text); font-size: 18px; }
   .help { font-size: 11px; color: var(--muted); line-height: 1.35; }
   .go { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
   .primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); padding: 9px 16px; font-weight: 600; cursor: pointer; }

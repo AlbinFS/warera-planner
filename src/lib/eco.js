@@ -109,6 +109,25 @@ export function pointValues(items, prices, byItem) {
   return { ...fromPrices, ...gamePointValues(items, byItem) };
 }
 
+/**
+ * The market value of a point of your production, as the game's "Cost per
+ * production point" shows it: each good's value per point (perPoint) weighted
+ * by the points the employees of the running companies make of it a day
+ * (engines aren't in the game's figure). null without any.
+ * employeesById: companyId → [employee].
+ */
+export function marketPointValue(companies, employeesById, perPoint) {
+  let points = 0;
+  let worth = 0;
+  for (const c of companies) {
+    if (c.disabled) continue;
+    const made = (employeesById[c.id] ?? []).reduce((t, e) => t + (e.pointsPerDay ?? employeeDay(e, { managementValue: 0, currentManagementValue: 0, goodPerPoint: 0 }).points), 0);
+    points += made;
+    worth += made * (perPoint[c.good] ?? 0);
+  }
+  return points > 0 ? worth / points : null;
+}
+
 /** Profit per production point for every good: (price − inputs) ÷ PP. */
 export function goodsProfit(items, prices) {
   const out = [];

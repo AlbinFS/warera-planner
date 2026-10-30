@@ -23,7 +23,6 @@ try {
 } catch {}
 
 export const ecoSettings = $state(load(SETTINGS_KEY, {
-  pointValue: null, // null: the game's value (eco.js GAME_POINT_VALUE)
   selfWork: true,
   trainingsPerDay: null, // null: from the employees (eco.js trainingsFromEmployees)
   budgetMode: 'keepFight', // keepFight | all | custom

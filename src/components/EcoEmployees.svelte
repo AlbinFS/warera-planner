@@ -17,7 +17,7 @@
   import EcoMoves from './EcoMoves.svelte';
   import { mdiPickaxe, mdiClover, mdiTie, mdiEmoticonOutline } from '@mdi/js';
 
-  let { companies, perPoint, pointValue, items, estimateNote = "from today's prices", models = [] } = $props();
+  let { companies, perPoint, items, models = [] } = $props();
 
   // What each employee is worth to their company (the models are the running companies', in order).
   const running = $derived(companies.filter((c) => !c.disabled));

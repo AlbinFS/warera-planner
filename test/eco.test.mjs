@@ -58,3 +58,12 @@ test('the game values a manufactured good\'s point minus its inputs, from its va
   assert.equal(all.bread, 0.2);
   assert.equal(all.wood, 0.0943);
 });
+
+test('the market value of a point: each good weighted by the points made of it, as the game shows it', async () => {
+  const { marketPointValue } = await import('../src/lib/eco.js');
+  const companies = [{ id: 'a', good: 'x', engine: 7 }, { id: 'b', good: 'y', engine: 7 }, { id: 'off', good: 'z', engine: 7, disabled: true }];
+  // Employees only, as the game counts it: 100 points at 0.1 and 300 at 0.2.
+  const v = marketPointValue(companies, { a: [{ pointsPerDay: 100 }], b: [{ pointsPerDay: 300 }], off: [{ pointsPerDay: 50 }] }, { x: 0.1, y: 0.2, z: 9 });
+  assert.ok(Math.abs(v - 0.175) < 1e-9);
+  assert.equal(marketPointValue([], {}, {}), null);
+});
