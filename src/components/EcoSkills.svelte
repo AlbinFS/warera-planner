@@ -56,6 +56,7 @@
   const outdated = $derived(ran && ranWith !== inputsKey);
   const employeeCount = $derived(plan.companies.reduce((s, c) => s + (c.employees?.length ?? 0), 0));
   const delta = (s) => (best ? best.effective[s] - currentEffective[s] : 0);
+  const unspent = $derived(best ? Math.max(0, budget - best.spent) : 0);
   function apply() {
     for (const s of ECO_SKILLS) planner.skills[s] = best.levels[s];
     if (planner.player) planner.player.prestige = { ...planner.player.prestige, ...best.ranks };
@@ -114,6 +115,7 @@
       <div><dt>Points used</dt><dd class="num">{best.spent} <small class="muted">of {budget}</small></dd></div>
       {#if prestigePoints > 0}<div><dt>★ Prestige points</dt><dd class="num">{prestigeUsed(best.ranks)} <small class="muted">of {prestigePoints}</small></dd><small class="muted">each rank is a level without skill points</small></div>{/if}
     </dl>
+    {#if unspent > 0}<p class="muted small">{unspent} point{unspent === 1 ? '' : 's'} left unspent: nothing they can still buy adds value.{#if !ecoSettings.selfWork}{' '}Self-work is off, so spare Energy and Production earn nothing; tick "I self-work with spare energy" to count them.{/if}</p>{/if}
     <table>
       <thead><tr><th>Skill</th><th>Now</th><th>Best</th><th>What it does</th></tr></thead>
       <tbody>
