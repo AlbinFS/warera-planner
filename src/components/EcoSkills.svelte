@@ -136,7 +136,7 @@
       <li>Energy: {fmt(best.result.energyPerDay, 0)} a day; {fmt(best.result.trainingEnergy, 0)} for trainings{#if plan.selfWork}, {best.result.selfWorkActions} self-works → {fmt(best.result.selfWorkPoints, 0)} points = <strong>{fmt(best.result.selfWork, 1)} G</strong>{/if}</li>
       {#if best.result.energyShort}<li class="warn">No layout within {budget} points has the energy for all {plan.trainingsPerDay} trainings a day: this one has the most ({fmt(best.result.energyPerDay / 10, 0)} actions).</li>{/if}
     </ul>
-    <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27.3 gave everyone a free reset with no cooldown, and refunded Leadership's points). The model: engine and employee output at the game's value of a point of each company's good, employees' output and payroll as the game shows them, Management +2% per point of its value on employee output.</p>
+    <p class="muted small">Current skills cost {currentCost} points. Skills can be reset in the game (v0.27.3 gave everyone a free reset with no cooldown, and refunded Leadership's points). The model: engine and employee output at today's prices for each company's good, employees' output and payroll as the game shows them, Management +2% per point of its value on employee output.</p>
   </section>
 {:else}
   <section class="card"><p class="warn">No layout fits within {budget} points.</p></section>

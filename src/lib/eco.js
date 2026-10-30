@@ -103,10 +103,21 @@ export function gamePointValues(items, byItem) {
   return out;
 }
 
-/** Value per production point by good: the game's (gamePointValues) where it has one, else from today's prices (goodsProfit). */
+/**
+ * Value per production point by good, for what the site mirrors from the game
+ * (its Estimated profit, Market value): the game's where it has one, else from
+ * today's prices. The game's lags a moving market (coca: 0.09 against 0.16 on
+ * 2026-10-30), so advice uses todayPointValues.
+ */
 export function pointValues(items, prices, byItem) {
   const fromPrices = Object.fromEntries(goodsProfit(items, prices).map((g) => [g.code, g.perPoint]));
   return { ...fromPrices, ...gamePointValues(items, byItem) };
+}
+
+/** Value per production point by good for advice: from today's prices, else the game's. */
+export function todayPointValues(items, prices, byItem) {
+  const fromPrices = Object.fromEntries(goodsProfit(items, prices).map((g) => [g.code, g.perPoint]));
+  return { ...gamePointValues(items, byItem), ...fromPrices };
 }
 
 /**

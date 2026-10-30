@@ -6,7 +6,7 @@
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies, apiKeyState } from '../lib/eco.svelte.js';
   import { maxRank } from '../lib/prestige.js';
-  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf, pointValues, marketPointValue } from '../lib/eco.js';
+  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf, pointValues, todayPointValues, marketPointValue } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import { staffModels } from '../lib/income.js';
   import { cardValues } from '../lib/training.js';
@@ -116,15 +116,19 @@
   // The game's own levels and prestige ranks (each rank one more level).
   const ownRank = (s) => planner.player?.own?.prestige?.[s] ?? 0;
   const currentManagementValue = $derived(ecoValue(data.market.gameConfigSkills, 'management', planner.player?.ecoLevels?.management ?? 0, ownRank('management')));
-  // Each good's value per point as the game counts it, today's prices where it has none.
-  const perPoint = $derived(pointValues(items, data.market.itemPrices, gameByItem));
+  // Each good's value per point for advice: today's prices (the game's values lag a moving market).
+  const perPoint = $derived(todayPointValues(items, data.market.itemPrices, gameByItem));
+  // As the game counts it, for what mirrors the game: its Estimated profit and Market value.
+  const gamePerPoint = $derived(pointValues(items, data.market.itemPrices, gameByItem));
   // The market value of a point of your production: the game's own sum (its "Cost per production point").
-  const marketValue = $derived(marketPointValue(companies, ecoEmployees, perPoint));
+  const marketValue = $derived(marketPointValue(companies, ecoEmployees, gamePerPoint));
   const pointValue = $derived(marketValue ?? fallbackValue);
   const estimateNote = $derived(marketValue != null ? "the game's value of each good, weighted by what your employees make" : fallbackNote);
 
   // The employees as the hiring and training models see them; what a toolbox is worth to them.
   const staffing = $derived(staffModels(companies, ecoEmployees, { perPoint, managementPercent: 2 * currentManagementValue, regions, countries, items }));
+  // The same at the game's values, so an employee's Profit and Value to company add up on the Employees tab.
+  const gameStaffing = $derived(staffModels(companies, ecoEmployees, { perPoint: gamePerPoint, managementPercent: 2 * currentManagementValue, regions, countries, items }));
   // What each Management level adds a day through better training cards (Leadership's before v0.27.3).
   // Past level 10 with prestige ranks.
   const managementTop = $derived(Math.max(0, ...Object.keys(data.market.gameConfigSkills.management?.levels ?? { 0: 1 }).map(Number)) + maxRank(Math.max(planner.player?.prestigePoints ?? 0, planner.player?.own?.prestigePoints ?? 0)));
@@ -172,7 +176,7 @@
 <div class="page" use:folds>
   <section class="card intro">
     <h2>Eco mode</h2>
-    <p class="muted">For players who earn from their companies instead of fighting. Built for the v0.27 update (employees). Each good is valued as the game values it; a point of your production is worth <strong>{pointValue.toFixed(4)} G</strong> ({estimateNote}).</p>
+    <p class="muted">For players who earn from their companies instead of fighting. Built for the v0.27 update (employees). Advice uses today's prices; the game's value of a point of your production is <strong>{pointValue.toFixed(4)} G</strong> ({estimateNote}).</p>
     {#if !planner.player}<p class="warn">Load your player on the Overview & MinMax page first: the eco tools use your level, skills and companies.</p>{/if}
     {#if error}<p class="error">{error}</p>{/if}
   </section>
@@ -205,7 +209,7 @@
       <EcoSwitch {companies} {perPoint} {items} upgrades={data.upgrades} prices={data.market.itemPrices} managementPercent={2 * currentManagementValue} />
       <EcoManagers {companies} {perPoint} {items} />
     {:else if tab === 'employees'}
-      <EcoEmployees {companies} {perPoint} {items} models={staffing.models} />
+      <EcoEmployees {companies} perPoint={gamePerPoint} {items} models={gameStaffing.models} moveModels={staffing.models} />
     {:else if tab === 'events'}
       <!-- Loaded when opened: it carries the game's event rules. -->
       {#await import('./EcoEvents.svelte')}

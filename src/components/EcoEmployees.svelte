@@ -17,7 +17,8 @@
   import EcoMoves from './EcoMoves.svelte';
   import { mdiPickaxe, mdiClover, mdiTie, mdiEmoticonOutline } from '@mdi/js';
 
-  let { companies, perPoint, items, models = [] } = $props();
+  // perPoint and models at the game's values (this tab mirrors its Estimated profit); moveModels at today's prices.
+  let { companies, perPoint, items, models = [], moveModels = models } = $props();
 
   // What each employee is worth to their company (the models are the running companies', in order).
   const running = $derived(companies.filter((c) => !c.disabled));
@@ -104,7 +105,7 @@
       <tr class="sum"><td><strong>Profit</strong></td><td></td><td></td><td class="num"><strong class:good={estimate.profit >= 0} class:bad={estimate.profit < 0}>{signed(estimate.profit)}</strong></td></tr>
     </tbody>
   </table>
-  <p class="muted small why">The values per point are the game's own (its market value of each good, refreshed every few minutes); a good it has none for is valued at today's prices.</p>
+  <p class="muted small why">The values per point here are the game's own, so this matches its Estimated profit. They lag when a price moves fast; the advice on the other tabs and in "Worth moving?" uses today's prices.</p>
 </section>
 
 {#if all.length > 1}
@@ -138,11 +139,11 @@
       </table>
     </div>
     <p class="muted small">Break-even payroll: the most an employee could be paid per day before they cost more than they make (at their good's market value per point). Far below it is a keeper; above it, train their wage down or replace them.</p>
-    <p class="muted small"><strong>Value to company</strong>: what the company makes a day with them against without them, minus their wage, at what its good sells for. It counts what they do for their coworkers (<strong>For coworkers</strong>: a Comic's +10 happiness for everyone, a Xenophobe's drag on foreigners, Girl Power, Luck traits' toolboxes, …), so someone who makes little themselves can be worth the most. Not counted: training help (a Trainer's extra training) and anything that takes weeks.</p>
+    <p class="muted small"><strong>Value to company</strong>: what the company makes a day with them against without them, minus their wage, at the game's value of its good. It counts what they do for their coworkers (<strong>For coworkers</strong>: a Comic's +10 happiness for everyone, a Xenophobe's drag on foreigners, Girl Power, Luck traits' toolboxes, …), so someone who makes little themselves can be worth the most. Not counted: training help (a Trainer's extra training) and anything that takes weeks.</p>
   </section>
 {/if}
 
-{#if running.length > 1}<EcoMoves {companies} {models} {items} />{/if}
+{#if running.length > 1}<EcoMoves {companies} models={moveModels} {items} />{/if}
 
 {#each companies.filter((c) => !c.disabled) as c (c.id)}
   {@const list = ecoEmployees[c.id] ?? []}

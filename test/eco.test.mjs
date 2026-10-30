@@ -67,3 +67,12 @@ test('the market value of a point: each good weighted by the points made of it, 
   assert.ok(Math.abs(v - 0.175) < 1e-9);
   assert.equal(marketPointValue([], {}, {}), null);
 });
+
+test('advice uses prices from today, what mirrors the game uses its value', async () => {
+  const { pointValues, todayPointValues } = await import('../src/lib/eco.js');
+  const items = { coca: { type: 'raw', productionPoints: 1 } };
+  assert.equal(pointValues(items, { coca: 0.16 }, { coca: 0.09 }).coca, 0.09);
+  assert.equal(todayPointValues(items, { coca: 0.16 }, { coca: 0.09 }).coca, 0.16);
+  // No price today: the game's value.
+  assert.equal(todayPointValues(items, {}, { coca: 0.09 }).coca, 0.09);
+});

@@ -4,7 +4,7 @@
  * game), at today's prices, with the Eco page's settings.
  */
 import { loadCompanies, ecoEmployees, ecoSettings } from './eco.svelte.js';
-import { pointValues, ecoValue, dailyIncome, trainingsPerDayOf } from './eco.js';
+import { todayPointValues, ecoValue, dailyIncome, trainingsPerDayOf } from './eco.js';
 import { cached } from './warera.js';
 import { companyModel, placeOf, fairWageOf, daysLeftOf } from './hiring.js';
 import { toolboxValue } from './staffing.js';
@@ -31,9 +31,9 @@ export function staffModels(companies, employeesById, { perPoint, managementPerc
 export async function incomePlan(market, planner) {
   const [companies, { upgrades }] = await Promise.all([loadCompanies(planner.player.id), loadMarket()]);
   const config = { skills: market.gameConfigSkills, upgrades, items: market.gameConfigItems };
-  // The game's value of a point per good (its "Estimated profit"), today's prices where it has none.
+  // Today's prices, the game's value of a point where a good has none.
   const byItem = await cached('gameStat.getPpMoneyValueByItem', null, 5 * 60 * 1000).catch(() => null);
-  const perPoint = pointValues(config.items, market.itemPrices, byItem);
+  const perPoint = todayPointValues(config.items, market.itemPrices, byItem);
   // The game's own levels and ranks: what the employees' shown bonus has in it.
   const currentManagementValue = ecoValue(config.skills, 'management', planner.player.ecoLevels?.management ?? 0, planner.player.own?.prestige?.management ?? 0);
   const plan = {
