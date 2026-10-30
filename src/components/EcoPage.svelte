@@ -6,7 +6,7 @@
   import { planner } from '../lib/planner.svelte.js';
   import { ecoSettings, ecoEmployees, loadCompanies, apiKeyState } from '../lib/eco.svelte.js';
   import { maxRank } from '../lib/prestige.js';
-  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf, pointValues, todayPointValues, marketPointValue } from '../lib/eco.js';
+  import { GAME_POINT_VALUE, GAME_POINT_VALUE_NOTE, pointValueFromWages, goodsProfit, ecoValue, trainingsPerDayOf, trainingsFromEmployees, pointValues, todayPointValues, marketPointValue } from '../lib/eco.js';
   import { FIGHT_SKILLS } from '../engine/inputs.js';
   import { staffModels } from '../lib/income.js';
   import { cardValues } from '../lib/training.js';
@@ -153,6 +153,7 @@
     currentManagementValue: currentManagementValue,
     selfWork: ecoSettings.selfWork,
     trainingsPerDay: trainingsPerDayOf(ecoSettings.trainingsPerDay, Object.values(ecoEmployees).flat()),
+    trainingsFull: trainingsFromEmployees(Object.values(ecoEmployees).flat()),
     cardValues: cardsByLevel,
   });
 

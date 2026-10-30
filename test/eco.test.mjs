@@ -76,3 +76,21 @@ test('advice uses prices from today, what mirrors the game uses its value', asyn
   // No price today: the game's value.
   assert.equal(todayPointValues(items, {}, { coca: 0.09 }).coca, 0.09);
 });
+
+test('better training cards count only for the trainings that happen, so the best skills never earn less for nothing', async () => {
+  const { dailyIncome, ecoValue } = await import('../src/lib/eco.js');
+  const config = {
+    skills: { companies: levels([2, 3]), management: levels([1, 2, 3]), energy: levels([100, 110, 120]), production: levels([30, 33, 36]) },
+    upgrades: { automatedEngine: { levels: { 1: { stats: { dailyProd: 24 } } } } },
+  };
+  const plan = { companies: [{ id: 'a', good: 'x', engine: 1, employees: [] }], perPoint: { x: 0.1 }, currentManagementValue: 1, selfWork: true, trainingsFull: 4, cardValues: [0, 50, 100] };
+  const at = (trainingsPerDay) => dailyIncome({ companies: 0, management: 2, energy: 0, production: 0 }, { ...plan, trainingsPerDay }, config).cards;
+  assert.equal(at(0), 0);
+  assert.equal(at(2), 50);
+  assert.equal(at(4), 100);
+  assert.equal(at(9), 100 * Math.min(1, 240 / 90));
+  // No trainings: the cards can't pull points away from what earns money.
+  const zero = optimizeEcoSkills({ ...plan, trainingsPerDay: 0 }, config, { budget: 3, playerLevel: 10 });
+  assert.equal(zero.result.value, zero.result.total);
+  assert.ok(ecoValue(config.skills, 'management', 0) === 1);
+});

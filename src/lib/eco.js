@@ -208,7 +208,8 @@ export function managerAdvice(manager, staff, perPoint, marketRatePerPoint) {
  * Money per day for one eco skill layout.
  * plan: { companies: [{ id, good, engine, employees: [...], manager? }], perPoint: {good: G},
  *         currentManagementValue (the one the employees' shown bonus includes),
- *         selfWork (bool), trainingsPerDay,
+ *         selfWork (bool), trainingsPerDay, trainingsFull (what the employees
+ *         could take a day: cardValues are for all of those),
  *         cardValues: [G a day by Management level] (training.js: better cards) }
  * Companies run in order of profit, up to the Companies skill's limit. Managers'
  * pay comes off the total: they are paid every hour, whether the company runs.
@@ -242,7 +243,10 @@ export function dailyIncome(levels, plan, config) {
   const bestPerPoint = Math.max(0, ...active.map((r) => r.perPoint));
   const selfWorkPoints = selfWorkActions * ecoValue(skills, 'production', levels.production);
   const selfWork = selfWorkPoints * bestPerPoint;
-  const trained = trainingEnergy > 0 ? Math.min(1, energyPerDay / trainingEnergy) : 1;
+  // Better cards are worth something only for the trainings that happen: those planned, as far as the energy goes.
+  const planned = plan.trainingsPerDay ?? 0;
+  const full = plan.trainingsFull ?? planned;
+  const trained = full > 0 && trainingEnergy > 0 ? Math.min(1, planned / full) * Math.min(1, energyPerDay / trainingEnergy) : 0;
   const cards = (plan.cardValues?.[levels.management ?? 0] ?? 0) * trained;
 
   return {
