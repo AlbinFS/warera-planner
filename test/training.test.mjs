@@ -54,3 +54,16 @@ test('Better training cards from Management add value while employees still trai
   // Nobody training: better cards add nothing.
   assert.ok(cardValues([model([emp('C', [], { potential: 8 })])], 3, 0).every((x) => x === 0));
 });
+
+test('Rehab can drop a Nemesis, worth the -15 % while the two work together', () => {
+  const nemesis = (id, other) => ({ ...emp(id, ['nemesis']), id, traitArgs: { nemesis: other }, potential: 1, potentialMax: 8 });
+  const pair = trainingCards(model([nemesis('a', 'b'), { ...emp('b', []), id: 'b' }]), 0, { now: 0 });
+  const card = pair.cards.find((c) => c.card === 'rehab' && c.trait === 'nemesis');
+  assert.ok(card && card.rarity === 'rare' && card.total > 0);
+  assert.match(card.label, /Nemesis/);
+  // Apart, the trait does nothing: the card is dealt but adds nothing.
+  const apart = trainingCards(model([nemesis('a', 'gone'), { ...emp('b', []), id: 'b' }]), 0, { now: 0 });
+  assert.ok(Math.abs(apart.cards.find((c) => c.card === 'rehab').perDay) < 1e-9);
+  // It counts as a bad trait for Rehab All too.
+  assert.ok(cardPool({ traits: ['nemesis', 'greedy'], gender: 'male', potentialMax: 8 }).some((c) => c.card === 'rehabAll'));
+});

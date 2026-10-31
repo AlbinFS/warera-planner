@@ -56,7 +56,8 @@ export function rarityWeights(management = 0, luck = 0) {
   return w;
 }
 
-const isBad = (t) => !!TRAITS[t]?.bad;
+// Nemesis is a partner trait, outside TRAITS, but a bad one: Rehab can drop it.
+const isBad = (t) => t === 'nemesis' || !!TRAITS[t]?.bad;
 const isMixed = (t) => !!TRAITS[t]?.mixed;
 const markupOf = (traits) => (traits.includes('greedy') ? 1.2 : 1) * (traits.includes('modest') ? 0.85 : 1);
 
